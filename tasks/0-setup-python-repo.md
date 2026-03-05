@@ -1,0 +1,33 @@
+- Python (3) is the language
+    - Use the latest version of python 3
+- Use pyproject.toml
+- Use uv as the package manager
+- Install python dependencies in current repo
+    - `.venv` folder
+- Use ruff as the linter
+- Use pyright as the type checker
+- Use pytest
+- Creates a `docs/` folder for documentation of this project
+    - These docs are primarily for consumers of this package.
+    - The developer docs will be in the README.md at the project root
+- Use the most populat commit linter for python
+    - This is to ensure that commit messages follow "sematic-commit" or "conventional-commit"
+        - basically the `fix`, `feat` ... format
+- Pre-Commit
+    - Run lint, type-checks, unit tests
+- Github Actions
+    - On PR
+        - Do the same thing as pre-commit lint
+        - Run Integration tests
+    - On merge to main
+        - Run all things that run on PR
+        - Publish package to Pypi
+            - The package name is: `sherma`
+        - Update master with the new version number of the package
+- Create a hello world function as the only function right now
+    - Create unit test for that function as an example
+- Update README.md with tech stack used in the project and local development instructions
+    - include instructions on installing the pre-commit hooks
+- All code should be under the folder `sherma`
+    - create this folder in the root of the project
+    - all imports should look like: `from sherma import ...`
