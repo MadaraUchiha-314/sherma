@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sherma"
+version = "0.1.0"
+description = "Agent Framework rising through the citadel!"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Rohith Ramakrishnan" }]
+
+[dependency-groups]
+dev = ["ruff", "pyright", "pytest", "pre-commit", "commitizen"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "RUF"]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+include = ["sherma/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: marks tests as integration tests"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_files = ["sherma/__init__.py:__version__"]
+update_changelog_on_bump = true

@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv python install
+
+      - run: uv sync
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run pyright
+
+      - name: Unit tests
+        run: uv run pytest -m "not integration"
+
+      - name: Integration tests
+        run: uv run pytest -m "integration"
+
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv python install
+
+      - run: uv sync
+
+      - name: Configure git for github-actions[bot]
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          if uv run cz bump --yes --changelog; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "No bumpable commits, skipping release"
+          fi
+
+      - name: Push version bump
+        if: steps.bump.outputs.bumped == 'true'
+        run: git push origin main --tags
+
+      - name: Build package
+        if: steps.bump.outputs.bumped == 'true'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: steps.bump.outputs.bumped == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
