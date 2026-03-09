@@ -24,6 +24,10 @@ class RegistryError(ShermaError):
     """Raised for registry operation failures."""
 
 
+class SchemaValidationError(ShermaError):
+    """Raised when data does not conform to a declared schema."""
+
+
 class RemoteEntityError(ShermaError):
     """Raised when fetching a remote entity fails."""
 

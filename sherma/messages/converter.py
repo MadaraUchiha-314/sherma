@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from a2a.types import Message, Part, Role, TextPart
+from a2a.types import DataPart, Message, Part, Role, TextPart
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -19,6 +19,11 @@ def _a2a_part_to_content_block(part: Part) -> dict[str, object] | str:
     root = part.root
     if root.kind == "text":
         return root.text
+    if root.kind == "data":
+        block: dict[str, object] = {"type": "data", "data": root.data}
+        if root.metadata is not None:
+            block["metadata"] = root.metadata
+        return block
     return {"type": root.kind, "raw": root.model_dump()}
 
 
@@ -29,6 +34,15 @@ def _content_block_to_a2a_part(block: dict[str, object] | str) -> Part:
     block_type = block.get("type")
     if block_type == "text":
         return Part(root=TextPart(text=str(block.get("text", ""))))
+    if block_type == "data":
+        data = block.get("data")
+        metadata = block.get("metadata")
+        return Part(
+            root=DataPart(
+                data=data if isinstance(data, dict) else {},
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+        )
     return Part(root=TextPart(text=str(block)))
 
 

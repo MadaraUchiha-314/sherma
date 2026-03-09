@@ -29,6 +29,19 @@ def make_data_part(data: dict[str, Any]) -> dict[str, Any]:
     return {"kind": "data", "data": data}
 
 
+def make_schema_data_part(
+    data: dict[str, Any],
+    schema_uri: str,
+    *,
+    extra_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create a DataPart dict with schema_uri in metadata."""
+    metadata: dict[str, Any] = {"schema_uri": schema_uri}
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return {"kind": "data", "data": data, "metadata": metadata}
+
+
 def make_message(
     *,
     role: str,

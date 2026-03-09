@@ -5,6 +5,9 @@ import pytest
 from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    AgentExtension,
     Message,
     Part,
     Role,
@@ -14,8 +17,25 @@ from a2a.types import (
     TaskStatus,
     TextPart,
 )
+from pydantic import BaseModel
 
 from sherma.entities.agent.base import Agent
+from sherma.schema import SCHEMA_INPUT_URI, SCHEMA_OUTPUT_URI
+
+
+def _make_card(**kwargs: Any) -> AgentCard:
+    defaults: dict[str, Any] = {
+        "name": "test",
+        "url": "http://localhost",
+        "version": "1.0",
+        "skills": [],
+        "capabilities": AgentCapabilities(),
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "description": "A test agent",
+    }
+    defaults.update(kwargs)
+    return AgentCard(**defaults)
 
 
 def _make_message(text: str, message_id: str = "m1") -> Message:
@@ -75,3 +95,81 @@ async def test_agent_get_card_default():
     a = ConcreteAgent(id="test-agent")
     card = await a.get_card()
     assert card is None
+
+
+class InputModel(BaseModel):
+    name: str
+    value: int
+
+
+class OutputModel(BaseModel):
+    result: str
+
+
+@pytest.mark.asyncio
+async def test_get_card_injects_schema_extensions():
+    card = _make_card()
+    a = ConcreteAgent(
+        id="schema-agent",
+        agent_card=card,
+        input_schema=InputModel,
+        output_schema=OutputModel,
+    )
+    result = await a.get_card()
+    assert result is not None
+    assert result.capabilities is not None
+    extensions = result.capabilities.extensions
+    assert extensions is not None
+    assert len(extensions) == 2
+
+    uris = {ext.uri for ext in extensions}
+    assert SCHEMA_INPUT_URI in uris
+    assert SCHEMA_OUTPUT_URI in uris
+
+    # Verify schemas are present in params
+    for ext in extensions:
+        assert ext.params is not None
+        assert "properties" in ext.params
+
+
+@pytest.mark.asyncio
+async def test_get_card_no_schema_returns_card_unchanged():
+    card = _make_card()
+    a = ConcreteAgent(id="no-schema-agent", agent_card=card)
+    result = await a.get_card()
+    assert result is card
+
+
+@pytest.mark.asyncio
+async def test_get_card_does_not_duplicate_extensions():
+    existing_ext = AgentExtension(uri=SCHEMA_INPUT_URI, params={"custom": True})
+    card = _make_card(capabilities=AgentCapabilities(extensions=[existing_ext]))
+    a = ConcreteAgent(
+        id="dup-agent",
+        agent_card=card,
+        input_schema=InputModel,
+    )
+    result = await a.get_card()
+    assert result is not None
+    extensions = result.capabilities.extensions
+    assert extensions is not None
+    input_exts = [ext for ext in extensions if ext.uri == SCHEMA_INPUT_URI]
+    assert len(input_exts) == 1
+    # Should keep the existing one, not inject a new one
+    assert input_exts[0].params == {"custom": True}
+
+
+@pytest.mark.asyncio
+async def test_get_card_preserves_existing_capabilities():
+    card = _make_card(capabilities=AgentCapabilities(streaming=True))
+    a = ConcreteAgent(
+        id="caps-agent",
+        agent_card=card,
+        input_schema=InputModel,
+    )
+    result = await a.get_card()
+    assert result is not None
+    assert result.capabilities is not None
+    assert result.capabilities.streaming is True
+    assert result.capabilities.extensions is not None
+    assert len(result.capabilities.extensions) == 1

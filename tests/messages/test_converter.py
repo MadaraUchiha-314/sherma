@@ -1,4 +1,4 @@
-from a2a.types import Message, Part, Role, TextPart
+from a2a.types import DataPart, Message, Part, Role, TextPart
 from langchain_core.messages import AIMessage, HumanMessage
 
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
@@ -60,6 +60,58 @@ def test_ai_message_conversion():
     assert isinstance(result, Message)
     assert result.role == Role.agent
     assert result.parts[0].root.text == "I'm an AI response"
+
+
+def test_data_part_round_trip():
+    """DataPart with metadata survives a2a -> langgraph -> a2a conversion."""
+    data = {"key": "value", "count": 3}
+    metadata = {"schema_uri": "urn:sherma:schema:input"}
+    a2a_msg = Message(
+        message_id="msg-data",
+        parts=[Part(root=DataPart(data=data, metadata=metadata))],
+        role=Role.user,
+    )
+    lg_messages = a2a_to_langgraph(a2a_msg)
+    assert len(lg_messages) == 1
+
+    # Check the LangGraph content block
+    content = lg_messages[0].content
+    assert isinstance(content, list)
+    block = content[0]
+    assert isinstance(block, dict)
+    assert block["type"] == "data"
+    assert block["data"] == data
+    assert block["metadata"] == metadata
+
+    # Round-trip back to A2A
+    result = langgraph_to_a2a(lg_messages[0])
+    assert len(result.parts) == 1
+    root = result.parts[0].root
+    assert root.kind == "data"
+    assert root.data == data
+    assert root.metadata == metadata
+
+
+def test_data_part_without_metadata_round_trip():
+    """DataPart without metadata also round-trips correctly."""
+    data = {"foo": "bar"}
+    a2a_msg = Message(
+        message_id="msg-data2",
+        parts=[Part(root=DataPart(data=data))],
+        role=Role.agent,
+    )
+    lg_messages = a2a_to_langgraph(a2a_msg)
+    block = lg_messages[0].content[0]
+    assert isinstance(block, dict)
+    assert block["type"] == "data"
+    assert block["data"] == data
+    assert "metadata" not in block
+
+    result = langgraph_to_a2a(lg_messages[0])
+    root = result.parts[0].root
+    assert root.kind == "data"
+    assert root.data == data
+    assert root.metadata is None
 
 
 def test_metadata_preserved():
