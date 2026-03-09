@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import Message, TaskIdParams
+from a2a.server.tasks import TaskUpdater
+from a2a.types import (
+    Message,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskIdParams,
+    TaskStatusUpdateEvent,
+)
+from a2a.utils.task import new_task
 
 from sherma.entities.agent.base import Agent
 from sherma.logging import get_logger
@@ -24,31 +32,82 @@ class ShermaAgentExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute a message through the agent."""
+        # Get or create task
+        task: Task | None = context.current_task
+        if task is None:
+            message = context.message
+            if message is None:
+                logger.warning("Execute called without a message")
+                return
+            task = new_task(message)
+        context.current_task = task
+
         logger.info(
             "Executing message for task=%s context=%s",
-            context.task_id,
-            context.context_id,
+            task.id,
+            task.context_id,
         )
+
+        # Create TaskUpdater and signal work has begun
+        task_updater = TaskUpdater(event_queue, task.id, task.context_id)
+        await task_updater.start_work()
+
+        # Ensure message has task_id and context_id
         message = context.message
         if message is None:
             logger.warning("Execute called without a message")
             return
+        message.task_id = task.id
+        message.context_id = task.context_id
+
+        # Call agent and process responses
+        has_events = False
         async for event in self.agent.send_message(message):
+            has_events = True
             if isinstance(event, Message):
-                await event_queue.enqueue_event(event)
+                await task_updater.complete(message=event)
             else:
                 # ClientEvent is tuple[Task, UpdateEvent]
-                task, update = event
-                if update is not None:
-                    await event_queue.enqueue_event(update)
-                await event_queue.enqueue_event(task)
+                _task, update = event
+                if isinstance(update, TaskArtifactUpdateEvent):
+                    artifact = update.artifact
+                    await task_updater.add_artifact(
+                        parts=artifact.parts,
+                        artifact_id=artifact.artifact_id,
+                        name=artifact.name,
+                        metadata=artifact.metadata,
+                        append=update.append,
+                        last_chunk=update.last_chunk,
+                    )
+                elif isinstance(update, TaskStatusUpdateEvent):
+                    await task_updater.update_status(
+                        state=update.status.state,
+                        message=update.status.message,
+                        final=update.final,
+                    )
+                else:
+                    # update is None — initial task creation event
+                    logger.debug(
+                        "Received initial task event for task=%s",
+                        _task.id,
+                    )
+
+        if not has_events:
+            await task_updater.complete()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancel a running task."""
-        logger.info("Cancelling task %s", context.task_id)
-        params = TaskIdParams(id=context.task_id) if context.task_id else None
-        if params is None:
+        task: Task | None = context.current_task
+        task_id = task.id if task else context.task_id
+        if task_id is None:
             logger.warning("Cancel called without a task_id")
             return
-        task = await self.agent.cancel_task(params)
-        await event_queue.enqueue_event(task)
+
+        logger.info("Cancelling task %s", task_id)
+
+        context_id = task.context_id if task else (context.context_id or task_id)
+        task_updater = TaskUpdater(event_queue, task_id, context_id)
+
+        params = TaskIdParams(id=task_id)
+        await self.agent.cancel_task(params)
+        await task_updater.cancel()

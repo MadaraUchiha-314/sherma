@@ -186,6 +186,27 @@ async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None
 15. `tests/entities/agent/test_local.py`
 16. `tests/messages/test_converter.py`
 
+### 13. `sherma/a2a/executor.py` — Task creation and TaskUpdater at executor layer
+
+- Import `TaskUpdater` from `a2a.server.tasks`, `new_task` from `a2a.utils.task`
+- In `execute()`:
+  1. Extract `context.current_task`; if None, create via `new_task(context.message)`
+  2. Set `context.current_task = task`
+  3. Create `TaskUpdater(event_queue, task.id, task.context_id)`
+  4. Call `task_updater.start_work()` to signal work has begun
+  5. Set `task_id` and `context_id` on the message before passing to agent
+  6. Process agent responses:
+     - `Message` → `task_updater.complete(message=event)`
+     - `ClientEvent` (tuple) → extract artifacts via `task_updater.add_artifact()`, then update status via `task_updater.update_status()`
+  7. If no events yielded, call `task_updater.complete()`
+- In `cancel()`: use `TaskUpdater.cancel()` instead of directly enqueuing Task
+
+### 14. `tests/a2a/test_executor.py` — Updated for TaskUpdater events
+
+- Tests now expect `TaskStatusUpdateEvent` (working + completed) instead of raw `Message`/`Task`
+- New tests: `test_executor_execute_creates_task`, `test_executor_execute_sets_message_ids`, `test_executor_execute_task_response`
+- Cancel test expects `TaskStatusUpdateEvent` with canceled state
+
 ## Verification
 
 ```bash
