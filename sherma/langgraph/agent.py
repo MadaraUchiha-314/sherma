@@ -5,7 +5,7 @@ from abc import abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
 
-from a2a.client.client import ClientEvent
+from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.types import (
     Message,
@@ -47,7 +47,7 @@ class LangGraphAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         """Convert A2A message to LangGraph format, invoke graph, convert back."""
         graph = await self.get_graph()
         lg_messages = a2a_to_langgraph(request)
@@ -65,14 +65,11 @@ class LangGraphAgent(Agent):
             status = TaskStatus(state=TaskState.input_required, message=interrupt_msg)
             task_id = request.task_id or ""
             context_id = request.context_id or ""
-            yield (
-                Task(id=task_id, context_id=context_id, status=status),
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=status,
-                    final=False,
-                ),
+            yield TaskStatusUpdateEvent(
+                task_id=task_id,
+                context_id=context_id,
+                status=status,
+                final=False,
             )
         else:
             response_messages = result.get("messages", [])

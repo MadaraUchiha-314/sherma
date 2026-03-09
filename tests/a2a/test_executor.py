@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from a2a.client.client import ClientEvent
+from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -41,7 +41,7 @@ class EchoAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         yield Message(
             message_id="resp-1",
             parts=[Part(root=TextPart(text="echo"))],
@@ -63,7 +63,7 @@ class EchoAgent(Agent):
 
 
 class TaskResponseAgent(Agent):
-    """Agent that returns ClientEvent tuples with proper UpdateEvents."""
+    """Agent that returns UpdateEvents directly."""
 
     async def send_message(
         self,
@@ -72,7 +72,7 @@ class TaskResponseAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         task = Task(
             id="task-resp",
             context_id="ctx-resp",
@@ -93,23 +93,17 @@ class TaskResponseAgent(Agent):
             ],
         )
         # Yield artifact update event
-        yield (
-            task,
-            TaskArtifactUpdateEvent(
-                task_id=task.id,
-                context_id=task.context_id,
-                artifact=task.artifacts[0],
-            ),
+        yield TaskArtifactUpdateEvent(
+            task_id=task.id,
+            context_id=task.context_id,
+            artifact=task.artifacts[0],
         )
         # Yield status update event
-        yield (
-            task,
-            TaskStatusUpdateEvent(
-                task_id=task.id,
-                context_id=task.context_id,
-                status=task.status,
-                final=True,
-            ),
+        yield TaskStatusUpdateEvent(
+            task_id=task.id,
+            context_id=task.context_id,
+            status=task.status,
+            final=True,
         )
 
     async def cancel_task(
@@ -198,7 +192,7 @@ async def test_executor_execute_sets_message_ids():
 
 @pytest.mark.asyncio
 async def test_executor_execute_task_response():
-    """Executor handles ClientEvent (Task) responses with artifacts."""
+    """Executor handles UpdateEvent responses with artifacts."""
     agent = TaskResponseAgent(id="task-agent")
     executor = ShermaAgentExecutor(agent)
 
@@ -268,49 +262,40 @@ class StreamingArtifactAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         task = Task(
             id="task-stream",
             context_id="ctx-stream",
             status=TaskStatus(state=TaskState.working),
         )
         # First chunk
-        yield (
-            task,
-            TaskArtifactUpdateEvent(
-                task_id=task.id,
-                context_id=task.context_id,
-                artifact=Artifact(
-                    artifact_id="art-stream",
-                    parts=[Part(root=TextPart(text="chunk-1"))],
-                ),
-                append=False,
-                last_chunk=False,
+        yield TaskArtifactUpdateEvent(
+            task_id=task.id,
+            context_id=task.context_id,
+            artifact=Artifact(
+                artifact_id="art-stream",
+                parts=[Part(root=TextPart(text="chunk-1"))],
             ),
+            append=False,
+            last_chunk=False,
         )
         # Second chunk (append)
-        yield (
-            task,
-            TaskArtifactUpdateEvent(
-                task_id=task.id,
-                context_id=task.context_id,
-                artifact=Artifact(
-                    artifact_id="art-stream",
-                    parts=[Part(root=TextPart(text="chunk-2"))],
-                ),
-                append=True,
-                last_chunk=True,
+        yield TaskArtifactUpdateEvent(
+            task_id=task.id,
+            context_id=task.context_id,
+            artifact=Artifact(
+                artifact_id="art-stream",
+                parts=[Part(root=TextPart(text="chunk-2"))],
             ),
+            append=True,
+            last_chunk=True,
         )
         # Final status
-        yield (
-            task,
-            TaskStatusUpdateEvent(
-                task_id=task.id,
-                context_id=task.context_id,
-                status=TaskStatus(state=TaskState.completed),
-                final=True,
-            ),
+        yield TaskStatusUpdateEvent(
+            task_id=task.id,
+            context_id=task.context_id,
+            status=TaskStatus(state=TaskState.completed),
+            final=True,
         )
 
     async def cancel_task(
@@ -367,7 +352,7 @@ async def test_executor_execute_streaming_artifacts():
 
 
 class NullUpdateAgent(Agent):
-    """Agent that yields (task, None) — initial task creation event."""
+    """Agent that yields a Task — initial task creation event."""
 
     async def send_message(
         self,
@@ -376,13 +361,13 @@ class NullUpdateAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         task = Task(
             id="task-null",
             context_id="ctx-null",
             status=TaskStatus(state=TaskState.working),
         )
-        yield (task, None)
+        yield task
 
     async def cancel_task(
         self,
@@ -400,7 +385,7 @@ class NullUpdateAgent(Agent):
 
 @pytest.mark.asyncio
 async def test_executor_execute_null_update_event():
-    """Executor handles (task, None) events without emitting extra events."""
+    """Executor handles Task events without emitting extra events."""
     agent = NullUpdateAgent(id="null-agent")
     executor = ShermaAgentExecutor(agent)
 

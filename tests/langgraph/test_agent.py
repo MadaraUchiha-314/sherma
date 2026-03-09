@@ -6,7 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from a2a.client.client import ClientEvent
+from a2a.client.client import UpdateEvent
 from a2a.types import (
     Message,
     Part,
@@ -59,7 +59,7 @@ async def test_send_message_normal_response():
     agent = MockLangGraphAgent(graph=graph, id="test-agent")
     request = _make_message("hello")
 
-    events: list[ClientEvent | Message] = []
+    events: list[UpdateEvent | Message | Task] = []
     async for event in agent.send_message(request):
         events.append(event)
 
@@ -84,26 +84,22 @@ async def test_send_message_single_interrupt():
     agent = MockLangGraphAgent(graph=graph, id="test-agent")
     request = _make_message("hello", task_id="t1", context_id="ctx1")
 
-    events: list[ClientEvent | Message] = []
+    events: list[UpdateEvent | Message | Task] = []
     async for event in agent.send_message(request):
         events.append(event)
 
     assert len(events) == 1
     event = events[0]
-    # Should be a ClientEvent tuple
-    assert isinstance(event, tuple)
-    task, update = event
-    assert isinstance(task, Task)
-    assert isinstance(update, TaskStatusUpdateEvent)
-    assert update.status.state == TaskState.input_required
-    assert update.final is False
+    assert isinstance(event, TaskStatusUpdateEvent)
+    assert event.status.state == TaskState.input_required
+    assert event.final is False
     # Message should have one part with the interrupt value
-    assert update.status.message is not None
-    assert len(update.status.message.parts) == 1
-    assert update.status.message.parts[0].root.text == "What is your name?"  # type: ignore[union-attr]
+    assert event.status.message is not None
+    assert len(event.status.message.parts) == 1
+    assert event.status.message.parts[0].root.text == "What is your name?"  # type: ignore[union-attr]
     # task_id and context_id should be forwarded
-    assert update.task_id == "t1"
-    assert update.context_id == "ctx1"
+    assert event.task_id == "t1"
+    assert event.context_id == "ctx1"
 
 
 @pytest.mark.asyncio
@@ -123,12 +119,12 @@ async def test_send_message_multiple_interrupts():
     agent = MockLangGraphAgent(graph=graph, id="test-agent")
     request = _make_message("hello", task_id="t1", context_id="ctx1")
 
-    events: list[ClientEvent | Message] = []
+    events: list[UpdateEvent | Message | Task] = []
     async for event in agent.send_message(request):
         events.append(event)
 
     assert len(events) == 1
-    _task, update = events[0]
+    update = events[0]
     assert isinstance(update, TaskStatusUpdateEvent)
     assert update.status.state == TaskState.input_required
     # Two parts — one per interrupt
@@ -148,7 +144,7 @@ async def test_send_message_no_messages():
     agent = MockLangGraphAgent(graph=graph, id="test-agent")
     request = _make_message("hello")
 
-    events: list[ClientEvent | Message] = []
+    events: list[UpdateEvent | Message | Task] = []
     async for event in agent.send_message(request):
         events.append(event)
 

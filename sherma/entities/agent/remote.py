@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from a2a.client import Client, ClientConfig, ClientFactory
-from a2a.client.client import ClientEvent
+from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.types import (
     AgentCard,
@@ -58,7 +58,7 @@ class RemoteAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         """Send a message via the A2A client and yield response events."""
         client = await self._get_or_create_client()
         async for event in client.send_message(
@@ -67,7 +67,15 @@ class RemoteAgent(Agent):
             request_metadata=request_metadata,
             extensions=extensions,
         ):
-            yield event
+            if isinstance(event, Message):
+                yield event
+            else:
+                # ClientEvent is tuple[Task, UpdateEvent]
+                task, update = event
+                if update is None:
+                    yield task
+                else:
+                    yield update
 
     async def cancel_task(
         self,

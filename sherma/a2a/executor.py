@@ -66,31 +66,27 @@ class ShermaAgentExecutor(AgentExecutor):
             has_events = True
             if isinstance(event, Message):
                 await task_updater.complete(message=event)
-            else:
-                # ClientEvent is tuple[Task, UpdateEvent]
-                _task, update = event
-                if isinstance(update, TaskArtifactUpdateEvent):
-                    artifact = update.artifact
-                    await task_updater.add_artifact(
-                        parts=artifact.parts,
-                        artifact_id=artifact.artifact_id,
-                        name=artifact.name,
-                        metadata=artifact.metadata,
-                        append=update.append,
-                        last_chunk=update.last_chunk,
-                    )
-                elif isinstance(update, TaskStatusUpdateEvent):
-                    await task_updater.update_status(
-                        state=update.status.state,
-                        message=update.status.message,
-                        final=update.final,
-                    )
-                else:
-                    # update is None — initial task creation event
-                    logger.debug(
-                        "Received initial task event for task=%s",
-                        _task.id,
-                    )
+            elif isinstance(event, Task):
+                logger.debug(
+                    "Received initial task event for task=%s",
+                    event.id,
+                )
+            elif isinstance(event, TaskArtifactUpdateEvent):
+                artifact = event.artifact
+                await task_updater.add_artifact(
+                    parts=artifact.parts,
+                    artifact_id=artifact.artifact_id,
+                    name=artifact.name,
+                    metadata=artifact.metadata,
+                    append=event.append,
+                    last_chunk=event.last_chunk,
+                )
+            elif isinstance(event, TaskStatusUpdateEvent):
+                await task_updater.update_status(
+                    state=event.status.state,
+                    message=event.status.message,
+                    final=event.final,
+                )
 
         if not has_events:
             await task_updater.complete()

@@ -6,7 +6,7 @@ class LocalAgent(Agent):
 
     Subclass and implement:
     - ``send_message(request, *, context, request_metadata, extensions)``
-      → async iterator of ``ClientEvent | Message``
+      → async iterator of ``UpdateEvent | Message | Task``
     - ``cancel_task(request, *, context, extensions)`` → ``Task``
     """
 

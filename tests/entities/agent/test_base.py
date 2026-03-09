@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from a2a.client.client import ClientEvent
+from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.types import (
     Message,
@@ -34,7 +34,7 @@ class ConcreteAgent(Agent):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         yield Message(
             message_id="resp-1",
             parts=[Part(root=TextPart(text=f"echo: {request.parts[0].root.text}"))],

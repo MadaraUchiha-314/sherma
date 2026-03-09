@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
 
-from a2a.client.client import ClientEvent
+from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.types import (
     AgentCard,
@@ -27,7 +27,7 @@ class Agent(EntityBase, ABC):
         context: ClientCallContext | None = None,
         request_metadata: dict[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[ClientEvent | Message]:
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
         """Send a message to the agent and yield response events."""
         ...
 
