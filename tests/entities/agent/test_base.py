@@ -1,16 +1,58 @@
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
+from a2a.client.client import ClientEvent
+from a2a.client.middleware import ClientCallContext
+from a2a.types import (
+    Message,
+    Part,
+    Role,
+    Task,
+    TaskIdParams,
+    TaskState,
+    TaskStatus,
+    TextPart,
+)
 
 from sherma.entities.agent.base import Agent
 
 
-class ConcreteAgent(Agent):
-    async def send_message(self, message: Any) -> Any:
-        return f"echo: {message}"
+def _make_message(text: str, message_id: str = "m1") -> Message:
+    return Message(
+        message_id=message_id,
+        parts=[Part(root=TextPart(text=text))],
+        role=Role.user,
+    )
 
-    async def cancel_task(self, task_id: str) -> None:
-        pass
+
+class ConcreteAgent(Agent):
+    async def send_message(
+        self,
+        request: Message,
+        *,
+        context: ClientCallContext | None = None,
+        request_metadata: dict[str, Any] | None = None,
+        extensions: list[str] | None = None,
+    ) -> AsyncIterator[ClientEvent | Message]:
+        yield Message(
+            message_id="resp-1",
+            parts=[Part(root=TextPart(text=f"echo: {request.parts[0].root.text}"))],
+            role=Role.agent,
+        )
+
+    async def cancel_task(
+        self,
+        request: TaskIdParams,
+        *,
+        context: ClientCallContext | None = None,
+        extensions: list[str] | None = None,
+    ) -> Task:
+        return Task(
+            id=request.id,
+            context_id="ctx-1",
+            status=TaskStatus(state=TaskState.canceled),
+        )
 
 
 def test_agent_creation():
@@ -22,8 +64,10 @@ def test_agent_creation():
 @pytest.mark.asyncio
 async def test_agent_send_message():
     a = ConcreteAgent(id="test-agent")
-    result = await a.send_message("hello")
-    assert result == "echo: hello"
+    msg = _make_message("hello")
+    results = [event async for event in a.send_message(msg)]
+    assert len(results) == 1
+    assert isinstance(results[0], Message)
 
 
 @pytest.mark.asyncio

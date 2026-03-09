@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from langfuse.langchain import CallbackHandler
+
 
 def get_langfuse_config(
     *,
@@ -14,15 +16,6 @@ def get_langfuse_config(
 
     Returns a config suitable for passing to graph.ainvoke(input, config=...).
     """
-    try:
-        from langfuse.callback import CallbackHandler
-    except ImportError as e:
-        msg = (
-            "langfuse is required for tracing. "
-            "Install with: pip install sherma[langfuse]"
-        )
-        raise ImportError(msg) from e
-
     handler_kwargs: dict[str, Any] = {}
     if public_key is not None:
         handler_kwargs["public_key"] = public_key

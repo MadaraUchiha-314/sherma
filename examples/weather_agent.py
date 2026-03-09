@@ -203,17 +203,23 @@ async def main() -> None:
 
     agent = WeatherAgent(id="weather-agent", version="1.0.0", api_key=api_key)
 
-    message = {
-        "role": "user",
-        "parts": [{"kind": "text", "text": query}],
-    }
+    from a2a.types import Message as A2AMessage
+    from a2a.types import Part, Role, TextPart
 
-    result = await agent.send_message(message)
-    if result and "parts" in result:
-        for part in result["parts"]:
-            if part.get("kind") == "text":
-                print(part["text"])
-    else:
+    message = A2AMessage(
+        message_id="user-1",
+        parts=[Part(root=TextPart(text=query))],
+        role=Role.user,
+    )
+
+    received = False
+    async for event in agent.send_message(message):
+        if isinstance(event, A2AMessage):
+            for part in event.parts:
+                if part.root.kind == "text":
+                    print(part.root.text)
+                    received = True
+    if not received:
         print("No response received.")
 
 
