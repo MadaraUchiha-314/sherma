@@ -6,6 +6,7 @@ from sherma.exceptions import (
     EntityNotFoundError,
     RegistryError,
     RemoteEntityError,
+    SchemaValidationError,
     ShermaError,
     VersionNotFoundError,
 )
@@ -18,10 +19,21 @@ from sherma.registry import (
     SkillRegistry,
     ToolRegistry,
 )
+from sherma.schema import (
+    SCHEMA_INPUT_URI,
+    SCHEMA_OUTPUT_URI,
+    create_agent_output_as_message_part,
+    get_agent_input_from_message_part,
+    make_schema_data_part,
+    schema_to_extension,
+    validate_data,
+)
 from sherma.types import EntityType, Markdown, Protocol
 
 __all__ = [
     "LLM",
+    "SCHEMA_INPUT_URI",
+    "SCHEMA_OUTPUT_URI",
     "Agent",
     "AgentRegistry",
     "EntityBase",
@@ -38,6 +50,7 @@ __all__ = [
     "RegistryError",
     "RemoteAgent",
     "RemoteEntityError",
+    "SchemaValidationError",
     "ShermaError",
     "Skill",
     "SkillFrontMatter",
@@ -45,4 +58,9 @@ __all__ = [
     "Tool",
     "ToolRegistry",
     "VersionNotFoundError",
+    "create_agent_output_as_message_part",
+    "get_agent_input_from_message_part",
+    "make_schema_data_part",
+    "schema_to_extension",
+    "validate_data",
 ]

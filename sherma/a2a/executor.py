@@ -16,6 +16,7 @@ from a2a.utils.task import new_task
 
 from sherma.entities.agent.base import Agent
 from sherma.logging import get_logger
+from sherma.schema import validate_data
 
 logger = get_logger(__name__)
 
@@ -60,11 +61,22 @@ class ShermaAgentExecutor(AgentExecutor):
         message.task_id = task.id
         message.context_id = task.context_id
 
+        # Validate incoming DataParts against input_schema
+        if self.agent.input_schema is not None:
+            for part in message.parts:
+                if part.root.kind == "data":
+                    validate_data(part.root.data, self.agent.input_schema)
+
         # Call agent and process responses
         has_events = False
         async for event in self.agent.send_message(message):
             has_events = True
             if isinstance(event, Message):
+                # Validate outgoing DataParts against output_schema
+                if self.agent.output_schema is not None:
+                    for part in event.parts:
+                        if part.root.kind == "data":
+                            validate_data(part.root.data, self.agent.output_schema)
                 await task_updater.complete(message=event)
             elif isinstance(event, Task):
                 logger.debug(
