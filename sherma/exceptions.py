@@ -38,3 +38,15 @@ class RemoteEntityError(ShermaError):
         if reason:
             msg += f": {reason}"
         super().__init__(msg)
+
+
+class DeclarativeConfigError(ShermaError):
+    """Raised when a declarative YAML config is invalid."""
+
+
+class CelEvaluationError(ShermaError):
+    """Raised when a CEL expression fails to evaluate."""
+
+
+class GraphConstructionError(ShermaError):
+    """Raised when building a LangGraph from declarative config fails."""
