@@ -10,9 +10,22 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
 authors = [{ name = "Rohith Ramakrishnan" }]
+dependencies = [
+  "httpx>=0.28.1",
+  "pydantic>=2.11.0",
+  "packaging>=24.0",
+]
+
+[project.optional-dependencies]
+a2a = ["a2a-sdk>=0.3.0"]
+langgraph = ["langgraph>=0.4.0", "langchain-core>=0.3.0"]
+langfuse = ["langfuse>=3.0.0"]
+mcp = ["mcp>=1.0.0"]
+examples = ["sherma[langgraph]", "langchain-openai>=0.3.0"]
+all = ["sherma[a2a,langgraph,langfuse,mcp]"]
 
 [dependency-groups]
-dev = ["ruff", "pyright", "pytest", "pre-commit", "commitizen"]
+dev = ["ruff", "pyright", "pytest", "pytest-asyncio", "pre-commit", "commitizen", "pyyaml", "sherma[examples]"]
 
 [tool.ruff]
 target-version = "py313"
@@ -20,10 +33,12 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "RUF"]
+ignore = ["UP046"]
 
 [tool.pyright]
 typeCheckingMode = "standard"
 include = ["sherma/"]
+reportMissingImports = "warning"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
