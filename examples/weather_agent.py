@@ -15,14 +15,13 @@ import json
 import sys
 from pathlib import Path
 
-import httpx
-from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import ConfigDict, Field
 
+from examples.tools import get_weather
 from sherma.entities.llm import LLM
 from sherma.entities.prompt import Prompt
 from sherma.entities.tool import Tool
@@ -31,71 +30,6 @@ from sherma.registry.base import RegistryEntry
 from sherma.registry.llm import LLMRegistry
 from sherma.registry.prompt import PromptRegistry
 from sherma.registry.tool import ToolRegistry
-
-_WMO_CODES: dict[int, str] = {
-    0: "Clear sky",
-    1: "Mainly clear",
-    2: "Partly cloudy",
-    3: "Overcast",
-    45: "Fog",
-    48: "Depositing rime fog",
-    51: "Light drizzle",
-    53: "Moderate drizzle",
-    55: "Dense drizzle",
-    61: "Slight rain",
-    63: "Moderate rain",
-    65: "Heavy rain",
-    71: "Slight snow",
-    73: "Moderate snow",
-    75: "Heavy snow",
-    80: "Slight rain showers",
-    81: "Moderate rain showers",
-    82: "Violent rain showers",
-    95: "Thunderstorm",
-    96: "Thunderstorm with slight hail",
-    99: "Thunderstorm with heavy hail",
-}
-
-
-@tool
-def get_weather(city: str) -> str:
-    """Get the current weather for a city using Open-Meteo (free, no API key)."""
-    # Geocode the city name to lat/lon
-    geo_url = "https://geocoding-api.open-meteo.com/v1/search"
-    geo_resp = httpx.get(geo_url, params={"name": city, "count": 1}, timeout=15)
-    geo_resp.raise_for_status()
-    geo_data = geo_resp.json()
-
-    results = geo_data.get("results")
-    if not results:
-        return f"Could not find location: {city}"
-
-    loc = results[0]
-    lat, lon = loc["latitude"], loc["longitude"]
-    name = loc.get("name", city)
-    country = loc.get("country", "")
-
-    # Fetch current weather
-    weather_url = "https://api.open-meteo.com/v1/forecast"
-    weather_resp = httpx.get(
-        weather_url,
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "current_weather": "true",
-        },
-        timeout=15,
-    )
-    weather_resp.raise_for_status()
-    current = weather_resp.json().get("current_weather", {})
-
-    temp = current.get("temperature", "N/A")
-    windspeed = current.get("windspeed", "N/A")
-    code = current.get("weathercode", -1)
-    condition = _WMO_CODES.get(code, "Unknown")
-
-    return f"{name}, {country}: {condition}, {temp}°C, wind {windspeed} km/h"
-
 
 SYSTEM_PROMPT = (
     "You are a helpful weather assistant. "

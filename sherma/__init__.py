@@ -3,12 +3,20 @@ __version__ = "0.4.0"
 from sherma.entities import LLM, EntityBase, Prompt, Skill, SkillFrontMatter, Tool
 from sherma.entities.agent import Agent, LocalAgent, RemoteAgent
 from sherma.exceptions import (
+    CelEvaluationError,
+    DeclarativeConfigError,
     EntityNotFoundError,
+    GraphConstructionError,
     RegistryError,
     RemoteEntityError,
     SchemaValidationError,
     ShermaError,
     VersionNotFoundError,
+)
+from sherma.langgraph.declarative import (
+    DeclarativeAgent,
+    DeclarativeConfig,
+    load_declarative_config,
 )
 from sherma.registry import (
     AgentRegistry,
@@ -38,9 +46,14 @@ __all__ = [
     "SCHEMA_OUTPUT_URI",
     "Agent",
     "AgentRegistry",
+    "CelEvaluationError",
+    "DeclarativeAgent",
+    "DeclarativeConfig",
+    "DeclarativeConfigError",
     "EntityBase",
     "EntityNotFoundError",
     "EntityType",
+    "GraphConstructionError",
     "LLMRegistry",
     "LocalAgent",
     "Markdown",
@@ -64,6 +77,7 @@ __all__ = [
     "create_agent_output_as_message_part",
     "get_agent_input_from_message_part",
     "get_agent_output_from_message_part",
+    "load_declarative_config",
     "make_schema_data_part",
     "schema_to_extension",
     "validate_data",
