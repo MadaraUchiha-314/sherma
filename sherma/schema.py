@@ -27,9 +27,17 @@ def schema_to_extension(uri: str, schema_model: type[BaseModel]) -> AgentExtensi
     )
 
 
-def make_schema_data_part(data: dict[str, Any], schema_uri: str) -> Part:
+def make_schema_data_part(
+    data: dict[str, Any],
+    schema_uri: str,
+    *,
+    extra_metadata: dict[str, Any] | None = None,
+) -> Part:
     """Create a DataPart with schema_uri in metadata."""
-    return Part(root=DataPart(data=data, metadata={"schema_uri": schema_uri}))
+    metadata: dict[str, Any] = {"schema_uri": schema_uri}
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return Part(root=DataPart(data=data, metadata=metadata))
 
 
 def validate_data[T: BaseModel](data: dict[str, Any], schema_model: type[T]) -> T:
@@ -44,20 +52,90 @@ def validate_data[T: BaseModel](data: dict[str, Any], schema_model: type[T]) -> 
         raise SchemaValidationError(str(exc)) from exc
 
 
+def _find_data_part_with_marker(message: Message, marker: str) -> DataPart | None:
+    """Find the first DataPart in a message that has a boolean marker in metadata."""
+    for part in message.parts:
+        root = part.root
+        if (
+            isinstance(root, DataPart)
+            and root.metadata is not None
+            and root.metadata.get(marker) is True
+        ):
+            return root
+    return None
+
+
 def get_agent_input_from_message_part[T: BaseModel](
     message: Message, schema_model: type[T]
 ) -> T:
-    """Extract and validate the first DataPart from a message.
+    """Extract and validate the first agent-input DataPart from a message.
 
-    Scans message parts for the first DataPart, validates its data against
-    the given schema model, and returns a typed instance.
+    Scans message parts for the first DataPart with ``agent_input: true``
+    in its metadata, validates its data against the given schema model,
+    and returns a typed instance.
 
-    Raises SchemaValidationError if no DataPart is found or validation fails.
+    Raises SchemaValidationError if no matching DataPart is found or
+    validation fails.
     """
-    for part in message.parts:
-        if part.root.kind == "data":
-            return validate_data(part.root.data, schema_model)
-    raise SchemaValidationError("No DataPart found in message")
+    data_part = _find_data_part_with_marker(message, "agent_input")
+    if data_part is not None:
+        return validate_data(data_part.data, schema_model)
+    raise SchemaValidationError("No agent-input DataPart found in message")
+
+
+def get_agent_output_from_message_part[T: BaseModel](
+    message: Message, schema_model: type[T]
+) -> T:
+    """Extract and validate the first agent-output DataPart from a message.
+
+    Scans message parts for the first DataPart with ``agent_output: true``
+    in its metadata, validates its data against the given schema model,
+    and returns a typed instance.
+
+    Raises SchemaValidationError if no matching DataPart is found or
+    validation fails.
+    """
+    data_part = _find_data_part_with_marker(message, "agent_output")
+    if data_part is not None:
+        return validate_data(data_part.data, schema_model)
+    raise SchemaValidationError("No agent-output DataPart found in message")
+
+
+def _dump_data(data: BaseModel | dict[str, Any]) -> dict[str, Any]:
+    """Dump a Pydantic model to a dict, or return the dict as-is."""
+    if isinstance(data, BaseModel):
+        return data.model_dump()
+    return data
+
+
+def create_agent_input_as_message_part(
+    data: BaseModel | dict[str, Any],
+    schema_uri: str,
+    *,
+    role: Role = Role.user,
+    message_id: str | None = None,
+    task_id: str | None = None,
+    context_id: str | None = None,
+) -> Message:
+    """Create a Message containing a single agent-input DataPart.
+
+    Accepts a Pydantic model (auto-dumped) or a dict. Wraps the data in a
+    DataPart with ``agent_input: true`` in metadata and returns a complete
+    A2A Message.
+    """
+    return Message(
+        message_id=message_id or str(uuid.uuid4()),
+        role=role,
+        parts=[
+            make_schema_data_part(
+                _dump_data(data),
+                schema_uri,
+                extra_metadata={"agent_input": True},
+            )
+        ],
+        task_id=task_id,
+        context_id=context_id,
+    )
 
 
 def create_agent_output_as_message_part(
@@ -69,20 +147,22 @@ def create_agent_output_as_message_part(
     task_id: str | None = None,
     context_id: str | None = None,
 ) -> Message:
-    """Create a Message containing a single DataPart.
+    """Create a Message containing a single agent-output DataPart.
 
     Accepts a Pydantic model (auto-dumped) or a dict. Wraps the data in a
-    DataPart with schema_uri metadata and returns a complete A2A Message.
+    DataPart with ``agent_output: true`` in metadata and returns a complete
+    A2A Message.
     """
-    if isinstance(data, BaseModel):
-        data_dict = data.model_dump()
-    else:
-        data_dict = data
-
     return Message(
         message_id=message_id or str(uuid.uuid4()),
         role=role,
-        parts=[make_schema_data_part(data_dict, schema_uri)],
+        parts=[
+            make_schema_data_part(
+                _dump_data(data),
+                schema_uri,
+                extra_metadata={"agent_output": True},
+            )
+        ],
         task_id=task_id,
         context_id=context_id,
     )

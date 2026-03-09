@@ -6,6 +6,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import (
+    DataPart,
     Message,
     Task,
     TaskArtifactUpdateEvent,
@@ -64,7 +65,11 @@ class ShermaAgentExecutor(AgentExecutor):
         # Validate incoming DataParts against input_schema
         if self.agent.input_schema is not None:
             for part in message.parts:
-                if part.root.kind == "data":
+                if (
+                    isinstance(part.root, DataPart)
+                    and part.root.metadata is not None
+                    and part.root.metadata.get("agent_input") is True
+                ):
                     validate_data(part.root.data, self.agent.input_schema)
 
         # Call agent and process responses
@@ -75,7 +80,11 @@ class ShermaAgentExecutor(AgentExecutor):
                 # Validate outgoing DataParts against output_schema
                 if self.agent.output_schema is not None:
                     for part in event.parts:
-                        if part.root.kind == "data":
+                        if (
+                            isinstance(part.root, DataPart)
+                            and part.root.metadata is not None
+                            and part.root.metadata.get("agent_output") is True
+                        ):
                             validate_data(part.root.data, self.agent.output_schema)
                 await task_updater.complete(message=event)
             elif isinstance(event, Task):

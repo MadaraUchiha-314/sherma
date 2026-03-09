@@ -10,8 +10,10 @@ from sherma.exceptions import SchemaValidationError
 from sherma.schema import (
     SCHEMA_INPUT_URI,
     SCHEMA_OUTPUT_URI,
+    create_agent_input_as_message_part,
     create_agent_output_as_message_part,
     get_agent_input_from_message_part,
+    get_agent_output_from_message_part,
     make_schema_data_part,
     schema_to_extension,
     validate_data,
@@ -52,6 +54,17 @@ def test_make_schema_data_part():
     assert root.metadata == {"schema_uri": SCHEMA_INPUT_URI}
 
 
+def test_make_schema_data_part_with_extra_metadata():
+    part = make_schema_data_part(
+        {"name": "test", "value": 42},
+        SCHEMA_INPUT_URI,
+        extra_metadata={"agent_input": True},
+    )
+    root = part.root
+    assert root.kind == "data"
+    assert root.metadata == {"schema_uri": SCHEMA_INPUT_URI, "agent_input": True}
+
+
 def test_validate_data_success():
     result = validate_data({"name": "test", "value": 42}, SampleInput)
     assert isinstance(result, SampleInput)
@@ -77,9 +90,19 @@ def _make_message(*parts: Part, role: Role = Role.user) -> Message:
     )
 
 
-class TestExtractData:
+def _input_data_part(data: dict) -> Part:
+    """Create a DataPart tagged as agent input."""
+    return Part(root=DataPart(data=data, metadata={"agent_input": True}))
+
+
+def _output_data_part(data: dict) -> Part:
+    """Create a DataPart tagged as agent output."""
+    return Part(root=DataPart(data=data, metadata={"agent_output": True}))
+
+
+class TestExtractInput:
     def test_get_agent_input_from_message_part_success(self):
-        msg = _make_message(Part(root=DataPart(data={"name": "alice", "value": 7})))
+        msg = _make_message(_input_data_part({"name": "alice", "value": 7}))
         result = get_agent_input_from_message_part(msg, SampleInput)
         assert isinstance(result, SampleInput)
         assert result.name == "alice"
@@ -87,26 +110,95 @@ class TestExtractData:
 
     def test_get_agent_input_from_message_part_no_data_part(self):
         msg = _make_message(Part(root=TextPart(text="hello")))
-        with pytest.raises(SchemaValidationError, match="No DataPart found"):
+        with pytest.raises(SchemaValidationError, match="No agent-input DataPart"):
             get_agent_input_from_message_part(msg, SampleInput)
 
     def test_get_agent_input_from_message_part_invalid_data(self):
-        msg = _make_message(Part(root=DataPart(data={"name": "alice", "value": "bad"})))
+        msg = _make_message(_input_data_part({"name": "alice", "value": "bad"}))
         with pytest.raises(SchemaValidationError):
             get_agent_input_from_message_part(msg, SampleInput)
 
     def test_get_agent_input_from_message_part_multiple_parts(self):
         msg = _make_message(
             Part(root=TextPart(text="ignore me")),
-            Part(root=DataPart(data={"name": "first", "value": 1})),
-            Part(root=DataPart(data={"name": "second", "value": 2})),
+            _input_data_part({"name": "first", "value": 1}),
+            _input_data_part({"name": "second", "value": 2}),
         )
         result = get_agent_input_from_message_part(msg, SampleInput)
         assert result.name == "first"
         assert result.value == 1
 
+    def test_get_agent_input_skips_unmarked_data_part(self):
+        """A DataPart without agent_input metadata is ignored."""
+        msg = _make_message(
+            Part(root=DataPart(data={"name": "plain", "value": 99})),
+            _input_data_part({"name": "marked", "value": 1}),
+        )
+        result = get_agent_input_from_message_part(msg, SampleInput)
+        assert result.name == "marked"
 
-class TestMakeDataMessage:
+    def test_get_agent_input_raises_when_only_unmarked(self):
+        """Only unmarked DataParts → should raise."""
+        msg = _make_message(
+            Part(root=DataPart(data={"name": "plain", "value": 99})),
+        )
+        with pytest.raises(SchemaValidationError, match="No agent-input DataPart"):
+            get_agent_input_from_message_part(msg, SampleInput)
+
+
+class TestExtractOutput:
+    def test_get_agent_output_from_message_part_success(self):
+        msg = _make_message(
+            _output_data_part({"result": "done"}),
+            role=Role.agent,
+        )
+        result = get_agent_output_from_message_part(msg, SampleOutput)
+        assert isinstance(result, SampleOutput)
+        assert result.result == "done"
+
+    def test_get_agent_output_from_message_part_no_data_part(self):
+        msg = _make_message(Part(root=TextPart(text="hello")))
+        with pytest.raises(SchemaValidationError, match="No agent-output DataPart"):
+            get_agent_output_from_message_part(msg, SampleOutput)
+
+    def test_get_agent_output_skips_unmarked_data_part(self):
+        msg = _make_message(
+            Part(root=DataPart(data={"result": "plain"})),
+            _output_data_part({"result": "marked"}),
+        )
+        result = get_agent_output_from_message_part(msg, SampleOutput)
+        assert result.result == "marked"
+
+
+class TestMakeInputMessage:
+    def test_create_agent_input_from_model(self):
+        model = SampleInput(name="alice", value=7)
+        msg = create_agent_input_as_message_part(model, SCHEMA_INPUT_URI)
+        assert msg.role == Role.user
+        assert len(msg.parts) == 1
+        root = msg.parts[0].root
+        assert root.kind == "data"
+        assert root.data == {"name": "alice", "value": 7}
+        assert root.metadata["schema_uri"] == SCHEMA_INPUT_URI
+        assert root.metadata["agent_input"] is True
+
+    def test_create_agent_input_from_dict(self):
+        msg = create_agent_input_as_message_part(
+            {"name": "bob", "value": 3}, SCHEMA_INPUT_URI
+        )
+        root = msg.parts[0].root
+        assert root.data == {"name": "bob", "value": 3}
+        assert root.metadata["agent_input"] is True
+
+    def test_create_agent_input_defaults(self):
+        msg = create_agent_input_as_message_part({"x": 1}, SCHEMA_INPUT_URI)
+        assert msg.role == Role.user
+        uuid.UUID(msg.message_id)  # valid uuid
+        assert msg.task_id is None
+        assert msg.context_id is None
+
+
+class TestMakeOutputMessage:
     def test_create_agent_output_as_message_part_from_model(self):
         model = SampleOutput(result="done")
         msg = create_agent_output_as_message_part(model, SCHEMA_OUTPUT_URI)
@@ -115,13 +207,15 @@ class TestMakeDataMessage:
         root = msg.parts[0].root
         assert root.kind == "data"
         assert root.data == {"result": "done"}
-        assert root.metadata == {"schema_uri": SCHEMA_OUTPUT_URI}
+        assert root.metadata["schema_uri"] == SCHEMA_OUTPUT_URI
+        assert root.metadata["agent_output"] is True
 
     def test_create_agent_output_as_message_part_from_dict(self):
         msg = create_agent_output_as_message_part({"result": "ok"}, SCHEMA_OUTPUT_URI)
         root = msg.parts[0].root
         assert root.kind == "data"
         assert root.data == {"result": "ok"}
+        assert root.metadata["agent_output"] is True
 
     def test_create_agent_output_as_message_part_defaults(self):
         msg = create_agent_output_as_message_part({"x": 1}, SCHEMA_INPUT_URI)
