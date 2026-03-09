@@ -554,6 +554,20 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain"
+version = "1.2.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "langgraph" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/16/22/a4d4ac98fc2e393537130bbfba0d71a8113e6f884d96f935923e247397fe/langchain-1.2.10.tar.gz", hash = "sha256:bdcd7218d9c79a413cf15e106e4eb94408ac0963df9333ccd095b9ed43bf3be7", size = 570071, upload-time = "2026-02-10T14:56:49.74Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/06/c3394327f815fade875724c0f6cff529777c96a1e17fea066deb997f8cf5/langchain-1.2.10-py3-none-any.whl", hash = "sha256:e07a377204451fffaed88276b8193e894893b1003e25c5bca6539288ccca3698", size = 111738, upload-time = "2026-02-10T14:56:47.985Z" },
+]
+
+[[package]]
 name = "langchain-core"
 version = "1.2.17"
 source = { registry = "https://pypi.org/simple" }
@@ -1507,36 +1521,20 @@ wheels = [
 name = "sherma"
 source = { editable = "." }
 dependencies = [
+    { name = "a2a-sdk" },
     { name = "httpx" },
+    { name = "langchain" },
+    { name = "langchain-core" },
+    { name = "langfuse" },
+    { name = "langgraph" },
+    { name = "mcp" },
     { name = "packaging" },
     { name = "pydantic" },
 ]
 
 [package.optional-dependencies]
-a2a = [
-    { name = "a2a-sdk" },
-]
-all = [
-    { name = "a2a-sdk" },
-    { name = "langchain-core" },
-    { name = "langfuse" },
-    { name = "langgraph" },
-    { name = "mcp" },
-]
 examples = [
-    { name = "langchain-core" },
     { name = "langchain-openai" },
-    { name = "langgraph" },
-]
-langfuse = [
-    { name = "langfuse" },
-]
-langgraph = [
-    { name = "langchain-core" },
-    { name = "langgraph" },
-]
-mcp = [
-    { name = "mcp" },
 ]
 
 [package.dev-dependencies]
@@ -1553,24 +1551,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", marker = "extra == 'a2a'", specifier = ">=0.3.0" },
-    { name = "a2a-sdk", marker = "extra == 'all'", specifier = ">=0.3.0" },
+    { name = "a2a-sdk", specifier = ">=0.3.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "langchain-core", marker = "extra == 'all'", specifier = ">=0.3.0" },
-    { name = "langchain-core", marker = "extra == 'examples'", specifier = ">=0.3.0" },
-    { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=0.3.0" },
+    { name = "langchain", specifier = ">=0.3.0" },
+    { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langchain-openai", marker = "extra == 'examples'", specifier = ">=0.3.0" },
-    { name = "langfuse", marker = "extra == 'all'", specifier = ">=3.0.0" },
-    { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=3.0.0" },
-    { name = "langgraph", marker = "extra == 'all'", specifier = ">=0.4.0" },
-    { name = "langgraph", marker = "extra == 'examples'", specifier = ">=0.4.0" },
-    { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=0.4.0" },
-    { name = "mcp", marker = "extra == 'all'", specifier = ">=1.0.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
+    { name = "langfuse", specifier = ">=3.0.0" },
+    { name = "langgraph", specifier = ">=0.4.0" },
+    { name = "mcp", specifier = ">=1.0.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
 ]
-provides-extras = ["a2a", "all", "examples", "langfuse", "langgraph", "mcp"]
+provides-extras = ["examples"]
 
 [package.metadata.requires-dev]
 dev = [

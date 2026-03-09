@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from langchain_core.tools import BaseTool, StructuredTool
 
 from sherma.entities.tool import Tool
-
-if TYPE_CHECKING:
-    from langchain_core.tools import BaseTool
 
 
 def from_langgraph_tool(base_tool: BaseTool) -> Tool:
@@ -23,19 +20,8 @@ def to_langgraph_tool(tool: Tool) -> BaseTool:
     If the tool's function is already a BaseTool, return it directly.
     Otherwise, wrap the callable using the @tool decorator pattern.
     """
-    try:
-        from langchain_core.tools import BaseTool as LCBaseTool
-    except ImportError as e:
-        msg = (
-            "langchain-core is required for LangGraph tool conversion. "
-            "Install with: pip install sherma[langgraph]"
-        )
-        raise ImportError(msg) from e
-
-    if isinstance(tool.function, LCBaseTool):
+    if isinstance(tool.function, BaseTool):
         return tool.function
-
-    from langchain_core.tools import StructuredTool
 
     return StructuredTool.from_function(
         func=tool.function,
