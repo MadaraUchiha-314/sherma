@@ -1,4 +1,4 @@
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from sherma.entities import LLM, EntityBase, Prompt, Skill, SkillFrontMatter, Tool
 from sherma.entities.agent import Agent, LocalAgent, RemoteAgent
