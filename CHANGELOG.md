@@ -1,3 +1,9 @@
+## v0.5.0 (2026-03-09)
+
+### Feat
+
+- declarative agents using yaml (#5)
+
 ## v0.4.0 (2026-03-09)
 
 ### Feat
