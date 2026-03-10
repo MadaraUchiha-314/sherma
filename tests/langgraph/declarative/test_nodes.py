@@ -7,6 +7,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import AIMessage
 
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.manager import HookManager
+from sherma.hooks.types import (
+    AfterLLMCallContext,
+    BeforeLLMCallContext,
+    NodeEnterContext,
+    NodeExitContext,
+)
 from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.declarative.nodes import (
     INTERNAL_STATE_KEY,
@@ -31,10 +39,12 @@ from sherma.langgraph.declarative.schema import (
 )
 
 
-def _make_ctx(node_def: NodeDef) -> NodeContext:
+def _make_ctx(
+    node_def: NodeDef, hook_manager: HookManager | None = None
+) -> NodeContext:
     """Create a minimal NodeContext for testing."""
     config = DeclarativeConfig()
-    return NodeContext(config=config, node_def=node_def)
+    return NodeContext(config=config, node_def=node_def, hook_manager=hook_manager)
 
 
 @pytest.mark.asyncio
@@ -666,3 +676,135 @@ async def test_build_interrupt_node_with_cel_expression():
     mock_interrupt.assert_called_once_with("Hello Bob, how old are you?")
     assert isinstance(result["messages"][0], HumanMessage)
     assert result["messages"][0].content == "25"
+
+
+# --- Hook integration tests ---
+
+
+@pytest.mark.asyncio
+async def test_call_llm_fires_hooks():
+    """call_llm fires node_enter, before_llm_call, after_llm_call, node_exit."""
+    events: list[str] = []
+
+    class TrackingHook(BaseHookExecutor):
+        async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
+            events.append("node_enter")
+            return None
+
+        async def before_llm_call(
+            self, ctx: BeforeLLMCallContext
+        ) -> BeforeLLMCallContext | None:
+            events.append("before_llm_call")
+            return None
+
+        async def after_llm_call(
+            self, ctx: AfterLLMCallContext
+        ) -> AfterLLMCallContext | None:
+            events.append("after_llm_call")
+            return None
+
+        async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
+            events.append("node_exit")
+            return None
+
+    hook_manager = HookManager()
+    hook_manager.register(TrackingHook())
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"You are helpful"',
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(
+        _make_ctx(node_def, hook_manager=hook_manager), chat_model, cel
+    )
+    await fn({"messages": []})
+
+    assert events == ["node_enter", "before_llm_call", "after_llm_call", "node_exit"]
+
+
+@pytest.mark.asyncio
+async def test_before_llm_call_hook_modifies_prompt():
+    """before_llm_call hook can modify the system prompt."""
+
+    class ModifyPrompt(BaseHookExecutor):
+        async def before_llm_call(
+            self, ctx: BeforeLLMCallContext
+        ) -> BeforeLLMCallContext | None:
+            ctx.system_prompt = "Modified prompt"
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(ModifyPrompt())
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"Original prompt"',
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(
+        _make_ctx(node_def, hook_manager=hook_manager), chat_model, cel
+    )
+    await fn({"messages": []})
+
+    # Check that the LLM was invoked with the modified prompt
+    call_args = chat_model.ainvoke.call_args[0][0]
+
+    assert call_args[0].content == "Modified prompt"
+
+
+@pytest.mark.asyncio
+async def test_node_exit_hook_modifies_result():
+    """node_exit hook can modify the result of a data_transform node."""
+
+    class AddExtra(BaseHookExecutor):
+        async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
+            ctx.result["hook_added"] = True
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(AddExtra())
+
+    node_def = NodeDef(
+        name="transform",
+        type="data_transform",
+        args=DataTransformArgs(expression='{"result": "done"}'),
+    )
+    cel = CelEngine()
+    fn = build_data_transform_node(_make_ctx(node_def, hook_manager=hook_manager), cel)
+    result = await fn({})
+    assert result == {"result": "done", "hook_added": True}
+
+
+@pytest.mark.asyncio
+async def test_no_hooks_when_manager_is_none():
+    """When hook_manager is None, nodes work as before without errors."""
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"You are helpful"',
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    result = await fn({"messages": []})
+    assert result["messages"][0].content == "Hello!"

@@ -13,6 +13,7 @@ from langchain_core.tools import BaseTool
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
+from sherma.hooks.manager import HookManager
 from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.tools import to_langgraph_tool
 from sherma.logging import get_logger
@@ -65,6 +66,7 @@ class NodeContext:
     config: DeclarativeConfig
     node_def: NodeDef
     extra: dict[str, Any] = field(default_factory=dict)
+    hook_manager: HookManager | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +129,22 @@ def build_call_llm_node(
     args: CallLLMArgs = ctx.node_def.args  # type: ignore[assignment]
 
     async def call_llm_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        hooks = _ctx.hook_manager
+
+        # node_enter
+        if hooks:
+            from sherma.hooks.types import NodeEnterContext
+
+            await hooks.run_hook(
+                "node_enter",
+                NodeEnterContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    state=state,
+                ),
+            )
+
         current_tools: list[BaseTool] = []
         if args.use_tools_from_loaded_skills and tool_registry is not None:
             current_tools = await _resolve_skill_tools_from_state(state, tool_registry)
@@ -137,13 +155,33 @@ def build_call_llm_node(
                 args.tools, tool_registry
             )
 
+        prompt_text = cel.evaluate(args.prompt, state)
+        messages = state.get("messages", [])
+
+        # before_llm_call
+        if hooks:
+            from sherma.hooks.types import BeforeLLMCallContext
+
+            before_ctx = await hooks.run_hook(
+                "before_llm_call",
+                BeforeLLMCallContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    messages=messages,
+                    system_prompt=str(prompt_text),
+                    tools=current_tools,
+                    state=state,
+                ),
+            )
+            messages = before_ctx.messages
+            prompt_text = before_ctx.system_prompt
+            current_tools = before_ctx.tools
+
         model: Any = chat_model
         if current_tools:
             model = model.bind_tools(current_tools)
 
-        prompt_text = cel.evaluate(args.prompt, state)
         system_msg = SystemMessage(content=str(prompt_text))
-        messages = state.get("messages", [])
         logger.info(
             "[%s] Invoking LLM (%d tools) with %d messages, system prompt: %.100s...",
             _ctx.node_def.name,
@@ -152,6 +190,22 @@ def build_call_llm_node(
             str(prompt_text),
         )
         response = await model.ainvoke([system_msg, *messages])
+
+        # after_llm_call
+        if hooks:
+            from sherma.hooks.types import AfterLLMCallContext
+
+            after_ctx = await hooks.run_hook(
+                "after_llm_call",
+                AfterLLMCallContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    response=response,
+                    state=state,
+                ),
+            )
+            response = after_ctx.response
+
         content = getattr(response, "content", "")
         tool_calls = getattr(response, "tool_calls", [])
         logger.info(
@@ -168,7 +222,25 @@ def build_call_llm_node(
                     tc.get("name", "?"),
                     tc.get("args", {}),
                 )
-        return {"messages": [response]}
+        result: dict[str, Any] = {"messages": [response]}
+
+        # node_exit
+        if hooks:
+            from sherma.hooks.types import NodeExitContext
+
+            exit_ctx = await hooks.run_hook(
+                "node_exit",
+                NodeExitContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = exit_ctx.result
+
+        return result
 
     return partial(call_llm_fn, ctx)
 
@@ -203,6 +275,22 @@ def build_tool_node(
     args: ToolNodeArgs = ctx.node_def.args  # type: ignore[assignment]
 
     async def tool_node_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        hooks = _ctx.hook_manager
+
+        # node_enter
+        if hooks:
+            from sherma.hooks.types import NodeEnterContext
+
+            await hooks.run_hook(
+                "node_enter",
+                NodeEnterContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    state=state,
+                ),
+            )
+
         if args.tools:
             current_tools = await resolve_tools_for_node_async(
                 args.tools, tool_registry
@@ -217,17 +305,49 @@ def build_tool_node(
             )
             return {"messages": []}
 
+        # before_tool_call
+        messages = state.get("messages", [])
+        last_msg = messages[-1] if messages else None
+        pending_calls: list[dict[str, Any]] = getattr(last_msg, "tool_calls", [])
+
+        if hooks:
+            from sherma.hooks.types import BeforeToolCallContext
+
+            before_ctx = await hooks.run_hook(
+                "before_tool_call",
+                BeforeToolCallContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    tool_calls=pending_calls,
+                    tools=current_tools,
+                    state=state,
+                ),
+            )
+            current_tools = before_ctx.tools
+
         tool_node = ToolNode(current_tools)
         result: dict[str, Any] = await tool_node.ainvoke(state)
 
+        # after_tool_call
+        if hooks:
+            from sherma.hooks.types import AfterToolCallContext
+
+            after_ctx = await hooks.run_hook(
+                "after_tool_call",
+                AfterToolCallContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = after_ctx.result
+
         # Track skill tool IDs when load_skill_md is called.
         if skill_card_registry is not None:
-            messages = state.get("messages", [])
-            last_msg = messages[-1] if messages else None
-            pending: list[dict[str, Any]] = getattr(last_msg, "tool_calls", [])
             internal = _get_internal(state)
             current_ids: list[str] = list(internal.get("loaded_tools_from_skills", []))
-            for tc in pending:
+            for tc in pending_calls:
                 if tc.get("name") != "load_skill_md":
                     continue
                 skill_id = tc.get("args", {}).get("skill_id", "")
@@ -253,6 +373,22 @@ def build_tool_node(
             internal["loaded_tools_from_skills"] = current_ids
             _set_internal(result, internal)
 
+        # node_exit
+        if hooks:
+            from sherma.hooks.types import NodeExitContext
+
+            exit_ctx = await hooks.run_hook(
+                "node_exit",
+                NodeExitContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = exit_ctx.result
+
         return result
 
     return partial(tool_node_fn, ctx)
@@ -272,7 +408,40 @@ def build_call_agent_node(
     args: CallAgentArgs = ctx.node_def.args  # type: ignore[assignment]
 
     async def call_agent_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        hooks = _ctx.hook_manager
+
+        # node_enter
+        if hooks:
+            from sherma.hooks.types import NodeEnterContext
+
+            await hooks.run_hook(
+                "node_enter",
+                NodeEnterContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    state=state,
+                ),
+            )
+
         input_val = cel.evaluate(args.input, state)
+
+        # before_agent_call
+        if hooks:
+            from sherma.hooks.types import BeforeAgentCallContext
+
+            before_ctx = await hooks.run_hook(
+                "before_agent_call",
+                BeforeAgentCallContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    input_value=input_val,
+                    agent=agent,
+                    state=state,
+                ),
+            )
+            input_val = before_ctx.input_value
+
         from a2a.types import Message as A2AMessage
         from a2a.types import Part, Role, TextPart
 
@@ -284,13 +453,47 @@ def build_call_agent_node(
         results: list[Any] = []
         async for event in agent.send_message(msg):
             results.append(event)
+
+        result: dict[str, Any] = {}
         if results:
             last = results[-1]
             if isinstance(last, A2AMessage):
                 text_parts = [p.root.text for p in last.parts if p.root.kind == "text"]
                 content = " ".join(text_parts)
-                return {"messages": [AIMessage(content=content)]}
-        return {}
+                result = {"messages": [AIMessage(content=content)]}
+
+        # after_agent_call
+        if hooks:
+            from sherma.hooks.types import AfterAgentCallContext
+
+            after_ctx = await hooks.run_hook(
+                "after_agent_call",
+                AfterAgentCallContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = after_ctx.result
+
+        # node_exit
+        if hooks:
+            from sherma.hooks.types import NodeExitContext
+
+            exit_ctx = await hooks.run_hook(
+                "node_exit",
+                NodeExitContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = exit_ctx.result
+
+        return result
 
     return partial(call_agent_fn, ctx)
 
@@ -310,10 +513,42 @@ def build_data_transform_node(
     async def data_transform_fn(
         _ctx: NodeContext, state: dict[str, Any]
     ) -> dict[str, Any]:
-        result = cel.evaluate(args.expression, state)
-        if isinstance(result, dict):
-            return result
-        return {"result": result}
+        hooks = _ctx.hook_manager
+
+        # node_enter
+        if hooks:
+            from sherma.hooks.types import NodeEnterContext
+
+            await hooks.run_hook(
+                "node_enter",
+                NodeEnterContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    state=state,
+                ),
+            )
+
+        raw = cel.evaluate(args.expression, state)
+        result: dict[str, Any] = raw if isinstance(raw, dict) else {"result": raw}
+
+        # node_exit
+        if hooks:
+            from sherma.hooks.types import NodeExitContext
+
+            exit_ctx = await hooks.run_hook(
+                "node_exit",
+                NodeExitContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = exit_ctx.result
+
+        return result
 
     return partial(data_transform_fn, ctx)
 
@@ -331,9 +566,42 @@ def build_set_state_node(
     args: SetStateArgs = ctx.node_def.args  # type: ignore[assignment]
 
     async def set_state_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
-        result = {}
+        hooks = _ctx.hook_manager
+
+        # node_enter
+        if hooks:
+            from sherma.hooks.types import NodeEnterContext
+
+            await hooks.run_hook(
+                "node_enter",
+                NodeEnterContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    state=state,
+                ),
+            )
+
+        result: dict[str, Any] = {}
         for key, expr in args.values.items():
             result[key] = cel.evaluate(expr, state)
+
+        # node_exit
+        if hooks:
+            from sherma.hooks.types import NodeExitContext
+
+            exit_ctx = await hooks.run_hook(
+                "node_exit",
+                NodeExitContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = exit_ctx.result
+
         return result
 
     return partial(set_state_fn, ctx)
@@ -352,9 +620,76 @@ def build_interrupt_node(
     args: InterruptArgs = ctx.node_def.args  # type: ignore[assignment]
 
     async def interrupt_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        hooks = _ctx.hook_manager
+
+        # node_enter
+        if hooks:
+            from sherma.hooks.types import NodeEnterContext
+
+            await hooks.run_hook(
+                "node_enter",
+                NodeEnterContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    state=state,
+                ),
+            )
+
         value = cel.evaluate(args.value, state)
+
+        # before_interrupt
+        if hooks:
+            from sherma.hooks.types import BeforeInterruptContext
+
+            before_ctx = await hooks.run_hook(
+                "before_interrupt",
+                BeforeInterruptContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    value=value,
+                    state=state,
+                ),
+            )
+            value = before_ctx.value
+
         response = interrupt(value)
-        return {"messages": [HumanMessage(content=str(response))]}
+
+        # after_interrupt
+        if hooks:
+            from sherma.hooks.types import AfterInterruptContext
+
+            after_ctx = await hooks.run_hook(
+                "after_interrupt",
+                AfterInterruptContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    value=value,
+                    response=response,
+                    state=state,
+                ),
+            )
+            response = after_ctx.response
+
+        result: dict[str, Any] = {"messages": [HumanMessage(content=str(response))]}
+
+        # node_exit
+        if hooks:
+            from sherma.hooks.types import NodeExitContext
+
+            exit_ctx = await hooks.run_hook(
+                "node_exit",
+                NodeExitContext(
+                    node_context=_ctx,
+                    node_name=_ctx.node_def.name,
+                    node_type=_ctx.node_def.type,
+                    result=result,
+                    state=state,
+                ),
+            )
+            result = exit_ctx.result
+
+        return result
 
     return partial(interrupt_fn, ctx)
 

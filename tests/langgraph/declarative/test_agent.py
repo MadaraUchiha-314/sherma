@@ -14,7 +14,10 @@ from sherma.langgraph.declarative.agent import (
 from sherma.langgraph.declarative.loader import RegistryBundle
 from sherma.langgraph.declarative.schema import (
     AgentDef,
+    DeclarativeConfig,
     GraphDef,
+    NodeDef,
+    SetStateArgs,
     StateDef,
     StateFieldDef,
 )
@@ -320,3 +323,38 @@ async def test_declarative_agent_interrupt_node():
 
     human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
     assert any(m.content == "Alice" for m in human_msgs)
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_with_config_object():
+    """DeclarativeAgent accepts a pre-built DeclarativeConfig."""
+    config = DeclarativeConfig(
+        agents={
+            "test-agent": AgentDef(
+                state=StateDef(
+                    fields=[
+                        StateFieldDef(name="result", type="str", default=""),
+                    ],
+                ),
+                graph=GraphDef(
+                    entry_point="setter",
+                    nodes=[
+                        NodeDef(
+                            name="setter",
+                            type="set_state",
+                            args=SetStateArgs(values={"result": '"from_config"'}),
+                        ),
+                    ],
+                    edges=[],
+                ),
+            ),
+        },
+    )
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        config=config,
+    )
+    graph = await agent.get_graph()
+    result = await graph.ainvoke({"result": ""})
+    assert result["result"] == "from_config"

@@ -15,6 +15,8 @@ from sherma.entities.llm import LLM
 from sherma.entities.prompt import Prompt
 from sherma.entities.skill_card import SkillCard
 from sherma.exceptions import DeclarativeConfigError
+from sherma.hooks.executor import HookExecutor
+from sherma.hooks.manager import HookManager
 from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DeclarativeConfig,
@@ -429,3 +431,37 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
             raise DeclarativeConfigError(
                 "A call_llm node with tools requires a tool_node in the graph"
             )
+
+
+def populate_hooks(
+    config: DeclarativeConfig,
+    hook_manager: HookManager,
+) -> None:
+    """Import and register hook executors declared in the YAML config."""
+    for hook_def in config.hooks:
+        import_path = hook_def.import_path
+        module_path, _, attr_name = import_path.rpartition(".")
+        if not module_path:
+            raise DeclarativeConfigError(
+                f"Invalid hook import_path '{import_path}': "
+                f"must be a dotted path like 'module.ClassName'"
+            )
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as exc:
+            raise DeclarativeConfigError(
+                f"Cannot import hook module '{module_path}': {exc}"
+            ) from exc
+
+        if not hasattr(module, attr_name):
+            raise DeclarativeConfigError(
+                f"Module '{module_path}' has no attribute '{attr_name}'"
+            )
+
+        cls = getattr(module, attr_name)
+        instance = cls()
+        if not isinstance(instance, HookExecutor):
+            raise DeclarativeConfigError(
+                f"'{import_path}' is not a HookExecutor, got {type(instance).__name__}"
+            )
+        hook_manager.register(instance)
