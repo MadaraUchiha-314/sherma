@@ -9,6 +9,10 @@ from langchain_core.messages import AIMessage
 
 from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.declarative.nodes import (
+    INTERNAL_STATE_KEY,
+    NodeContext,
+    _resolve_all_registry_tools,
+    _resolve_skill_tools_from_state,
     build_call_llm_node,
     build_data_transform_node,
     build_set_state_node,
@@ -17,11 +21,18 @@ from sherma.langgraph.declarative.nodes import (
 from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DataTransformArgs,
+    DeclarativeConfig,
     NodeDef,
     RegistryRef,
     SetStateArgs,
     ToolNodeArgs,
 )
+
+
+def _make_ctx(node_def: NodeDef) -> NodeContext:
+    """Create a minimal NodeContext for testing."""
+    config = DeclarativeConfig()
+    return NodeContext(config=config, node_def=node_def)
 
 
 @pytest.mark.asyncio
@@ -38,7 +49,7 @@ async def test_build_call_llm_node():
     chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
     cel = CelEngine()
 
-    fn = build_call_llm_node(node_def, chat_model, cel)
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
     result = await fn({"messages": []})
 
     assert "messages" in result
@@ -49,13 +60,20 @@ async def test_build_call_llm_node():
 
 @pytest.mark.asyncio
 async def test_build_call_llm_node_with_tools():
+    """call_llm with explicit tools in args resolves them from registry."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
     node_def = NodeDef(
         name="agent",
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
             prompt='"You are helpful"',
-            tools=[RegistryRef(id="my-tool")],
+            tools=[RegistryRef(id="my-tool", version="1.0.0")],
         ),
     )
     bound_model = AsyncMock()
@@ -63,32 +81,59 @@ async def test_build_call_llm_node_with_tools():
     chat_model = MagicMock()
     chat_model.bind_tools = MagicMock(return_value=bound_model)
 
-    mock_tool = MagicMock()
-    cel = CelEngine()
+    registry = ToolRegistry()
+    real_tool = StructuredTool.from_function(
+        func=lambda x: x, name="my-tool", description="test"
+    )
+    await registry.add(
+        RegistryEntry(
+            id="my-tool",
+            version="1.0.0",
+            instance=Tool(id="my-tool", version="1.0.0", function=real_tool),
+        )
+    )
 
-    fn = build_call_llm_node(node_def, chat_model, cel, tools=[mock_tool])
+    cel = CelEngine()
+    fn = build_call_llm_node(
+        _make_ctx(node_def), chat_model, cel, tool_registry=registry
+    )
     result = await fn({"messages": []})
 
-    chat_model.bind_tools.assert_called_once_with([mock_tool])
+    chat_model.bind_tools.assert_called_once()
+    assert len(chat_model.bind_tools.call_args[0][0]) == 1
     assert result["messages"][0].content == "Using tool"
 
 
-def test_build_tool_node():
-    node_def = NodeDef(
-        name="tools",
-        type="tool_node",
-        args=ToolNodeArgs(tools=[RegistryRef(id="my-tool")]),
-    )
-    # Need a real BaseTool-like object for ToolNode
+@pytest.mark.asyncio
+async def test_build_tool_node_static():
+    """tool_node with explicit tools in args resolves them from registry."""
     from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
 
     def dummy_fn(x: str) -> str:
         """Dummy tool."""
         return x
 
     real_tool = StructuredTool.from_function(func=dummy_fn, name="my-tool")
-    tn = build_tool_node(node_def, [real_tool])
-    assert tn is not None
+    registry = ToolRegistry()
+    await registry.add(
+        RegistryEntry(
+            id="my-tool",
+            version="1.0.0",
+            instance=Tool(id="my-tool", version="1.0.0", function=real_tool),
+        )
+    )
+
+    node_def = NodeDef(
+        name="tools",
+        type="tool_node",
+        args=ToolNodeArgs(tools=[RegistryRef(id="my-tool", version="1.0.0")]),
+    )
+    fn = build_tool_node(_make_ctx(node_def), tool_registry=registry)
+    assert callable(fn)
 
 
 @pytest.mark.asyncio
@@ -99,7 +144,7 @@ async def test_build_data_transform_node():
         args=DataTransformArgs(expression='{"result": "done"}'),
     )
     cel = CelEngine()
-    fn = build_data_transform_node(node_def, cel)
+    fn = build_data_transform_node(_make_ctx(node_def), cel)
     result = await fn({})
     assert result == {"result": "done"}
 
@@ -112,7 +157,7 @@ async def test_build_data_transform_non_dict():
         args=DataTransformArgs(expression='"just a string"'),
     )
     cel = CelEngine()
-    fn = build_data_transform_node(node_def, cel)
+    fn = build_data_transform_node(_make_ctx(node_def), cel)
     result = await fn({})
     assert result == {"result": "just a string"}
 
@@ -125,6 +170,441 @@ async def test_build_set_state_node():
         args=SetStateArgs(values={"count": "x + 1", "label": '"done"'}),
     )
     cel = CelEngine()
-    fn = build_set_state_node(node_def, cel)
+    fn = build_set_state_node(_make_ctx(node_def), cel)
     result = await fn({"x": 5})
     assert result == {"count": 6, "label": "done"}
+
+
+# --- NodeContext tests ---
+
+
+def test_node_context_has_config():
+    """NodeContext exposes the config and node_def."""
+    node_def = NodeDef(
+        name="test",
+        type="set_state",
+        args=SetStateArgs(values={"x": '"hi"'}),
+    )
+    config = DeclarativeConfig()
+    ctx = NodeContext(config=config, node_def=node_def)
+    assert ctx.config is config
+    assert ctx.node_def is node_def
+    assert ctx.extra == {}
+
+
+# --- Dynamic tool resolution tests ---
+
+
+@pytest.mark.asyncio
+async def test_resolve_skill_tools_from_state():
+    """_resolve_skill_tools_from_state returns tools for IDs in state."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    registry = ToolRegistry()
+    real_tool = StructuredTool.from_function(
+        func=lambda x: x, name="my-tool", description="test"
+    )
+    await registry.add(
+        RegistryEntry(
+            id="my-tool",
+            version="1.0.0",
+            instance=Tool(id="my-tool", version="1.0.0", function=real_tool),
+        )
+    )
+
+    state: dict[str, object] = {
+        INTERNAL_STATE_KEY: {"loaded_tools_from_skills": ["my-tool"]}
+    }
+    resolved = await _resolve_skill_tools_from_state(state, registry)
+    assert len(resolved) == 1
+    assert resolved[0].name == "my-tool"
+
+
+@pytest.mark.asyncio
+async def test_resolve_skill_tools_from_state_empty():
+    """_resolve_skill_tools_from_state returns empty list when no IDs."""
+    from sherma.registry.tool import ToolRegistry
+
+    registry = ToolRegistry()
+    resolved = await _resolve_skill_tools_from_state({}, registry)
+    assert resolved == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_skill_tools_from_state_missing_tool():
+    """_resolve_skill_tools_from_state skips unresolvable tool IDs."""
+    from sherma.registry.tool import ToolRegistry
+
+    registry = ToolRegistry()
+    state: dict[str, object] = {
+        INTERNAL_STATE_KEY: {"loaded_tools_from_skills": ["nonexistent"]}
+    }
+    resolved = await _resolve_skill_tools_from_state(state, registry)
+    assert resolved == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_all_registry_tools():
+    """_resolve_all_registry_tools returns all tools in registry."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    registry = ToolRegistry()
+    tool1 = StructuredTool.from_function(
+        func=lambda x: x, name="tool-a", description="a"
+    )
+    tool2 = StructuredTool.from_function(
+        func=lambda x: x, name="tool-b", description="b"
+    )
+    await registry.add(
+        RegistryEntry(
+            id="tool-a",
+            version="1.0.0",
+            instance=Tool(id="tool-a", version="1.0.0", function=tool1),
+        )
+    )
+    await registry.add(
+        RegistryEntry(
+            id="tool-b",
+            version="1.0.0",
+            instance=Tool(id="tool-b", version="1.0.0", function=tool2),
+        )
+    )
+
+    resolved = await _resolve_all_registry_tools(registry)
+    assert len(resolved) == 2
+    names = {t.name for t in resolved}
+    assert names == {"tool-a", "tool-b"}
+
+
+@pytest.mark.asyncio
+async def test_build_call_llm_node_use_tools_from_loaded_skills():
+    """use_tools_from_loaded_skills reads _skill_tool_ids and binds tools."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"You are helpful"',
+            use_tools_from_loaded_skills=True,
+        ),
+    )
+
+    bound_model = AsyncMock()
+    bound_model.ainvoke = AsyncMock(return_value=AIMessage(content="Using skill tool"))
+    chat_model = MagicMock()
+    chat_model.bind_tools = MagicMock(return_value=bound_model)
+
+    registry = ToolRegistry()
+    real_tool = StructuredTool.from_function(
+        func=lambda x: x, name="skill-tool", description="A skill tool"
+    )
+    await registry.add(
+        RegistryEntry(
+            id="skill-tool",
+            version="1.0.0",
+            instance=Tool(id="skill-tool", version="1.0.0", function=real_tool),
+        )
+    )
+
+    cel = CelEngine()
+    fn = build_call_llm_node(
+        _make_ctx(node_def), chat_model, cel, tool_registry=registry
+    )
+
+    result = await fn(
+        {
+            "messages": [],
+            INTERNAL_STATE_KEY: {"loaded_tools_from_skills": ["skill-tool"]},
+        }
+    )
+
+    chat_model.bind_tools.assert_called_once()
+    bound_tools = chat_model.bind_tools.call_args[0][0]
+    assert len(bound_tools) == 1
+    assert bound_tools[0].name == "skill-tool"
+    assert result["messages"][0].content == "Using skill tool"
+
+
+@pytest.mark.asyncio
+async def test_build_call_llm_node_use_tools_from_loaded_skills_empty():
+    """use_tools_from_loaded_skills with empty _skill_tool_ids doesn't bind."""
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"You are helpful"',
+            use_tools_from_loaded_skills=True,
+        ),
+    )
+
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="No tools"))
+
+    registry = ToolRegistry()
+    cel = CelEngine()
+    fn = build_call_llm_node(
+        _make_ctx(node_def), chat_model, cel, tool_registry=registry
+    )
+
+    result = await fn(
+        {
+            "messages": [],
+            INTERNAL_STATE_KEY: {"loaded_tools_from_skills": []},
+        }
+    )
+
+    assert result["messages"][0].content == "No tools"
+    chat_model.bind_tools.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_call_llm_node_use_tools_from_registry():
+    """use_tools_from_registry binds ALL tools from the registry."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"You are helpful"',
+            use_tools_from_registry=True,
+        ),
+    )
+
+    bound_model = AsyncMock()
+    bound_model.ainvoke = AsyncMock(
+        return_value=AIMessage(content="Using registry tools")
+    )
+    chat_model = MagicMock()
+    chat_model.bind_tools = MagicMock(return_value=bound_model)
+
+    registry = ToolRegistry()
+    for name in ["tool-a", "tool-b"]:
+        real_tool = StructuredTool.from_function(
+            func=lambda x: x, name=name, description=name
+        )
+        await registry.add(
+            RegistryEntry(
+                id=name,
+                version="1.0.0",
+                instance=Tool(id=name, version="1.0.0", function=real_tool),
+            )
+        )
+
+    cel = CelEngine()
+    fn = build_call_llm_node(
+        _make_ctx(node_def), chat_model, cel, tool_registry=registry
+    )
+
+    result = await fn({"messages": []})
+
+    chat_model.bind_tools.assert_called_once()
+    bound_tools = chat_model.bind_tools.call_args[0][0]
+    assert len(bound_tools) == 2
+    assert result["messages"][0].content == "Using registry tools"
+
+
+@pytest.mark.asyncio
+async def test_build_tool_node_registry():
+    """tool_node with registry resolves tools at invocation time."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import ToolMessage
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    def greet(name: str) -> str:
+        """Greet someone."""
+        return f"Hello, {name}!"
+
+    real_tool = StructuredTool.from_function(func=greet, name="greet")
+    registry = ToolRegistry()
+    await registry.add(
+        RegistryEntry(
+            id="greet",
+            version="1.0.0",
+            instance=Tool(id="greet", version="1.0.0", function=real_tool),
+        )
+    )
+
+    node_def = NodeDef(
+        name="tools",
+        type="tool_node",
+        args=ToolNodeArgs(),
+    )
+
+    tool_msg = ToolMessage(content="Hello, World!", tool_call_id="call_1")
+    mock_result: dict[str, object] = {"messages": [tool_msg]}
+    mock_tool_node = MagicMock()
+    mock_tool_node.ainvoke = AsyncMock(return_value=mock_result)
+
+    fn = build_tool_node(_make_ctx(node_def), tool_registry=registry)
+
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[{"id": "call_1", "name": "greet", "args": {"name": "World"}}],
+    )
+
+    with patch(
+        "sherma.langgraph.declarative.nodes.ToolNode",
+        return_value=mock_tool_node,
+    ):
+        result = await fn({"messages": [ai_msg]})
+
+    assert "messages" in result
+    assert len(result["messages"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_build_tool_node_registry_empty():
+    """tool_node with empty registry returns empty messages."""
+    from sherma.registry.tool import ToolRegistry
+
+    registry = ToolRegistry()
+
+    node_def = NodeDef(
+        name="tools",
+        type="tool_node",
+        args=ToolNodeArgs(),
+    )
+
+    fn = build_tool_node(_make_ctx(node_def), tool_registry=registry)
+    result = await fn({"messages": []})
+
+    assert result == {"messages": []}
+
+
+@pytest.mark.asyncio
+async def test_build_tool_node_with_skill_card_tracking():
+    """tool_node with skill_card_registry tracks _skill_tool_ids."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import ToolMessage
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.skill_card import LocalToolDef, SkillCard
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.skill_card import SkillCardRegistry
+    from sherma.registry.tool import ToolRegistry
+
+    card = SkillCard(
+        id="weather",
+        version="1.0.0",
+        name="Weather",
+        description="Weather skill",
+        base_uri=".",
+        local_tools={
+            "get_weather": LocalToolDef(
+                id="get_weather",
+                version="1.0.0",
+                import_path="examples.tools.get_weather",
+            )
+        },
+    )
+    skill_card_registry = SkillCardRegistry()
+    await skill_card_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=card)
+    )
+
+    def load_skill_md(skill_id: str, version: str = "*") -> str:
+        """Load a skill."""
+        return "loaded"
+
+    real_tool = StructuredTool.from_function(func=load_skill_md, name="load_skill_md")
+    tool_registry = ToolRegistry()
+    await tool_registry.add(
+        RegistryEntry(
+            id="load_skill_md",
+            version="1.0.0",
+            instance=Tool(id="load_skill_md", version="1.0.0", function=real_tool),
+        )
+    )
+
+    node_def = NodeDef(
+        name="tools",
+        type="tool_node",
+        args=ToolNodeArgs(),
+    )
+
+    tool_msg = ToolMessage(content="loaded", tool_call_id="call_1")
+    mock_result: dict[str, object] = {"messages": [tool_msg]}
+    mock_tool_node = MagicMock()
+    mock_tool_node.ainvoke = AsyncMock(return_value=mock_result)
+
+    fn = build_tool_node(
+        _make_ctx(node_def),
+        tool_registry=tool_registry,
+        skill_card_registry=skill_card_registry,
+    )
+
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call_1",
+                "name": "load_skill_md",
+                "args": {"skill_id": "weather", "version": "1.0.0"},
+            }
+        ],
+    )
+    state: dict[str, object] = {
+        "messages": [ai_msg],
+        INTERNAL_STATE_KEY: {"loaded_tools_from_skills": []},
+    }
+
+    with patch(
+        "sherma.langgraph.declarative.nodes.ToolNode",
+        return_value=mock_tool_node,
+    ):
+        result = await fn(state)
+
+    internal = result[INTERNAL_STATE_KEY]
+    assert "get_weather" in internal["loaded_tools_from_skills"]
+
+
+@pytest.mark.asyncio
+async def test_node_receives_config_via_partial():
+    """Verify that node functions receive the config through partial injection."""
+    from functools import partial as stdlib_partial
+
+    node_def = NodeDef(
+        name="checker",
+        type="set_state",
+        args=SetStateArgs(values={"x": '"hi"'}),
+    )
+    config = DeclarativeConfig()
+    ctx = NodeContext(config=config, node_def=node_def)
+    cel = CelEngine()
+
+    fn = build_set_state_node(ctx, cel)
+
+    # The returned function should be a functools.partial with ctx bound
+    assert isinstance(fn, stdlib_partial)
+    assert fn.args[0] is ctx
+    assert fn.args[0].config is config

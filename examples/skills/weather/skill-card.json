@@ -1,0 +1,20 @@
+{
+    "id": "weather",
+    "version": "1.0.0",
+    "name": "Weather Lookup",
+    "description": "Get current weather conditions for any city worldwide using the Open-Meteo API. No API key required.",
+    "base_uri": ".",
+    "files": [
+        "SKILL.md",
+        "references/open-meteo-api.md",
+        "assets/weather-codes.md"
+    ],
+    "mcps": {},
+    "local_tools": {
+        "get_weather": {
+            "id": "get_weather",
+            "version": "1.0.0",
+            "import_path": "examples.tools.get_weather"
+        }
+    }
+}

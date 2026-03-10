@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sherma.entities.llm import LLM
 from sherma.entities.prompt import Prompt
+from sherma.entities.skill_card import SkillCard
 from sherma.exceptions import DeclarativeConfigError
 from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
@@ -22,6 +24,7 @@ from sherma.registry.base import RegistryEntry
 from sherma.registry.llm import LLMRegistry
 from sherma.registry.prompt import PromptRegistry
 from sherma.registry.skill import SkillRegistry
+from sherma.registry.skill_card import SkillCardRegistry
 from sherma.registry.tool import ToolRegistry
 
 
@@ -34,6 +37,7 @@ class RegistryBundle(BaseModel):
     llm_registry: LLMRegistry = Field(default_factory=LLMRegistry)
     prompt_registry: PromptRegistry = Field(default_factory=PromptRegistry)
     skill_registry: SkillRegistry = Field(default_factory=SkillRegistry)
+    skill_card_registry: SkillCardRegistry = Field(default_factory=SkillCardRegistry)
     chat_models: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -163,7 +167,7 @@ def create_chat_model(
                 "langchain-openai is required for provider 'openai'. "
                 "Install with: uv add langchain-openai"
             ) from exc
-        kwargs: dict[str, Any] = {"model": model_name}
+        kwargs: dict[str, Any] = {"model": model_name, "max_retries": 5}
         if http_async_client is not None:
             kwargs["http_async_client"] = http_async_client
         if api_key is not None:
@@ -226,6 +230,79 @@ async def populate_registries(
                 ),
             )
         )
+
+    # Register skill cards
+    for skill_def in config.skills:
+        if skill_def.skill_card_path:
+            path = Path(skill_def.skill_card_path)
+            if not path.exists():
+                raise DeclarativeConfigError(f"Skill card file not found: {path}")
+            data = json.loads(path.read_text())
+            # Resolve relative base_uri against the skill card file location
+            base_uri = data.get("base_uri", "")
+            if base_uri and not base_uri.startswith(("http://", "https://")):
+                resolved_base = Path(base_uri)
+                if not resolved_base.is_absolute():
+                    resolved_base = (path.resolve().parent / resolved_base).resolve()
+                data = {**data, "base_uri": str(resolved_base)}
+            skill_card = SkillCard(
+                id=skill_def.id,
+                version=skill_def.version,
+                **{k: v for k, v in data.items() if k not in ("id", "version")},
+            )
+            await registries.skill_card_registry.add(
+                RegistryEntry(
+                    id=skill_def.id,
+                    version=skill_def.version,
+                    instance=skill_card,
+                )
+            )
+        elif skill_def.url:
+            await registries.skill_card_registry.add(
+                RegistryEntry(
+                    id=skill_def.id,
+                    version=skill_def.version,
+                    remote=True,
+                    url=skill_def.url,
+                )
+            )
+
+    # Register skill tools when skills are declared
+    if config.skills:
+        from sherma.langgraph.skill_tools import create_skill_tools
+
+        skill_tools = create_skill_tools(
+            registries.skill_card_registry,
+            registries.skill_registry,
+            registries.tool_registry,
+        )
+        for st in skill_tools:
+            sherma_tool = from_langgraph_tool(st)
+            await registries.tool_registry.add(
+                RegistryEntry(
+                    id=sherma_tool.id,
+                    version=sherma_tool.version,
+                    instance=sherma_tool,
+                )
+            )
+
+        # Eagerly register local tools from skill cards
+        from sherma.skills.local_tools import load_local_tools_from_skill
+
+        for skill_def in config.skills:
+            if skill_def.skill_card_path:
+                card = await registries.skill_card_registry.get(
+                    skill_def.id, f"=={skill_def.version}"
+                )
+                for lt in load_local_tools_from_skill(card):
+                    sherma_tool = from_langgraph_tool(lt)
+                    await registries.tool_registry.add(
+                        RegistryEntry(
+                            id=sherma_tool.id,
+                            version=sherma_tool.version,
+                            instance=sherma_tool,
+                        )
+                    )
 
     # Auto-import tools declared with import_path
     for tool_def in config.tools:
@@ -308,3 +385,45 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                         f"call_llm node '{node.name}' has tools but no "
                         f"tool_node exists in the graph"
                     )
+
+    # Validate use_tools_from_registry/use_tools_from_loaded_skills
+    # are not combined with explicit tools
+    for node in graph.nodes:
+        if node.type == "call_llm":
+            llm_args: CallLLMArgs = node.args  # type: ignore[assignment]
+            if llm_args.tools and (
+                llm_args.use_tools_from_registry
+                or llm_args.use_tools_from_loaded_skills
+            ):
+                raise DeclarativeConfigError(
+                    f"call_llm node '{node.name}' cannot specify both "
+                    f"an explicit 'tools' list and "
+                    f"'use_tools_from_registry' or 'use_tools_from_loaded_skills'"
+                )
+            if (
+                llm_args.use_tools_from_registry
+                and llm_args.use_tools_from_loaded_skills
+            ):
+                raise DeclarativeConfigError(
+                    f"call_llm node '{node.name}' cannot specify both "
+                    f"'use_tools_from_registry' and "
+                    f"'use_tools_from_loaded_skills'"
+                )
+
+    # Validate that call_llm nodes with tool options have a tool_node
+    has_tool_binding = any(
+        n.type == "call_llm"
+        and isinstance(n.args, CallLLMArgs)
+        and (
+            n.args.tools
+            or n.args.use_tools_from_registry
+            or n.args.use_tools_from_loaded_skills
+        )
+        for n in graph.nodes
+    )
+    if has_tool_binding:
+        has_tool_node = any(n.type == "tool_node" for n in graph.nodes)
+        if not has_tool_node:
+            raise DeclarativeConfigError(
+                "A call_llm node with tools requires a tool_node in the graph"
+            )

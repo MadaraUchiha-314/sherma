@@ -51,8 +51,19 @@ class LangGraphAgent(Agent):
         """Convert A2A message to LangGraph format, invoke graph, convert back."""
         graph = await self.get_graph()
         lg_messages = a2a_to_langgraph(request)
+        logger.info("Invoking graph with %d initial messages", len(lg_messages))
 
-        result = await graph.ainvoke({"messages": lg_messages})
+        result = await graph.ainvoke(
+            {"messages": lg_messages},
+            config={"recursion_limit": 25},
+        )
+
+        all_messages = result.get("messages", [])
+        logger.info("Graph completed with %d total messages", len(all_messages))
+        for i, msg in enumerate(all_messages):
+            content = getattr(msg, "content", "")
+            msg_type = type(msg).__name__
+            logger.debug("  msg[%d] %s: %.150s...", i, msg_type, str(content))
 
         interrupts: tuple[Interrupt, ...] | None = result.get("__interrupt__")
         if interrupts:

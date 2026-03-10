@@ -49,7 +49,6 @@ def test_call_llm_args():
 def test_tool_node_args():
     args = ToolNodeArgs(tools=[RegistryRef(id="tool1")])
     assert len(args.tools) == 1
-    assert args.tool_calls is None
 
 
 def test_data_transform_args():

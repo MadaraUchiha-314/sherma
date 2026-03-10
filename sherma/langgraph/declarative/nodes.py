@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
+from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import AIMessage, SystemMessage
@@ -11,6 +14,25 @@ from langgraph.prebuilt import ToolNode
 
 from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.tools import to_langgraph_tool
+from sherma.logging import get_logger
+
+_BARE_VERSION_RE = re.compile(r"^\d+(\.\d+)*$")
+
+INTERNAL_STATE_KEY = "__sherma__"
+"""Top-level state key for all sherma-managed internal data."""
+
+logger = get_logger(__name__)
+
+
+def _get_internal(state: dict[str, Any]) -> dict[str, Any]:
+    """Return the internal sherma state dict (never mutates *state*)."""
+    return dict(state.get(INTERNAL_STATE_KEY, {}))
+
+
+def _set_internal(result: dict[str, Any], internal: dict[str, Any]) -> None:
+    """Write the internal sherma state dict into a result dict."""
+    result[INTERNAL_STATE_KEY] = internal
+
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -19,50 +41,235 @@ if TYPE_CHECKING:
         CallAgentArgs,
         CallLLMArgs,
         DataTransformArgs,
+        DeclarativeConfig,
         NodeDef,
         SetStateArgs,
+        ToolNodeArgs,
     )
+    from sherma.registry.skill_card import SkillCardRegistry
+    from sherma.registry.tool import ToolRegistry
+
+
+@dataclass
+class NodeContext:
+    """Dependencies injected into every node at build time.
+
+    Every node function receives a ``NodeContext`` as its first argument
+    (bound via ``functools.partial``).  This gives nodes access to the
+    full declarative config and their own node definition without
+    polluting the LangGraph state.
+    """
+
+    config: DeclarativeConfig
+    node_def: NodeDef
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_all_registry_tools(
+    tool_registry: ToolRegistry,
+) -> list[BaseTool]:
+    """Return all tools currently in the ToolRegistry as LangChain tools."""
+    resolved: list[BaseTool] = []
+    for versions in tool_registry._entries.values():
+        for entry in versions.values():
+            tool_entity = await tool_registry._resolve(entry)
+            resolved.append(to_langgraph_tool(tool_entity))
+    return resolved
+
+
+async def _resolve_skill_tools_from_state(
+    state: dict[str, Any],
+    tool_registry: ToolRegistry,
+) -> list[BaseTool]:
+    """Resolve skill tools from internal state ``loaded_tools_from_skills``."""
+    internal = _get_internal(state)
+    skill_tool_ids: list[str] = internal.get("loaded_tools_from_skills", [])
+    resolved: list[BaseTool] = []
+    for tool_id in skill_tool_ids:
+        try:
+            tool_entity = await tool_registry.get(tool_id, "*")
+            resolved.append(to_langgraph_tool(tool_entity))
+        except Exception:
+            logger.warning("Could not resolve skill tool '%s' from registry", tool_id)
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# call_llm
+# ---------------------------------------------------------------------------
 
 
 def build_call_llm_node(
-    node_def: NodeDef,
+    ctx: NodeContext,
     chat_model: BaseChatModel,
     cel: CelEngine,
-    tools: list[BaseTool] | None = None,
+    tool_registry: ToolRegistry | None = None,
 ) -> Callable[..., Any]:
-    """Build a call_llm node function."""
-    args: CallLLMArgs = node_def.args  # type: ignore[assignment]
-    model = chat_model
-    if tools:
-        model = model.bind_tools(tools)  # type: ignore[assignment]
+    """Build a call_llm node function.
 
-    async def call_llm_fn(state: dict[str, Any]) -> dict[str, Any]:
+    Tool binding mode is determined by the node's own config
+    (``ctx.node_def.args``):
+
+    * ``use_tools_from_loaded_skills`` → binds only tools whose IDs
+      appear in internal state ``loaded_tools_from_skills``.
+    * ``use_tools_from_registry`` → binds all tools in the registry.
+    * ``tools`` (explicit list) → resolves those specific tools from
+      the registry at invocation time.
+    * None of the above → no tools bound.
+    """
+    args: CallLLMArgs = ctx.node_def.args  # type: ignore[assignment]
+
+    async def call_llm_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        current_tools: list[BaseTool] = []
+        if args.use_tools_from_loaded_skills and tool_registry is not None:
+            current_tools = await _resolve_skill_tools_from_state(state, tool_registry)
+        elif args.use_tools_from_registry and tool_registry is not None:
+            current_tools = await _resolve_all_registry_tools(tool_registry)
+        elif args.tools and tool_registry is not None:
+            current_tools = await resolve_tools_for_node_async(
+                args.tools, tool_registry
+            )
+
+        model: Any = chat_model
+        if current_tools:
+            model = model.bind_tools(current_tools)
+
         prompt_text = cel.evaluate(args.prompt, state)
         system_msg = SystemMessage(content=str(prompt_text))
         messages = state.get("messages", [])
+        logger.info(
+            "[%s] Invoking LLM (%d tools) with %d messages, system prompt: %.100s...",
+            _ctx.node_def.name,
+            len(current_tools),
+            len(messages),
+            str(prompt_text),
+        )
         response = await model.ainvoke([system_msg, *messages])
+        content = getattr(response, "content", "")
+        tool_calls = getattr(response, "tool_calls", [])
+        logger.info(
+            "[%s] LLM response: %.200s... | tool_calls=%d",
+            _ctx.node_def.name,
+            str(content),
+            len(tool_calls) if tool_calls else 0,
+        )
+        if tool_calls:
+            for tc in tool_calls:
+                logger.info(
+                    "[%s]   tool_call: %s(%s)",
+                    _ctx.node_def.name,
+                    tc.get("name", "?"),
+                    tc.get("args", {}),
+                )
         return {"messages": [response]}
 
-    return call_llm_fn
+    return partial(call_llm_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
+# tool_node
+# ---------------------------------------------------------------------------
 
 
 def build_tool_node(
-    node_def: NodeDef,
-    tools: list[BaseTool],
-) -> ToolNode:
-    """Build a tool_node that executes tool calls."""
-    return ToolNode(tools)
+    ctx: NodeContext,
+    tool_registry: ToolRegistry | None = None,
+    skill_card_registry: SkillCardRegistry | None = None,
+) -> Callable[..., Any]:
+    """Build a tool_node that executes tool calls from the last AIMessage.
+
+    Tool resolution is determined by the node's own config
+    (``ctx.node_def.args``):
+
+    * ``args.tools`` (explicit list) → resolves those specific tools
+      from the registry.
+    * No explicit tools → resolves all tools from the registry.
+
+    When *skill_card_registry* is provided the node additionally
+    inspects ``load_skill_md`` tool calls and updates the internal
+    ``loaded_tools_from_skills`` list so that downstream
+    ``use_tools_from_loaded_skills`` LLM nodes can pick them up.
+    """
+    if tool_registry is None:
+        raise ValueError("tool_node requires a tool_registry")
+
+    args: ToolNodeArgs = ctx.node_def.args  # type: ignore[assignment]
+
+    async def tool_node_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        if args.tools:
+            current_tools = await resolve_tools_for_node_async(
+                args.tools, tool_registry
+            )
+        else:
+            current_tools = await _resolve_all_registry_tools(tool_registry)
+
+        if not current_tools:
+            logger.warning(
+                "[%s] tool_node invoked but no tools resolved",
+                _ctx.node_def.name,
+            )
+            return {"messages": []}
+
+        tool_node = ToolNode(current_tools)
+        result: dict[str, Any] = await tool_node.ainvoke(state)
+
+        # Track skill tool IDs when load_skill_md is called.
+        if skill_card_registry is not None:
+            messages = state.get("messages", [])
+            last_msg = messages[-1] if messages else None
+            pending: list[dict[str, Any]] = getattr(last_msg, "tool_calls", [])
+            internal = _get_internal(state)
+            current_ids: list[str] = list(internal.get("loaded_tools_from_skills", []))
+            for tc in pending:
+                if tc.get("name") != "load_skill_md":
+                    continue
+                skill_id = tc.get("args", {}).get("skill_id", "")
+                version = tc.get("args", {}).get("version", "*")
+                if not skill_id:
+                    continue
+                if _BARE_VERSION_RE.match(version):
+                    version = f"=={version}"
+                try:
+                    card = await skill_card_registry.get(skill_id, version)
+                    for tool_id in card.local_tools:
+                        if tool_id not in current_ids:
+                            current_ids.append(tool_id)
+                    for mcp_id in card.mcps:
+                        if mcp_id not in current_ids:
+                            current_ids.append(mcp_id)
+                except Exception:
+                    logger.warning(
+                        "[%s] Could not resolve skill card for '%s'",
+                        _ctx.node_def.name,
+                        skill_id,
+                    )
+            internal["loaded_tools_from_skills"] = current_ids
+            _set_internal(result, internal)
+
+        return result
+
+    return partial(tool_node_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
+# call_agent
+# ---------------------------------------------------------------------------
 
 
 def build_call_agent_node(
-    node_def: NodeDef,
+    ctx: NodeContext,
     agent: Any,
     cel: CelEngine,
 ) -> Callable[..., Any]:
     """Build a call_agent node function."""
-    args: CallAgentArgs = node_def.args  # type: ignore[assignment]
+    args: CallAgentArgs = ctx.node_def.args  # type: ignore[assignment]
 
-    async def call_agent_fn(state: dict[str, Any]) -> dict[str, Any]:
+    async def call_agent_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
         input_val = cel.evaluate(args.input, state)
         from a2a.types import Message as A2AMessage
         from a2a.types import Part, Role, TextPart
@@ -83,57 +290,56 @@ def build_call_agent_node(
                 return {"messages": [AIMessage(content=content)]}
         return {}
 
-    return call_agent_fn
+    return partial(call_agent_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
+# data_transform
+# ---------------------------------------------------------------------------
 
 
 def build_data_transform_node(
-    node_def: NodeDef,
+    ctx: NodeContext,
     cel: CelEngine,
 ) -> Callable[..., Any]:
     """Build a data_transform node returning partial state."""
-    args: DataTransformArgs = node_def.args  # type: ignore[assignment]
+    args: DataTransformArgs = ctx.node_def.args  # type: ignore[assignment]
 
-    async def data_transform_fn(state: dict[str, Any]) -> dict[str, Any]:
+    async def data_transform_fn(
+        _ctx: NodeContext, state: dict[str, Any]
+    ) -> dict[str, Any]:
         result = cel.evaluate(args.expression, state)
         if isinstance(result, dict):
             return result
         return {"result": result}
 
-    return data_transform_fn
+    return partial(data_transform_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
+# set_state
+# ---------------------------------------------------------------------------
 
 
 def build_set_state_node(
-    node_def: NodeDef,
+    ctx: NodeContext,
     cel: CelEngine,
 ) -> Callable[..., Any]:
     """Build a set_state node that evaluates CEL expressions for each key."""
-    args: SetStateArgs = node_def.args  # type: ignore[assignment]
+    args: SetStateArgs = ctx.node_def.args  # type: ignore[assignment]
 
-    async def set_state_fn(state: dict[str, Any]) -> dict[str, Any]:
+    async def set_state_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
         result = {}
         for key, expr in args.values.items():
             result[key] = cel.evaluate(expr, state)
         return result
 
-    return set_state_fn
+    return partial(set_state_fn, ctx)
 
 
-def resolve_tools_for_node(
-    tool_refs: list[Any],
-    tool_registry: Any,
-) -> list[BaseTool]:
-    """Resolve tool registry references to LangChain BaseTool instances."""
-    resolved: list[BaseTool] = []
-    for ref in tool_refs:
-        # Tools must already be in the registry as sherma Tool instances
-        import asyncio
-
-        version_spec = f"=={ref.version}" if ref.version else "*"
-        tool_entity = asyncio.get_event_loop().run_until_complete(
-            tool_registry.get(ref.id, version_spec)
-        )
-        resolved.append(to_langgraph_tool(tool_entity))
-    return resolved
+# ---------------------------------------------------------------------------
+# Tool resolution helpers
+# ---------------------------------------------------------------------------
 
 
 async def resolve_tools_for_node_async(
@@ -143,7 +349,7 @@ async def resolve_tools_for_node_async(
     """Resolve tool refs to LangChain BaseTool instances (async)."""
     resolved: list[BaseTool] = []
     for ref in tool_refs:
-        version_spec = f"=={ref.version}" if ref.version else "*"
+        version_spec = f"=={ref.version}" if ref.version and ref.version != "*" else "*"
         tool_entity = await tool_registry.get(ref.id, version_spec)
         resolved.append(to_langgraph_tool(tool_entity))
     return resolved
