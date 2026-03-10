@@ -1,0 +1,51 @@
+# Multi-Agent Example: Travel Planner Supervisor
+#
+# This supervisor agent delegates to sub-agents wrapped as tools.
+# The LLM decides when to call the weather-agent based on the user's request.
+
+prompts:
+  - id: supervisor-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a travel planning assistant.
+      You have access to a weather agent that can look up the current weather for any city.
+      When the user asks about travel plans, use the weather agent to check weather conditions
+      at the destination and include that information in your recommendations.
+      Provide helpful, concise travel advice.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+# Declare sub-agents that will be wrapped as tools.
+# The weather-agent is loaded directly from its YAML file.
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    yaml_path: examples/multi_agent/weather_agent.yaml
+
+agents:
+  travel-planner:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: planner
+      nodes:
+        - name: planner
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["supervisor-prompt"]["instructions"]'
+            use_sub_agents_as_tools: true
+
+      edges:
+        - source: planner
+          target: __end__

@@ -21,7 +21,7 @@ from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DeclarativeConfig,
 )
-from sherma.langgraph.tools import from_langgraph_tool
+from sherma.langgraph.tools import agent_to_langgraph_tool, from_langgraph_tool
 from sherma.registry.base import RegistryEntry
 from sherma.registry.bundle import RegistryBundle
 
@@ -117,6 +117,40 @@ def import_tool(import_path: str) -> BaseTool:
     )
 
 
+def _import_agent(import_path: str) -> Any:
+    """Import an agent from a dotted Python path.
+
+    Example: "my_agents.weather_agent" imports the weather_agent
+    object from my_agents.py.
+    """
+    from sherma.entities.agent.base import Agent
+
+    module_path, _, attr_name = import_path.rpartition(".")
+    if not module_path:
+        raise DeclarativeConfigError(
+            f"Invalid import_path '{import_path}': "
+            f"must be a dotted path like 'module.agent_name'"
+        )
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        raise DeclarativeConfigError(
+            f"Cannot import module '{module_path}': {exc}"
+        ) from exc
+
+    if not hasattr(module, attr_name):
+        raise DeclarativeConfigError(
+            f"Module '{module_path}' has no attribute '{attr_name}'"
+        )
+
+    obj = getattr(module, attr_name)
+    if isinstance(obj, Agent):
+        return obj
+    raise DeclarativeConfigError(
+        f"'{import_path}' is not an Agent, got {type(obj).__name__}"
+    )
+
+
 def _extract_bearer_token(http_async_client: Any) -> str | None:
     """Extract a Bearer token from an httpx.AsyncClient's default headers."""
     import httpx
@@ -185,14 +219,18 @@ async def populate_registries(
     http_async_client: Any | None = None,
 ) -> None:
     """Register entities declared in the config into registries."""
+    tenant_id = registries.tenant_id
+
     for llm_def in config.llms:
         await registries.llm_registry.add(
             RegistryEntry(
                 id=llm_def.id,
                 version=llm_def.version,
+                tenant_id=tenant_id,
                 instance=LLM(
                     id=llm_def.id,
                     version=llm_def.version,
+                    tenant_id=tenant_id,
                     model_name=llm_def.model_name,
                 ),
             )
@@ -208,9 +246,11 @@ async def populate_registries(
             RegistryEntry(
                 id=prompt_def.id,
                 version=prompt_def.version,
+                tenant_id=tenant_id,
                 instance=Prompt(
                     id=prompt_def.id,
                     version=prompt_def.version,
+                    tenant_id=tenant_id,
                     instructions=prompt_def.instructions,
                 ),
             )
@@ -233,11 +273,17 @@ async def populate_registries(
             skill_card = SkillCard(
                 id=skill_def.id,
                 version=skill_def.version,
-                **{k: v for k, v in data.items() if k not in ("id", "version")},
+                tenant_id=tenant_id,
+                **{
+                    k: v
+                    for k, v in data.items()
+                    if k not in ("id", "version", "tenant_id")
+                },
             )
             skill = Skill(
                 id=skill_def.id,
                 version=skill_def.version,
+                tenant_id=tenant_id,
                 front_matter=SkillFrontMatter(
                     name=skill_card.name,
                     description=skill_card.description,
@@ -248,6 +294,7 @@ async def populate_registries(
                 RegistryEntry(
                     id=skill_def.id,
                     version=skill_def.version,
+                    tenant_id=tenant_id,
                     instance=skill,
                 )
             )
@@ -261,6 +308,7 @@ async def populate_registries(
                 RegistryEntry(
                     id=skill_def.id,
                     version=skill_def.version,
+                    tenant_id=tenant_id,
                     remote=True,
                     url=skill_def.url,
                 )
@@ -271,6 +319,7 @@ async def populate_registries(
             skill = Skill(
                 id=skill_def.id,
                 version=skill_def.version,
+                tenant_id=tenant_id,
                 front_matter=SkillFrontMatter(
                     name=fetched_card.name,
                     description=fetched_card.description,
@@ -281,6 +330,7 @@ async def populate_registries(
                 RegistryEntry(
                     id=skill_def.id,
                     version=skill_def.version,
+                    tenant_id=tenant_id,
                     instance=skill,
                 )
             )
@@ -295,10 +345,12 @@ async def populate_registries(
         )
         for st in skill_tools:
             sherma_tool = from_langgraph_tool(st)
+            sherma_tool.tenant_id = tenant_id
             await registries.tool_registry.add(
                 RegistryEntry(
                     id=sherma_tool.id,
                     version=sherma_tool.version,
+                    tenant_id=tenant_id,
                     instance=sherma_tool,
                 )
             )
@@ -314,10 +366,12 @@ async def populate_registries(
                 if skill.skill_card:
                     for lt in load_local_tools_from_skill(skill.skill_card):
                         sherma_tool = from_langgraph_tool(lt)
+                        sherma_tool.tenant_id = tenant_id
                         await registries.tool_registry.add(
                             RegistryEntry(
                                 id=sherma_tool.id,
                                 version=sherma_tool.version,
+                                tenant_id=tenant_id,
                                 instance=sherma_tool,
                             )
                         )
@@ -329,13 +383,77 @@ async def populate_registries(
             sherma_tool = from_langgraph_tool(lg_tool)
             sherma_tool.id = tool_def.id
             sherma_tool.version = tool_def.version
+            sherma_tool.tenant_id = tenant_id
             await registries.tool_registry.add(
                 RegistryEntry(
                     id=tool_def.id,
                     version=tool_def.version,
+                    tenant_id=tenant_id,
                     instance=sherma_tool,
                 )
             )
+
+    # Register sub-agents and wrap them as tools
+    for sub_agent_def in config.sub_agents:
+        if sub_agent_def.url:
+            await registries.agent_registry.add(
+                RegistryEntry(
+                    id=sub_agent_def.id,
+                    version=sub_agent_def.version,
+                    tenant_id=tenant_id,
+                    remote=True,
+                    url=sub_agent_def.url,
+                )
+            )
+        elif sub_agent_def.yaml_path:
+            from sherma.langgraph.declarative.agent import DeclarativeAgent
+
+            yaml_path = Path(sub_agent_def.yaml_path)
+            if not yaml_path.exists():
+                raise DeclarativeConfigError(
+                    f"Sub-agent YAML file not found: {yaml_path}"
+                )
+            agent_instance = DeclarativeAgent(
+                id=sub_agent_def.id,
+                version=sub_agent_def.version,
+                tenant_id=tenant_id,
+                yaml_path=yaml_path,
+                http_async_client=http_async_client,
+            )
+            await registries.agent_registry.add(
+                RegistryEntry(
+                    id=sub_agent_def.id,
+                    version=sub_agent_def.version,
+                    tenant_id=tenant_id,
+                    instance=agent_instance,
+                )
+            )
+        elif sub_agent_def.import_path:
+            agent_instance = _import_agent(sub_agent_def.import_path)
+            await registries.agent_registry.add(
+                RegistryEntry(
+                    id=sub_agent_def.id,
+                    version=sub_agent_def.version,
+                    tenant_id=tenant_id,
+                    instance=agent_instance,
+                )
+            )
+        # If none are set, the agent should already be registered
+
+        agent = await registries.agent_registry.get(
+            sub_agent_def.id, f"=={sub_agent_def.version}"
+        )
+        lg_tool = agent_to_langgraph_tool(agent)
+        sherma_tool = from_langgraph_tool(lg_tool)
+        sherma_tool.tenant_id = tenant_id
+        await registries.tool_registry.add(
+            RegistryEntry(
+                id=sherma_tool.id,
+                version=sherma_tool.version,
+                tenant_id=tenant_id,
+                instance=sherma_tool,
+            )
+        )
 
 
 def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
@@ -414,20 +532,31 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
             if llm_args.tools and (
                 llm_args.use_tools_from_registry
                 or llm_args.use_tools_from_loaded_skills
+                or llm_args.use_sub_agents_as_tools
             ):
                 raise DeclarativeConfigError(
                     f"call_llm node '{node.name}' cannot specify both "
                     f"an explicit 'tools' list and "
-                    f"'use_tools_from_registry' or 'use_tools_from_loaded_skills'"
+                    f"'use_tools_from_registry', 'use_tools_from_loaded_skills', "
+                    f"or 'use_sub_agents_as_tools'"
                 )
-            if (
-                llm_args.use_tools_from_registry
-                and llm_args.use_tools_from_loaded_skills
-            ):
+            exclusive_flags = sum(
+                [
+                    llm_args.use_tools_from_registry,
+                    llm_args.use_tools_from_loaded_skills,
+                    llm_args.use_sub_agents_as_tools,
+                ]
+            )
+            if exclusive_flags > 1:
                 raise DeclarativeConfigError(
-                    f"call_llm node '{node.name}' cannot specify both "
-                    f"'use_tools_from_registry' and "
-                    f"'use_tools_from_loaded_skills'"
+                    f"call_llm node '{node.name}' cannot specify more than one of "
+                    f"'use_tools_from_registry', 'use_tools_from_loaded_skills', "
+                    f"and 'use_sub_agents_as_tools'"
+                )
+            if llm_args.use_sub_agents_as_tools and not config.sub_agents:
+                raise DeclarativeConfigError(
+                    f"call_llm node '{node.name}' uses 'use_sub_agents_as_tools' "
+                    f"but no sub_agents are declared in the config"
                 )
 
     # Validate that call_llm nodes with tool options have a tool_node
@@ -438,6 +567,7 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
             n.args.tools
             or n.args.use_tools_from_registry
             or n.args.use_tools_from_loaded_skills
+            or n.args.use_sub_agents_as_tools
         )
         for n in graph.nodes
     )

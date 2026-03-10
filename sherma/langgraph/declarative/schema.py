@@ -36,6 +36,7 @@ class CallLLMArgs(BaseModel):
     tools: list[RegistryRef] | None = None
     use_tools_from_registry: bool = False
     use_tools_from_loaded_skills: bool = False
+    use_sub_agents_as_tools: bool = False
 
 
 class ToolNodeArgs(BaseModel):
@@ -178,6 +179,22 @@ class HookDef(BaseModel):
     import_path: str
 
 
+class SubAgentDef(BaseModel):
+    """A sub-agent declaration in the YAML.
+
+    Sub-agents can be remote (via ``url``), local Python objects
+    (via ``import_path``), or declarative YAML agents (via ``yaml_path``).
+    If none of these are provided, the agent is expected to already be
+    registered in the agent registry.
+    """
+
+    id: str
+    version: str = "*"
+    url: str | None = None
+    import_path: str | None = None
+    yaml_path: str | None = None
+
+
 class DeclarativeConfig(BaseModel):
     """Top-level declarative configuration parsed from YAML."""
 
@@ -187,3 +204,4 @@ class DeclarativeConfig(BaseModel):
     prompts: list[PromptDef] = Field(default_factory=list)
     skills: list[SkillDef] = Field(default_factory=list)
     hooks: list[HookDef] = Field(default_factory=list)
+    sub_agents: list[SubAgentDef] = Field(default_factory=list)

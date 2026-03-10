@@ -150,6 +150,9 @@ class DeclarativeAgent(LangGraphAgent):
             self._registries = RegistryBundle(tenant_id=self.tenant_id)
         await populate_registries(config, self._registries, self.http_async_client)
 
+        # Track sub-agent tool IDs for use_sub_agents_as_tools
+        self._sub_agent_tool_ids: list[str] = [sa.id for sa in config.sub_agents]
+
         # Register hooks from constructor
         for executor in self.hooks:
             self.hook_manager.register(executor)
@@ -233,6 +236,7 @@ class DeclarativeAgent(LangGraphAgent):
             config=config,
             node_def=node_def,
             hook_manager=self.hook_manager if self.hook_manager._executors else None,
+            extra={"sub_agent_tool_ids": self._sub_agent_tool_ids},
         )
 
         if node_def.type == "call_llm":
@@ -263,7 +267,7 @@ class DeclarativeAgent(LangGraphAgent):
 
         if node_def.type == "call_agent":
             ca_args: CallAgentArgs = node_def.args  # type: ignore[assignment]
-            agent = await self._registries.tool_registry.get(
+            agent = await self._registries.agent_registry.get(
                 ca_args.agent.id, ca_args.agent.version
             )
             return build_call_agent_node(ctx, agent, cel)

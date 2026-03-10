@@ -7,12 +7,13 @@ Declarative agents let you define an entire LangGraph agent in a single YAML fil
 A declarative agent YAML has these top-level sections:
 
 ```yaml
-prompts:    # Prompt definitions
-llms:       # LLM declarations
-tools:      # Tool imports
-skills:     # Skill card references
-hooks:      # Hook executor imports
-agents:     # Agent graph definitions
+prompts:      # Prompt definitions
+llms:         # LLM declarations
+tools:        # Tool imports
+skills:       # Skill card references
+sub_agents:   # Sub-agent declarations (for multi-agent orchestration)
+hooks:        # Hook executor imports
+agents:       # Agent graph definitions
 ```
 
 All entity registrations and the graph definition live in one file, giving you a complete snapshot of the agent.
@@ -79,6 +80,29 @@ hooks:
 
 Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md).
 
+### Sub-Agents
+
+Declare other agents as sub-agents to enable multi-agent orchestration. Sub-agents are automatically wrapped as LangGraph tools that the supervisor LLM can invoke. See [Multi-Agent](multi-agent.md) for the full guide.
+
+```yaml
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    yaml_path: agents/weather-agent.yaml        # From a YAML file
+
+  - id: search-agent
+    version: "1.0.0"
+    import_path: my_agents.search_agent          # From a Python module
+
+  - id: remote-agent
+    version: "1.0.0"
+    url: https://remote-agent.example.com        # Remote A2A agent
+
+  - id: pre-registered-agent
+    version: "1.0.0"
+    # No source -- expects the agent to already be in the registry
+```
+
 ## Agent Definition
 
 Each agent is defined under the `agents` key:
@@ -133,8 +157,9 @@ Calls an LLM with a prompt and optional tool bindings.
     tools:                          # Optional: bind specific tools
       - id: get_weather
         version: "1.0.0"
-    # use_tools_from_registry: true    # Or: bind ALL registered tools
-    # use_tools_from_loaded_skills: true  # Or: bind tools from loaded skills
+    # use_tools_from_registry: true       # Or: bind ALL registered tools
+    # use_tools_from_loaded_skills: true   # Or: bind tools from loaded skills
+    # use_sub_agents_as_tools: true        # Or: bind sub-agents as tools
 ```
 
 **Tool binding modes** (mutually exclusive):
@@ -144,6 +169,7 @@ Calls an LLM with a prompt and optional tool bindings.
 | `tools` (explicit list) | Bind only the listed tools |
 | `use_tools_from_registry: true` | Bind all tools in the registry |
 | `use_tools_from_loaded_skills: true` | Bind only tools loaded via skill discovery |
+| `use_sub_agents_as_tools: true` | Bind sub-agents declared in `sub_agents` as tools |
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma automatically injects a `tool_node` after it with the correct conditional edges. If the LLM responds with tool calls, execution routes to the tool node; otherwise it continues to the next edge. You don't need to wire this manually.
 

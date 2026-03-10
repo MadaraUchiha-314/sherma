@@ -10,9 +10,12 @@ A Python framework for building LLM-powered agents that bridges [A2A](https://a2
 
 sherma lets you define agents in YAML with [Common Expression Language (CEL)](https://cel.dev/) for dynamic logic, while still giving you full programmatic control when you need it. It handles the wiring between protocols so you can focus on agent behavior.
 
+Every utility in sherma -- registries, tool wrapping, hooks, message converters, multi-agent primitives -- works as a standalone building block. You can use them with `DeclarativeAgent` for zero-code YAML agents, with `LangGraphAgent` for custom graph construction, or mix both approaches.
+
 **Core value proposition:**
 
 - **Declarative-first**: Define agents entirely in YAML -- graphs, prompts, tools, skills, and routing logic
+- **Multi-agent orchestration**: Compose agents by declaring sub-agents that are automatically wrapped as tools -- the supervisor LLM decides when to delegate
 - **Protocol bridge**: Seamlessly connect A2A-compatible agents, LangGraph workflows, MCP tools, and Agent Skills
 - **Progressive disclosure**: Skills are discovered and loaded on demand by the LLM, following the [agentskills.io](https://agentskills.io/) specification
 - **Lifecycle hooks**: Intercept and modify behavior at every stage -- LLM calls, tool execution, agent invocation, and more
@@ -24,6 +27,7 @@ sherma lets you define agents in YAML with [Common Expression Language (CEL)](ht
 | [Getting Started](getting-started.md) | Installation, setup, and your first agent |
 | [Core Concepts](concepts.md) | Entities, registries, versioning, and the type system |
 | [Declarative Agents](declarative-agents.md) | YAML schema reference, node types, edges, and CEL expressions |
+| [Multi-Agent](multi-agent.md) | Sub-agent orchestration, agent-as-tool wrapping |
 | [Skills](skills.md) | Skill cards, progressive disclosure, MCP and local tool integration |
 | [Hooks](hooks.md) | Lifecycle hooks for observability, guardrails, and control flow |
 | [A2A Integration](a2a-integration.md) | A2A protocol support, agent executor, message conversion |

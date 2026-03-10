@@ -18,7 +18,10 @@ from sherma.langgraph.declarative.schema import (
 def _has_tools(args: CallLLMArgs) -> bool:
     """Return True if the call_llm node has any tool binding."""
     return bool(
-        args.tools or args.use_tools_from_registry or args.use_tools_from_loaded_skills
+        args.tools
+        or args.use_tools_from_registry
+        or args.use_tools_from_loaded_skills
+        or args.use_sub_agents_as_tools
     )
 
 
