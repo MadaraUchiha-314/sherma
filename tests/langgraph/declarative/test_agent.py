@@ -264,3 +264,59 @@ def test_state_class_no_injection_without_skills():
 
     # Should be plain MessagesState (no subclass needed)
     assert state_cls is MessagesState
+
+
+INTERRUPT_YAML = """\
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: ask
+      nodes:
+        - name: ask
+          type: interrupt
+          args:
+            value: '"What is your name?"'
+      edges: []
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_interrupt_node():
+    """DeclarativeAgent with an interrupt node compiles and pauses on invoke."""
+    from langgraph.types import Command
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=INTERRUPT_YAML,
+    )
+    compiled = await agent.get_graph()
+
+    # Attach a checkpointer so interrupt/resume works
+    from langgraph.checkpoint.memory import MemorySaver
+
+    compiled.checkpointer = MemorySaver()
+
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await compiled.ainvoke({"messages": []}, config)
+
+    # After interrupt, the graph should have paused — check via get_state
+    state = await compiled.aget_state(config)
+    # The interrupt value should be surfaced in state.tasks
+    assert len(state.tasks) > 0
+
+    # Resume with a value
+    result = await compiled.ainvoke(
+        Command(resume="Alice"),
+        config,
+    )
+    # The resumed value should appear as a HumanMessage
+    from langchain_core.messages import HumanMessage
+
+    human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
+    assert any(m.content == "Alice" for m in human_msgs)

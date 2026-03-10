@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 import httpx
-from a2a.types import Message, Part, Role, TextPart
+from a2a.types import Message, Part, Role, TaskState, TaskStatusUpdateEvent, TextPart
 
 from sherma.http import get_http_client
 from sherma.langgraph.declarative import DeclarativeAgent
@@ -57,11 +57,32 @@ async def main() -> None:
         role=Role.user,
     )
 
-    async for event in agent.send_message(request):
-        if isinstance(event, Message):
-            for part in event.parts:
-                if part.root.kind == "text":
-                    print(part.root.text)
+    msg_counter = 1
+    while True:
+        async for event in agent.send_message(request):
+            if isinstance(event, TaskStatusUpdateEvent):
+                if event.status.state == TaskState.input_required:
+                    # Print the interrupt prompt
+                    if event.status.message:
+                        for part in event.status.message.parts:
+                            if part.root.kind == "text":
+                                print(part.root.text)
+                    # Ask the user for input and send it back
+                    user_input = input("> ")
+                    msg_counter += 1
+                    request = Message(
+                        message_id=f"user-{msg_counter}",
+                        parts=[Part(root=TextPart(text=user_input))],
+                        role=Role.user,
+                    )
+                    break
+            elif isinstance(event, Message):
+                for part in event.parts:
+                    if part.root.kind == "text":
+                        print(part.root.text)
+        else:
+            # Loop completed without break — no interrupt, we're done
+            break
 
 
 if __name__ == "__main__":

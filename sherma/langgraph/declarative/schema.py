@@ -71,12 +71,32 @@ class SetStateArgs(BaseModel):
     values: dict[str, str]
 
 
+class InterruptArgs(BaseModel):
+    """Arguments for an interrupt node."""
+
+    value: str  # CEL expression evaluated at runtime to produce the interrupt value
+
+
 class NodeDef(BaseModel):
     """A node definition in the graph."""
 
     name: str
-    type: Literal["call_llm", "tool_node", "call_agent", "data_transform", "set_state"]
-    args: CallLLMArgs | ToolNodeArgs | CallAgentArgs | DataTransformArgs | SetStateArgs
+    type: Literal[
+        "call_llm",
+        "tool_node",
+        "call_agent",
+        "data_transform",
+        "set_state",
+        "interrupt",
+    ]
+    args: (
+        CallLLMArgs
+        | ToolNodeArgs
+        | CallAgentArgs
+        | DataTransformArgs
+        | SetStateArgs
+        | InterruptArgs
+    )
 
 
 class BranchDef(BaseModel):

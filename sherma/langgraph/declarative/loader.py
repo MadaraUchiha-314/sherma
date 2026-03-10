@@ -365,13 +365,15 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                     f"Default target '{edge.default}' not found in nodes"
                 )
 
-    # Check messages field exists if call_llm nodes are present
+    # Check messages field exists if call_llm or interrupt nodes are present
     has_call_llm = any(n.type == "call_llm" for n in graph.nodes)
-    if has_call_llm:
+    has_interrupt = any(n.type == "interrupt" for n in graph.nodes)
+    if has_call_llm or has_interrupt:
         field_names = {f.name for f in agent_def.state.fields}
         if "messages" not in field_names:
             raise DeclarativeConfigError(
-                "State must include 'messages' field when call_llm nodes exist"
+                "State must include 'messages' field when "
+                "call_llm or interrupt nodes exist"
             )
 
     # Validate call_llm with tools has corresponding tool_node

@@ -15,6 +15,7 @@ from sherma.langgraph.declarative.nodes import (
     _resolve_skill_tools_from_state,
     build_call_llm_node,
     build_data_transform_node,
+    build_interrupt_node,
     build_set_state_node,
     build_tool_node,
 )
@@ -22,6 +23,7 @@ from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DataTransformArgs,
     DeclarativeConfig,
+    InterruptArgs,
     NodeDef,
     RegistryRef,
     SetStateArgs,
@@ -608,3 +610,59 @@ async def test_node_receives_config_via_partial():
     assert isinstance(fn, stdlib_partial)
     assert fn.args[0] is ctx
     assert fn.args[0].config is config
+
+
+# --- Interrupt node tests ---
+
+
+@pytest.mark.asyncio
+async def test_build_interrupt_node():
+    """interrupt node evaluates CEL, calls interrupt(), wraps resume as HumanMessage."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import HumanMessage
+
+    node_def = NodeDef(
+        name="ask",
+        type="interrupt",
+        args=InterruptArgs(value='"What is your name?"'),
+    )
+    cel = CelEngine()
+    fn = build_interrupt_node(_make_ctx(node_def), cel)
+
+    with patch(
+        "sherma.langgraph.declarative.nodes.interrupt",
+        return_value="Alice",
+    ) as mock_interrupt:
+        result = await fn({"messages": []})
+
+    mock_interrupt.assert_called_once_with("What is your name?")
+    assert len(result["messages"]) == 1
+    assert isinstance(result["messages"][0], HumanMessage)
+    assert result["messages"][0].content == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_build_interrupt_node_with_cel_expression():
+    """interrupt node evaluates dynamic CEL expression referencing state."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import HumanMessage
+
+    node_def = NodeDef(
+        name="ask_age",
+        type="interrupt",
+        args=InterruptArgs(value='"Hello " + name + ", how old are you?"'),
+    )
+    cel = CelEngine()
+    fn = build_interrupt_node(_make_ctx(node_def), cel)
+
+    with patch(
+        "sherma.langgraph.declarative.nodes.interrupt",
+        return_value="25",
+    ) as mock_interrupt:
+        result = await fn({"messages": [], "name": "Bob"})
+
+    mock_interrupt.assert_called_once_with("Hello Bob, how old are you?")
+    assert isinstance(result["messages"][0], HumanMessage)
+    assert result["messages"][0].content == "25"
