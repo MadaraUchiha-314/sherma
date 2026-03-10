@@ -181,8 +181,7 @@ class Registry(ABC, Generic[T]):
 - `PromptRegistry` -- `Registry[Prompt]`
 - `LLMRegistry` -- `Registry[LLM]`
 - `ToolRegistry` -- `Registry[Tool]`
-- `SkillRegistry` -- `Registry[Skill]`
-- `SkillCardRegistry` -- `Registry[SkillCard]`
+- `SkillRegistry` -- `Registry[Skill]` (skills may have a `skill_card: SkillCard` attribute)
 - `AgentRegistry` -- `Registry[Agent]`
 
 ## Hooks
@@ -289,7 +288,6 @@ def get_agent_output_from_message_part(message: Message, schema_model) -> BaseMo
 
 ```python
 def create_skill_tools(
-    skill_card_registry: SkillCardRegistry,
     skill_registry: SkillRegistry,
     tool_registry: ToolRegistry,
     hook_manager: HookManager | None = None,

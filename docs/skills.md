@@ -198,17 +198,14 @@ You can also use skill tools outside of declarative agents:
 ```python
 from sherma import create_skill_tools
 from sherma.registry.skill import SkillRegistry
-from sherma.registry.skill_card import SkillCardRegistry
 from sherma.registry.tool import ToolRegistry
 
-skill_card_registry = SkillCardRegistry()
 skill_registry = SkillRegistry()
 tool_registry = ToolRegistry()
 
-# Register a skill card...
+# Register skills (with skill_card attribute)...
 # Then create tools:
 tools = create_skill_tools(
-    skill_card_registry=skill_card_registry,
     skill_registry=skill_registry,
     tool_registry=tool_registry,
     hook_manager=hook_manager,  # Optional

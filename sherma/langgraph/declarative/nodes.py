@@ -49,7 +49,7 @@ if TYPE_CHECKING:
         SetStateArgs,
         ToolNodeArgs,
     )
-    from sherma.registry.skill_card import SkillCardRegistry
+    from sherma.registry.skill import SkillRegistry
     from sherma.registry.tool import ToolRegistry
 
 
@@ -253,7 +253,7 @@ def build_call_llm_node(
 def build_tool_node(
     ctx: NodeContext,
     tool_registry: ToolRegistry | None = None,
-    skill_card_registry: SkillCardRegistry | None = None,
+    skill_registry: SkillRegistry | None = None,
 ) -> Callable[..., Any]:
     """Build a tool_node that executes tool calls from the last AIMessage.
 
@@ -264,7 +264,7 @@ def build_tool_node(
       from the registry.
     * No explicit tools → resolves all tools from the registry.
 
-    When *skill_card_registry* is provided the node additionally
+    When *skill_registry* is provided the node additionally
     inspects ``load_skill_md`` tool calls and updates the internal
     ``loaded_tools_from_skills`` list so that downstream
     ``use_tools_from_loaded_skills`` LLM nodes can pick them up.
@@ -344,7 +344,7 @@ def build_tool_node(
             result = after_ctx.result
 
         # Track skill tool IDs when load_skill_md is called.
-        if skill_card_registry is not None:
+        if skill_registry is not None:
             internal = _get_internal(state)
             current_ids: list[str] = list(internal.get("loaded_tools_from_skills", []))
             for tc in pending_calls:
@@ -357,16 +357,18 @@ def build_tool_node(
                 if _BARE_VERSION_RE.match(version):
                     version = f"=={version}"
                 try:
-                    card = await skill_card_registry.get(skill_id, version)
-                    for tool_id in card.local_tools:
-                        if tool_id not in current_ids:
-                            current_ids.append(tool_id)
-                    for mcp_id in card.mcps:
-                        if mcp_id not in current_ids:
-                            current_ids.append(mcp_id)
+                    skill = await skill_registry.get(skill_id, version)
+                    card = skill.skill_card
+                    if card:
+                        for tool_id in card.local_tools:
+                            if tool_id not in current_ids:
+                                current_ids.append(tool_id)
+                        for mcp_id in card.mcps:
+                            if mcp_id not in current_ids:
+                                current_ids.append(mcp_id)
                 except Exception:
                     logger.warning(
-                        "[%s] Could not resolve skill card for '%s'",
+                        "[%s] Could not resolve skill for '%s'",
                         _ctx.node_def.name,
                         skill_id,
                     )

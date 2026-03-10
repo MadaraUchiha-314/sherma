@@ -1,5 +1,5 @@
 # Declarative Weather Agent with Hooks
-# Same weather agent as declarative_weather_agent.yaml, but with hooks
+# Same weather agent as declarative_weather_agent, but with hooks
 # for observability (logging) and prompt modification (guardrails).
 #
 # Hooks can be registered two ways:

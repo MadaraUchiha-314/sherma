@@ -254,8 +254,8 @@ class DeclarativeAgent(LangGraphAgent):
             return build_tool_node(
                 ctx,
                 tool_registry=self._registries.tool_registry,
-                skill_card_registry=(
-                    self._registries.skill_card_registry if has_skills else None
+                skill_registry=(
+                    self._registries.skill_registry if has_skills else None
                 ),
             )
 

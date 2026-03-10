@@ -513,16 +513,17 @@ async def test_build_tool_node_registry_empty():
 
 @pytest.mark.asyncio
 async def test_build_tool_node_with_skill_card_tracking():
-    """tool_node with skill_card_registry tracks _skill_tool_ids."""
+    """tool_node with skill_registry tracks _skill_tool_ids."""
     from unittest.mock import patch
 
     from langchain_core.messages import ToolMessage
     from langchain_core.tools import StructuredTool
 
+    from sherma.entities.skill import Skill, SkillFrontMatter
     from sherma.entities.skill_card import LocalToolDef, SkillCard
     from sherma.entities.tool import Tool
     from sherma.registry.base import RegistryEntry
-    from sherma.registry.skill_card import SkillCardRegistry
+    from sherma.registry.skill import SkillRegistry
     from sherma.registry.tool import ToolRegistry
 
     card = SkillCard(
@@ -539,9 +540,15 @@ async def test_build_tool_node_with_skill_card_tracking():
             )
         },
     )
-    skill_card_registry = SkillCardRegistry()
-    await skill_card_registry.add(
-        RegistryEntry(id="weather", version="1.0.0", instance=card)
+    skill = Skill(
+        id="weather",
+        version="1.0.0",
+        front_matter=SkillFrontMatter(name="Weather", description="Weather skill"),
+        skill_card=card,
+    )
+    skill_registry = SkillRegistry()
+    await skill_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=skill)
     )
 
     def load_skill_md(skill_id: str, version: str = "*") -> str:
@@ -572,7 +579,7 @@ async def test_build_tool_node_with_skill_card_tracking():
     fn = build_tool_node(
         _make_ctx(node_def),
         tool_registry=tool_registry,
-        skill_card_registry=skill_card_registry,
+        skill_registry=skill_registry,
     )
 
     ai_msg = AIMessage(
