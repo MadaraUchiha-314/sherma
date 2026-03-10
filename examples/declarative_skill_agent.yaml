@@ -1,6 +1,7 @@
 # Declarative Skill Agent
 # A general-purpose assistant that discovers and uses skills to complete tasks.
 # Follows the skill agent loop: discover skills → execute → reflect → respond.
+# Tool nodes and conditional edges for tool calls are auto-injected.
 
 prompts:
   - id: discover-skills
@@ -68,9 +69,6 @@ agents:
               - id: list_skills
               - id: load_skill_md
 
-        - name: discover_skills_tools
-          type: tool_node
-
         - name: execute
           type: call_llm
           args:
@@ -79,9 +77,6 @@ agents:
               version: "1.0.0"
             prompt: 'prompts["plan-and-execute"]["instructions"]'
             use_tools_from_loaded_skills: true
-
-        - name: execute_tools
-          type: tool_node
 
         - name: reflect
           type: call_llm
@@ -100,25 +95,11 @@ agents:
             prompt: 'prompts["summarize"]["instructions"]'
 
       edges:
-        # discover_skills → tool call loop
         - source: discover_skills
-          branches:
-            - condition: has_tool_calls
-              target: discover_skills_tools
-          default: execute
-
-        - source: discover_skills_tools
-          target: discover_skills
-
-        # execute → tool call loop
-        - source: execute
-          branches:
-            - condition: has_tool_calls
-              target: execute_tools
-          default: reflect
-
-        - source: execute_tools
           target: execute
+
+        - source: execute
+          target: reflect
 
         # reflect → task complete check
         - source: reflect

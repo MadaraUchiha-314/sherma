@@ -1,6 +1,7 @@
 # Declarative Weather Agent
 # Same weather agent as weather_agent.py, defined entirely in YAML.
 # Tools are imported from Python, LLMs are created automatically.
+# The tool_node and conditional edges are auto-injected.
 
 prompts:
   - id: weather-system-prompt
@@ -45,16 +46,6 @@ agents:
               - id: get_weather
                 version: "1.0.0"
 
-        - name: tools
-          type: tool_node
-          args: {}
-
       edges:
         - source: agent
-          branches:
-            - condition: has_tool_calls
-              target: tools
-          default: __end__
-
-        - source: tools
-          target: agent
+          target: __end__

@@ -34,6 +34,7 @@ from sherma.langgraph.declarative.schema import (
     DeclarativeConfig,
     NodeDef,
 )
+from sherma.langgraph.declarative.transform import inject_tool_nodes
 from sherma.logging import get_logger
 
 logger = get_logger(__name__)
@@ -126,6 +127,9 @@ class DeclarativeAgent(LangGraphAgent):
             yaml_path=self.yaml_path,
             yaml_content=self.yaml_content,
         )
+
+        # Auto-inject tool_nodes for call_llm nodes with tools
+        config = inject_tool_nodes(config)
 
         # Find the agent definition (use self.id to match)
         agent_name = self._find_agent_name(config)
