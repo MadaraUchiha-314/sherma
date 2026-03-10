@@ -20,6 +20,20 @@ Agent Framework rising through the citadel!
 | pre-commit | Git hook management |
 | GitHub Actions | CI/CD |
 
+## Installation
+
+```bash
+pip install sherma
+```
+
+Or with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv add sherma
+```
+
+Requires Python 3.13+.
+
 ## Local Development
 
 ```bash

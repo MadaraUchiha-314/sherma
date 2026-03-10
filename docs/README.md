@@ -110,4 +110,10 @@ asyncio.run(main())
 pip install sherma
 ```
 
+Or with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv add sherma
+```
+
 Requires Python 3.13+.
