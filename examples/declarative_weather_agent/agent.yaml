@@ -1,5 +1,5 @@
 # Declarative Weather Agent
-# Same weather agent as weather_agent.py, defined entirely in YAML.
+# Same weather agent as weather_agent, defined entirely in YAML.
 # Tools are imported from Python, LLMs are created automatically.
 # The tool_node and conditional edges are auto-injected.
 

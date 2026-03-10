@@ -1,7 +1,7 @@
 """Example weather agent using sherma + LangGraph + ChatOpenAI.
 
 Usage:
-    uv run python examples/weather_agent.py "What is the weather in Tokyo?"
+    uv run python examples/weather_agent/main.py "What is the weather in Tokyo?"
 
 Requires:
     - uv sync --extra examples
@@ -119,12 +119,12 @@ class WeatherAgent(LangGraphAgent):
 
 async def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: uv run python examples/weather_agent.py <query>")
+        print("Usage: uv run python examples/weather_agent/main.py <query>")
         sys.exit(1)
 
     query = sys.argv[1]
 
-    secrets_path = Path(__file__).resolve().parent.parent / "secrets.json"
+    secrets_path = Path(__file__).resolve().parent.parent.parent / "secrets.json"
     if not secrets_path.exists():
         print(
             f"Error: {secrets_path} not found. "

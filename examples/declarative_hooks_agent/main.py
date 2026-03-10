@@ -9,7 +9,7 @@ Hook executors:
   - PromptGuardrailHook: appends a safety instruction to every LLM prompt
 
 Usage:
-    uv run python examples/declarative_hooks_agent.py "What is the weather in Paris?"
+    uv run python examples/declarative_hooks_agent/main.py "What is the weather?"
 
 Requires:
     - uv sync --extra examples
@@ -33,10 +33,10 @@ from sherma.langgraph.declarative import DeclarativeAgent
 
 async def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: uv run python examples/declarative_hooks_agent.py <query>")
+        print("Usage: uv run python examples/declarative_hooks_agent/main.py <query>")
         sys.exit(1)
 
-    secrets_path = Path(__file__).resolve().parent.parent / "secrets.json"
+    secrets_path = Path(__file__).resolve().parent.parent.parent / "secrets.json"
     if not secrets_path.exists():
         print(
             f"Error: {secrets_path} not found. "
@@ -59,7 +59,7 @@ async def main() -> None:
     agent = DeclarativeAgent(
         id="hooks-weather-agent",
         version="1.0.0",
-        yaml_path=Path(__file__).parent / "declarative_hooks_agent.yaml",
+        yaml_path=Path(__file__).parent / "agent.yaml",
         http_async_client=http_client,
         hooks=[LoggingHook(), PromptGuardrailHook()],
     )

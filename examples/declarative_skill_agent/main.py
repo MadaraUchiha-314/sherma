@@ -1,7 +1,7 @@
 """Declarative skill agent — discovers and uses skills via YAML config.
 
 Usage:
-    uv run python examples/declarative_skill_agent.py "What's the weather in Tokyo?"
+    uv run python examples/declarative_skill_agent/main.py "What's the weather?"
 
 Requires:
     - uv sync --extra examples
@@ -35,10 +35,10 @@ async def main() -> None:
     logging.getLogger("openai").setLevel(logging.WARNING)
 
     if len(sys.argv) < 2:
-        print("Usage: uv run python examples/declarative_skill_agent.py <query>")
+        print("Usage: uv run python examples/declarative_skill_agent/main.py <query>")
         sys.exit(1)
 
-    secrets_path = Path(__file__).resolve().parent.parent / "secrets.json"
+    secrets_path = Path(__file__).resolve().parent.parent.parent / "secrets.json"
     if not secrets_path.exists():
         print(
             f"Error: {secrets_path} not found. "
@@ -58,7 +58,7 @@ async def main() -> None:
     agent = DeclarativeAgent(
         id="skill-agent",
         version="1.0.0",
-        yaml_path=Path(__file__).parent / "declarative_skill_agent.yaml",
+        yaml_path=Path(__file__).parent / "agent.yaml",
         http_async_client=http_client,
     )
 
