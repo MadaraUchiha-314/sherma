@@ -1,0 +1,58 @@
+# Declarative Weather Agent with Hooks
+# Same weather agent as declarative_weather_agent.yaml, but with hooks
+# for observability (logging) and prompt modification (guardrails).
+#
+# Hooks can be registered two ways:
+#   1. In Python via the DeclarativeAgent constructor: hooks=[LoggingHook()]
+#   2. In YAML via import_path (uncomment below):
+#
+# hooks:
+#   - import_path: examples.hooks.LoggingHook
+#   - import_path: examples.hooks.PromptGuardrailHook
+
+prompts:
+  - id: weather-system-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful weather assistant.
+      Use the get_weather tool to look up current weather
+      for any city the user asks about.
+      Provide a concise, friendly response.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+tools:
+  - id: get_weather
+    version: "1.0.0"
+    import_path: examples.tools.get_weather
+
+agents:
+  hooks-weather-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: agent
+
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["weather-system-prompt"]["instructions"]'
+            tools:
+              - id: get_weather
+                version: "1.0.0"
+
+      edges:
+        - source: agent
+          target: __end__

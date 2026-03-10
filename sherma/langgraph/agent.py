@@ -20,8 +20,11 @@ from a2a.types import (
 )
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Interrupt
+from pydantic import Field
 
 from sherma.entities.agent.base import Agent
+from sherma.hooks.executor import HookExecutor
+from sherma.hooks.manager import HookManager
 from sherma.logging import get_logger
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
 
@@ -34,6 +37,12 @@ class LangGraphAgent(Agent):
     Subclass and implement ``get_graph`` to return your compiled graph.
     ``send_message`` and ``cancel_task`` are auto-implemented.
     """
+
+    hook_manager: HookManager = Field(default_factory=HookManager)
+
+    def register_hooks(self, executor: HookExecutor) -> None:
+        """Register a hook executor with this agent's hook manager."""
+        self.hook_manager.register(executor)
 
     @abstractmethod
     async def get_graph(self) -> CompiledStateGraph:

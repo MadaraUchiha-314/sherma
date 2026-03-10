@@ -172,6 +172,12 @@ class SkillDef(BaseModel):
     skill_card_path: str | None = None
 
 
+class HookDef(BaseModel):
+    """A hook executor declaration in the YAML."""
+
+    import_path: str
+
+
 class DeclarativeConfig(BaseModel):
     """Top-level declarative configuration parsed from YAML."""
 
@@ -180,3 +186,4 @@ class DeclarativeConfig(BaseModel):
     tools: list[ToolDef] = Field(default_factory=list)
     prompts: list[PromptDef] = Field(default_factory=list)
     skills: list[SkillDef] = Field(default_factory=list)
+    hooks: list[HookDef] = Field(default_factory=list)

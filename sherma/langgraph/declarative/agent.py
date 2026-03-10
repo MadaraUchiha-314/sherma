@@ -7,15 +7,17 @@ from typing import Any
 
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from sherma.exceptions import GraphConstructionError
+from sherma.hooks.executor import HookExecutor
 from sherma.langgraph.agent import LangGraphAgent
 from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.declarative.edges import build_conditional_router
 from sherma.langgraph.declarative.loader import (
     RegistryBundle,
     load_declarative_config,
+    populate_hooks,
     populate_registries,
     validate_config,
 )
@@ -114,7 +116,9 @@ class DeclarativeAgent(LangGraphAgent):
 
     yaml_path: str | Path | None = None
     yaml_content: str | None = None
+    config: DeclarativeConfig | None = None
     http_async_client: Any | None = None
+    hooks: list[HookExecutor] = Field(default_factory=list)
     _registries: RegistryBundle | None = None
     _compiled_graph: CompiledStateGraph | None = None
 
@@ -123,11 +127,14 @@ class DeclarativeAgent(LangGraphAgent):
         if self._compiled_graph is not None:
             return self._compiled_graph
 
-        # 1. Load and validate YAML
-        config = load_declarative_config(
-            yaml_path=self.yaml_path,
-            yaml_content=self.yaml_content,
-        )
+        # 1. Load config from the provided source
+        if self.config is not None:
+            config = self.config
+        else:
+            config = load_declarative_config(
+                yaml_path=self.yaml_path,
+                yaml_content=self.yaml_content,
+            )
 
         # Auto-inject tool_nodes for call_llm nodes with tools
         config = inject_tool_nodes(config)
@@ -140,6 +147,14 @@ class DeclarativeAgent(LangGraphAgent):
         if self._registries is None:
             self._registries = RegistryBundle()
         await populate_registries(config, self._registries, self.http_async_client)
+
+        # Register hooks from constructor
+        for executor in self.hooks:
+            self.hook_manager.register(executor)
+
+        # Register hooks from YAML config
+        if config.hooks:
+            populate_hooks(config, self.hook_manager)
 
         # 3. Build the graph
         agent_def = config.agents[agent_name]
@@ -212,7 +227,11 @@ class DeclarativeAgent(LangGraphAgent):
         """Build a node function from a node definition."""
         assert self._registries is not None
 
-        ctx = NodeContext(config=config, node_def=node_def)
+        ctx = NodeContext(
+            config=config,
+            node_def=node_def,
+            hook_manager=self.hook_manager if self.hook_manager._executors else None,
+        )
 
         if node_def.type == "call_llm":
             args: CallLLMArgs = node_def.args  # type: ignore[assignment]

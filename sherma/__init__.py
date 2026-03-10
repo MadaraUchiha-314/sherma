@@ -23,6 +23,12 @@ from sherma.exceptions import (
     ShermaError,
     VersionNotFoundError,
 )
+from sherma.hooks import (
+    BaseHookExecutor,
+    HookExecutor,
+    HookManager,
+    HookType,
+)
 from sherma.langgraph.declarative import (
     DeclarativeAgent,
     DeclarativeConfig,
@@ -58,6 +64,7 @@ __all__ = [
     "SCHEMA_OUTPUT_URI",
     "Agent",
     "AgentRegistry",
+    "BaseHookExecutor",
     "CelEvaluationError",
     "DeclarativeAgent",
     "DeclarativeConfig",
@@ -66,6 +73,9 @@ __all__ = [
     "EntityNotFoundError",
     "EntityType",
     "GraphConstructionError",
+    "HookExecutor",
+    "HookManager",
+    "HookType",
     "LLMRegistry",
     "LocalAgent",
     "LocalToolDef",

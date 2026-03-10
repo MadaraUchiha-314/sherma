@@ -4,6 +4,7 @@ import re
 
 from langchain_core.tools import BaseTool, tool
 
+from sherma.hooks.manager import HookManager
 from sherma.langgraph.tools import from_langgraph_tool
 from sherma.logging import get_logger
 from sherma.registry.base import RegistryEntry
@@ -34,6 +35,7 @@ def create_skill_tools(
     skill_card_registry: SkillCardRegistry,
     skill_registry: SkillRegistry,
     tool_registry: ToolRegistry,
+    hook_manager: HookManager | None = None,
 ) -> list[BaseTool]:
     """Create LangGraph tools for progressive skill disclosure.
 
@@ -68,6 +70,22 @@ def create_skill_tools(
         """
         version = _normalize_version(version)
         logger.info("load_skill_md called: skill_id=%s, version=%s", skill_id, version)
+
+        # before_skill_load
+        if hook_manager:
+            from sherma.hooks.types import BeforeSkillLoadContext
+
+            before_ctx = await hook_manager.run_hook(
+                "before_skill_load",
+                BeforeSkillLoadContext(
+                    node_context=None,
+                    skill_id=skill_id,
+                    version=version,
+                ),
+            )
+            skill_id = before_ctx.skill_id
+            version = before_ctx.version
+
         skill_card = await skill_card_registry.get(skill_id, version)
         resolver = SkillResolver(skill_card)
 
@@ -86,6 +104,7 @@ def create_skill_tools(
 
         # Load and register MCP tools
         mcp_tools = await load_mcp_tools_from_skill(skill_card)
+        tools_loaded: list[str] = []
         for mcp_tool in mcp_tools:
             sherma_tool = from_langgraph_tool(mcp_tool)
             await tool_registry.add(
@@ -95,6 +114,7 @@ def create_skill_tools(
                     instance=sherma_tool,
                 )
             )
+            tools_loaded.append(sherma_tool.id)
 
         # Load and register local tools
         local_tools = load_local_tools_from_skill(skill_card)
@@ -107,6 +127,23 @@ def create_skill_tools(
                     instance=sherma_tool,
                 )
             )
+            tools_loaded.append(sherma_tool.id)
+
+        # after_skill_load
+        if hook_manager:
+            from sherma.hooks.types import AfterSkillLoadContext
+
+            after_ctx = await hook_manager.run_hook(
+                "after_skill_load",
+                AfterSkillLoadContext(
+                    node_context=None,
+                    skill_id=skill_id,
+                    version=version,
+                    content=content,
+                    tools_loaded=tools_loaded,
+                ),
+            )
+            content = after_ctx.content
 
         return content
 
