@@ -65,6 +65,11 @@ class LangGraphAgent(Agent):
             msg_type = type(msg).__name__
             logger.debug("  msg[%d] %s: %.150s...", i, msg_type, str(content))
 
+        response_messages = result.get("messages", [])
+        if response_messages:
+            last_message = response_messages[-1]
+            yield langgraph_to_a2a(last_message)
+
         interrupts: tuple[Interrupt, ...] | None = result.get("__interrupt__")
         if interrupts:
             parts = [Part(root=TextPart(text=str(i.value))) for i in interrupts]
@@ -82,11 +87,6 @@ class LangGraphAgent(Agent):
                 status=status,
                 final=False,
             )
-        else:
-            response_messages = result.get("messages", [])
-            if response_messages:
-                last_message = response_messages[-1]
-                yield langgraph_to_a2a(last_message)
 
     async def cancel_task(
         self,

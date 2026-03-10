@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.prebuilt import ToolNode
+from langgraph.types import interrupt
 
 from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.tools import to_langgraph_tool
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
         CallLLMArgs,
         DataTransformArgs,
         DeclarativeConfig,
+        InterruptArgs,
         NodeDef,
         SetStateArgs,
         ToolNodeArgs,
@@ -335,6 +337,26 @@ def build_set_state_node(
         return result
 
     return partial(set_state_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
+# interrupt
+# ---------------------------------------------------------------------------
+
+
+def build_interrupt_node(
+    ctx: NodeContext,
+    cel: CelEngine,
+) -> Callable[..., Any]:
+    """Build an interrupt node that pauses graph execution for human input."""
+    args: InterruptArgs = ctx.node_def.args  # type: ignore[assignment]
+
+    async def interrupt_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        value = cel.evaluate(args.value, state)
+        response = interrupt(value)
+        return {"messages": [HumanMessage(content=str(response))]}
+
+    return partial(interrupt_fn, ctx)
 
 
 # ---------------------------------------------------------------------------

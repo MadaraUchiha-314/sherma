@@ -10,6 +10,7 @@ from sherma.langgraph.declarative.schema import (
     DeclarativeConfig,
     EdgeDef,
     GraphDef,
+    InterruptArgs,
     LLMDef,
     NodeDef,
     PromptDef,
@@ -142,3 +143,19 @@ def test_declarative_config_with_agent():
     )
     assert "my-agent" in config.agents
     assert config.agents["my-agent"].graph.entry_point == "start"
+
+
+def test_interrupt_args():
+    args = InterruptArgs(value='"What is your name?"')
+    assert args.value == '"What is your name?"'
+
+
+def test_node_def_interrupt():
+    node = NodeDef(
+        name="ask",
+        type="interrupt",
+        args=InterruptArgs(value='"What is your name?"'),
+    )
+    assert node.name == "ask"
+    assert node.type == "interrupt"
+    assert isinstance(node.args, InterruptArgs)

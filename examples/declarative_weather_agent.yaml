@@ -66,6 +66,12 @@ agents:
           args:
             expression: '{"query_count": query_count + 1, "last_status": "done"}'
 
+        # interrupt: ask the user for the next place to check weather
+        - name: ask_next_place
+          type: interrupt
+          args:
+            value: '"Which place would you like to check the weather for next?"'
+
       edges:
         - source: init
           target: agent
@@ -74,4 +80,7 @@ agents:
           target: update_stats
 
         - source: update_stats
-          target: __end__
+          target: ask_next_place
+
+        - source: ask_next_place
+          target: agent

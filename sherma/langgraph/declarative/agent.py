@@ -25,6 +25,7 @@ from sherma.langgraph.declarative.nodes import (
     build_call_agent_node,
     build_call_llm_node,
     build_data_transform_node,
+    build_interrupt_node,
     build_set_state_node,
     build_tool_node,
 )
@@ -251,6 +252,9 @@ class DeclarativeAgent(LangGraphAgent):
 
         if node_def.type == "set_state":
             return build_set_state_node(ctx, cel)
+
+        if node_def.type == "interrupt":
+            return build_interrupt_node(ctx, cel)
 
         raise GraphConstructionError(f"Unknown node type: {node_def.type}")
 

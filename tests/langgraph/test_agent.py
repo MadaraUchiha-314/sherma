@@ -88,8 +88,13 @@ async def test_send_message_single_interrupt():
     async for event in agent.send_message(request):
         events.append(event)
 
-    assert len(events) == 1
-    event = events[0]
+    assert len(events) == 2
+    # First event: the partial response message
+    msg = events[0]
+    assert isinstance(msg, Message)
+    assert msg.parts[0].root.text == "partial"  # type: ignore[union-attr]
+    # Second event: the interrupt status update
+    event = events[1]
     assert isinstance(event, TaskStatusUpdateEvent)
     assert event.status.state == TaskState.input_required
     assert event.final is False
