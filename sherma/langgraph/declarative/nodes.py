@@ -156,10 +156,17 @@ def build_call_llm_node(
             if sub_agent_tool_ids:
                 refs = [RegistryRef(id=tid) for tid in sub_agent_tool_ids]
                 current_tools = await resolve_tools_for_node_async(refs, tool_registry)
-        elif args.tools and tool_registry is not None:
-            current_tools = await resolve_tools_for_node_async(
+
+        # Merge explicit tools (additive with any dynamic flag)
+        if args.tools and tool_registry is not None:
+            explicit_tools = await resolve_tools_for_node_async(
                 args.tools, tool_registry
             )
+            existing_names = {t.name for t in current_tools}
+            for tool in explicit_tools:
+                if tool.name not in existing_names:
+                    current_tools.append(tool)
+                    existing_names.add(tool.name)
 
         prompt_text = cel.evaluate(args.prompt, state)
         messages = state.get("messages", [])

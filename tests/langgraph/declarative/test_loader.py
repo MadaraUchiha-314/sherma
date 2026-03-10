@@ -508,7 +508,7 @@ agents:
 
 
 def test_validate_registry_tools_with_explicit_tools():
-    """use_tools_from_registry + explicit tools on call_llm is an error."""
+    """use_tools_from_registry + explicit tools on call_llm is allowed."""
     yaml_content = """\
 llms:
   - id: gpt-4
@@ -516,7 +516,7 @@ llms:
     model_name: gpt-4
 
 agents:
-  bad-agent:
+  agent:
     state:
       fields:
         - name: messages
@@ -539,8 +539,42 @@ agents:
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
-    with pytest.raises(DeclarativeConfigError, match="cannot specify both"):
-        validate_config(config, "bad-agent")
+    validate_config(config, "agent")  # should not raise
+
+
+def test_validate_loaded_skills_with_explicit_tools():
+    """use_tools_from_loaded_skills + explicit tools on call_llm is allowed."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            use_tools_from_loaded_skills: true
+            tools:
+              - id: some-tool
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    validate_config(config, "agent")  # should not raise
 
 
 def test_validate_both_registry_and_loaded_skills():

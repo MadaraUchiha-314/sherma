@@ -352,6 +352,74 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills():
 
 
 @pytest.mark.asyncio
+async def test_build_call_llm_node_loaded_skills_plus_explicit_tools():
+    """use_tools_from_loaded_skills + explicit tools merges both sets with dedup."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt='"You are helpful"',
+            use_tools_from_loaded_skills=True,
+            tools=[RegistryRef(id="explicit-tool", version="1.0.0")],
+        ),
+    )
+
+    bound_model = AsyncMock()
+    bound_model.ainvoke = AsyncMock(return_value=AIMessage(content="merged"))
+    chat_model = MagicMock()
+    chat_model.bind_tools = MagicMock(return_value=bound_model)
+
+    registry = ToolRegistry()
+    skill_tool = StructuredTool.from_function(
+        func=lambda x: x, name="skill-tool", description="A skill tool"
+    )
+    explicit_tool = StructuredTool.from_function(
+        func=lambda x: x, name="explicit-tool", description="An explicit tool"
+    )
+    # Also add a duplicate under both paths to verify dedup
+    await registry.add(
+        RegistryEntry(
+            id="skill-tool",
+            version="1.0.0",
+            instance=Tool(id="skill-tool", version="1.0.0", function=skill_tool),
+        )
+    )
+    await registry.add(
+        RegistryEntry(
+            id="explicit-tool",
+            version="1.0.0",
+            instance=Tool(id="explicit-tool", version="1.0.0", function=explicit_tool),
+        )
+    )
+
+    cel = CelEngine()
+    fn = build_call_llm_node(
+        _make_ctx(node_def), chat_model, cel, tool_registry=registry
+    )
+
+    result = await fn(
+        {
+            "messages": [],
+            INTERNAL_STATE_KEY: {"loaded_tools_from_skills": ["skill-tool"]},
+        }
+    )
+
+    chat_model.bind_tools.assert_called_once()
+    bound_tools = chat_model.bind_tools.call_args[0][0]
+    names = {t.name for t in bound_tools}
+    assert names == {"skill-tool", "explicit-tool"}
+    assert len(bound_tools) == 2  # no duplicates
+    assert result["messages"][0].content == "merged"
+
+
+@pytest.mark.asyncio
 async def test_build_call_llm_node_use_tools_from_loaded_skills_empty():
     """use_tools_from_loaded_skills with empty _skill_tool_ids doesn't bind."""
     from sherma.registry.tool import ToolRegistry

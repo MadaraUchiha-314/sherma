@@ -524,22 +524,10 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                         f"tool_node exists in the graph"
                     )
 
-    # Validate use_tools_from_registry/use_tools_from_loaded_skills
-    # are not combined with explicit tools
+    # Validate that at most one dynamic tool flag is set
     for node in graph.nodes:
         if node.type == "call_llm":
             llm_args: CallLLMArgs = node.args  # type: ignore[assignment]
-            if llm_args.tools and (
-                llm_args.use_tools_from_registry
-                or llm_args.use_tools_from_loaded_skills
-                or llm_args.use_sub_agents_as_tools
-            ):
-                raise DeclarativeConfigError(
-                    f"call_llm node '{node.name}' cannot specify both "
-                    f"an explicit 'tools' list and "
-                    f"'use_tools_from_registry', 'use_tools_from_loaded_skills', "
-                    f"or 'use_sub_agents_as_tools'"
-                )
             exclusive_flags = sum(
                 [
                     llm_args.use_tools_from_registry,
