@@ -2,6 +2,8 @@
 
 sherma is built on a small set of composable primitives. Every agent -- whether programmatic or declarative -- is assembled from these building blocks.
 
+> **Note**: While `DeclarativeAgent` is the fastest way to get started, every utility in sherma (registries, tool wrapping, hooks, message converters, schema helpers) works independently. If you are building agents directly with `LangGraphAgent` or plain LangGraph, you can use these as standalone building blocks without writing any YAML.
+
 ## Entities
 
 An **entity** is any named, versioned object used to build an agent. All entities extend `EntityBase`:
@@ -193,6 +195,12 @@ You only implement `get_graph()`. The framework handles A2A message conversion, 
 `DeclarativeAgent` extends `LangGraphAgent`. Instead of implementing `get_graph()` in Python, you provide a YAML file. The graph, registries, and nodes are all built automatically from the YAML config.
 
 See [Declarative Agents](declarative-agents.md) for the full YAML reference.
+
+### Agent-as-Tool
+
+Any agent can be wrapped as a LangGraph tool using `agent_to_langgraph_tool()`. This is the foundation for multi-agent orchestration -- a supervisor agent's LLM can invoke sub-agents through standard tool calling. Declarative agents support this natively via the `sub_agents` config and `use_sub_agents_as_tools` flag.
+
+See [Multi-Agent](multi-agent.md) for the full guide.
 
 ## Message Conversion
 

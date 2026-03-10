@@ -15,6 +15,7 @@ from langgraph.types import interrupt
 
 from sherma.hooks.manager import HookManager
 from sherma.langgraph.declarative.cel_engine import CelEngine
+from sherma.langgraph.declarative.schema import RegistryRef
 from sherma.langgraph.tools import to_langgraph_tool
 from sherma.logging import get_logger
 
@@ -150,6 +151,11 @@ def build_call_llm_node(
             current_tools = await _resolve_skill_tools_from_state(state, tool_registry)
         elif args.use_tools_from_registry and tool_registry is not None:
             current_tools = await _resolve_all_registry_tools(tool_registry)
+        elif args.use_sub_agents_as_tools and tool_registry is not None:
+            sub_agent_tool_ids: list[str] = _ctx.extra.get("sub_agent_tool_ids", [])
+            if sub_agent_tool_ids:
+                refs = [RegistryRef(id=tid) for tid in sub_agent_tool_ids]
+                current_tools = await resolve_tools_for_node_async(refs, tool_registry)
         elif args.tools and tool_registry is not None:
             current_tools = await resolve_tools_for_node_async(
                 args.tools, tool_registry

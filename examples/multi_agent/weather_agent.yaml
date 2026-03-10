@@ -1,0 +1,46 @@
+# Sub-agent: Weather Agent
+# A simple agent that looks up weather for a city.
+
+prompts:
+  - id: weather-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a weather assistant.
+      Use the get_weather tool to look up current weather for the city the user asks about.
+      Return a concise weather summary.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+tools:
+  - id: get_weather
+    version: "1.0.0"
+    import_path: examples.tools.get_weather
+
+agents:
+  weather-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["weather-prompt"]["instructions"]'
+            tools:
+              - id: get_weather
+                version: "1.0.0"
+      edges:
+        - source: agent
+          target: __end__

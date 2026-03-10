@@ -574,7 +574,7 @@ agents:
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
-    with pytest.raises(DeclarativeConfigError, match="cannot specify both"):
+    with pytest.raises(DeclarativeConfigError, match="cannot specify more than one"):
         validate_config(config, "bad-agent")
 
 
@@ -633,3 +633,22 @@ agents:
 """
     config = load_declarative_config(yaml_content=yaml_content)
     assert config.skills[0].skill_card_path == "/path/to/card.json"
+
+
+@pytest.mark.anyio
+async def test_populate_registries_propagates_tenant_id():
+    """All entries and entity instances should carry the bundle's tenant_id."""
+    from unittest.mock import MagicMock
+
+    config = load_declarative_config(yaml_content=MINIMAL_YAML)
+    registries = RegistryBundle(
+        tenant_id="acme",
+        chat_models={"gpt-4": MagicMock()},
+    )
+    await populate_registries(config, registries)
+
+    llm = await registries.llm_registry.get("gpt-4")
+    assert llm.tenant_id == "acme"
+
+    prompt = await registries.prompt_registry.get("sys")
+    assert prompt.tenant_id == "acme"

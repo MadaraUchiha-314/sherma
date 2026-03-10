@@ -196,5 +196,6 @@ app = A2AStarletteApplication(agent_card=card, http_handler=handler)
 
 - [Core Concepts](concepts.md) -- understand entities, registries, and versioning
 - [Declarative Agents](declarative-agents.md) -- full YAML schema reference
+- [Multi-Agent](multi-agent.md) -- sub-agent orchestration and agent-as-tool wrapping
 - [Skills](skills.md) -- progressive skill disclosure
 - [Hooks](hooks.md) -- lifecycle hooks for observability and control
