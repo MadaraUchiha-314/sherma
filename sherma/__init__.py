@@ -12,6 +12,7 @@ from sherma.entities import (
     Tool,
 )
 from sherma.entities.agent import Agent, LocalAgent, RemoteAgent
+from sherma.entities.base import DEFAULT_TENANT_ID
 from sherma.exceptions import (
     CelEvaluationError,
     DeclarativeConfigError,
@@ -40,8 +41,10 @@ from sherma.registry import (
     LLMRegistry,
     PromptRegistry,
     Registry,
+    RegistryBundle,
     RegistryEntry,
     SkillRegistry,
+    TenantRegistryManager,
     ToolRegistry,
 )
 from sherma.schema import (
@@ -58,6 +61,7 @@ from sherma.schema import (
 from sherma.types import EntityType, Markdown, Protocol
 
 __all__ = [
+    "DEFAULT_TENANT_ID",
     "LLM",
     "SCHEMA_INPUT_URI",
     "SCHEMA_OUTPUT_URI",
@@ -84,6 +88,7 @@ __all__ = [
     "PromptRegistry",
     "Protocol",
     "Registry",
+    "RegistryBundle",
     "RegistryEntry",
     "RegistryError",
     "RemoteAgent",
@@ -94,6 +99,7 @@ __all__ = [
     "SkillCard",
     "SkillFrontMatter",
     "SkillRegistry",
+    "TenantRegistryManager",
     "Tool",
     "ToolRegistry",
     "VersionNotFoundError",

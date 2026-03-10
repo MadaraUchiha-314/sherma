@@ -9,6 +9,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ConfigDict, Field
 
+from sherma.entities.base import DEFAULT_TENANT_ID
 from sherma.exceptions import GraphConstructionError
 from sherma.hooks.executor import HookExecutor
 from sherma.langgraph.agent import LangGraphAgent
@@ -119,6 +120,7 @@ class DeclarativeAgent(LangGraphAgent):
     config: DeclarativeConfig | None = None
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = Field(default_factory=list)
+    tenant_id: str = DEFAULT_TENANT_ID
     _registries: RegistryBundle | None = None
     _compiled_graph: CompiledStateGraph | None = None
 
@@ -145,7 +147,7 @@ class DeclarativeAgent(LangGraphAgent):
 
         # 2. Auto-build registries from config
         if self._registries is None:
-            self._registries = RegistryBundle()
+            self._registries = RegistryBundle(tenant_id=self.tenant_id)
         await populate_registries(config, self._registries, self.http_async_client)
 
         # Register hooks from constructor

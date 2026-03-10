@@ -10,6 +10,7 @@ An **entity** is any named, versioned object used to build an agent. All entitie
 class EntityBase(BaseModel):
     id: str
     version: str = "*"
+    tenant_id: str = DEFAULT_TENANT_ID  # "default"
 ```
 
 sherma defines five entity types:
@@ -45,6 +46,7 @@ Each entry in a registry wraps an entity with resolution metadata:
 class RegistryEntry(BaseModel, Generic[T]):
     id: str
     version: str = "*"
+    tenant_id: str = DEFAULT_TENANT_ID     # "default"
     remote: bool = False
     instance: T | None = None              # Direct instance
     factory: Callable[[], T | Awaitable[T]] | None = None  # Lazy factory
@@ -81,6 +83,56 @@ Versions follow [semver](https://semver.org/). When requesting an entity, you ca
 - `"*"` -- latest version available (default)
 
 The version resolver (`sherma.version.find_best_match`) selects the best matching version from all registered versions.
+
+## Multi-Tenancy
+
+sherma supports per-tenant isolation through `TenantRegistryManager`. Each tenant gets its own `RegistryBundle` -- a container holding independent registry instances for all entity types. Entities registered for one tenant are never accessible from another.
+
+### TenantRegistryManager
+
+```python
+from sherma import TenantRegistryManager
+
+manager = TenantRegistryManager()
+
+# Get or create a tenant's registries (singleton per tenant_id)
+bundle = manager.get_bundle("acme-corp")
+await bundle.tool_registry.add(...)
+
+# Default tenant is "default" -- backward compatible with non-tenant code
+default_bundle = manager.get_bundle()  # tenant_id="default"
+```
+
+### RegistryBundle
+
+Each tenant's `RegistryBundle` contains independent instances of every registry type:
+
+```python
+class RegistryBundle(BaseModel):
+    tenant_id: str = DEFAULT_TENANT_ID
+    tool_registry: ToolRegistry
+    llm_registry: LLMRegistry
+    prompt_registry: PromptRegistry
+    skill_registry: SkillRegistry
+    agent_registry: AgentRegistry
+    skill_card_registry: SkillCardRegistry
+    chat_models: dict[str, Any]
+```
+
+### DeclarativeAgent with Tenants
+
+Pass `tenant_id` when creating a `DeclarativeAgent` to scope it to a specific tenant:
+
+```python
+agent = DeclarativeAgent(
+    id="weather-agent",
+    version="1.0.0",
+    yaml_path="weather-agent.yaml",
+    tenant_id="acme-corp",
+)
+```
+
+All code that omits `tenant_id` uses `DEFAULT_TENANT_ID = "default"`, so existing agents continue to work without changes.
 
 ## Protocols
 

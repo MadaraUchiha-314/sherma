@@ -4,7 +4,7 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
-from sherma.entities.base import EntityBase
+from sherma.entities.base import DEFAULT_TENANT_ID, EntityBase
 from sherma.exceptions import (
     EntityNotFoundError,
     RemoteEntityError,
@@ -26,6 +26,7 @@ class RegistryEntry(BaseModel, Generic[T]):
 
     id: str
     version: str = WILDCARD
+    tenant_id: str = DEFAULT_TENANT_ID
     remote: bool = False
     instance: T | None = None
     factory: Callable[[], T | Awaitable[T]] | None = None
