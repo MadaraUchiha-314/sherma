@@ -16,6 +16,7 @@ Base class for all registry entities.
 class EntityBase(BaseModel):
     id: str
     version: str = "*"
+    tenant_id: str = DEFAULT_TENANT_ID  # "default"
 ```
 
 ### `Prompt`
@@ -144,6 +145,7 @@ class DeclarativeAgent(LangGraphAgent):
     config: DeclarativeConfig | None = None
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = []
+    tenant_id: str = DEFAULT_TENANT_ID  # "default"
 ```
 
 Provide one of `yaml_path`, `yaml_content`, or `config`.
@@ -156,6 +158,7 @@ Provide one of `yaml_path`, `yaml_content`, or `config`.
 class RegistryEntry(BaseModel, Generic[T]):
     id: str
     version: str = "*"
+    tenant_id: str = DEFAULT_TENANT_ID  # "default"
     remote: bool = False
     instance: T | None = None
     factory: Callable[[], T | Awaitable[T]] | None = None
@@ -183,6 +186,43 @@ class Registry(ABC, Generic[T]):
 - `ToolRegistry` -- `Registry[Tool]`
 - `SkillRegistry` -- `Registry[Skill]` (skills may have a `skill_card: SkillCard` attribute)
 - `AgentRegistry` -- `Registry[Agent]`
+- `SkillCardRegistry` -- `Registry[SkillCard]`
+
+### `RegistryBundle`
+
+Container for all per-tenant registry instances.
+
+```python
+class RegistryBundle(BaseModel):
+    tenant_id: str = DEFAULT_TENANT_ID
+    tool_registry: ToolRegistry
+    llm_registry: LLMRegistry
+    prompt_registry: PromptRegistry
+    skill_registry: SkillRegistry
+    agent_registry: AgentRegistry
+    skill_card_registry: SkillCardRegistry
+    chat_models: dict[str, Any]
+```
+
+### `TenantRegistryManager`
+
+Manages per-tenant singleton `RegistryBundle` instances.
+
+```python
+class TenantRegistryManager:
+    def get_bundle(self, tenant_id: str = DEFAULT_TENANT_ID) -> RegistryBundle
+    def has_tenant(self, tenant_id: str) -> bool
+    def list_tenants(self) -> list[str]
+    def remove_tenant(self, tenant_id: str) -> None
+```
+
+### `DEFAULT_TENANT_ID`
+
+```python
+DEFAULT_TENANT_ID = "default"
+```
+
+The default tenant ID used when no tenant is explicitly specified.
 
 ## Hooks
 

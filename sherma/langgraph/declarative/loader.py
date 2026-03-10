@@ -9,7 +9,6 @@ from typing import Any
 
 import yaml
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, Field
 
 from sherma.entities.llm import LLM
 from sherma.entities.prompt import Prompt
@@ -24,22 +23,7 @@ from sherma.langgraph.declarative.schema import (
 )
 from sherma.langgraph.tools import from_langgraph_tool
 from sherma.registry.base import RegistryEntry
-from sherma.registry.llm import LLMRegistry
-from sherma.registry.prompt import PromptRegistry
-from sherma.registry.skill import SkillRegistry
-from sherma.registry.tool import ToolRegistry
-
-
-class RegistryBundle(BaseModel):
-    """Container for all registry types and pre-constructed chat models."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    tool_registry: ToolRegistry = Field(default_factory=ToolRegistry)
-    llm_registry: LLMRegistry = Field(default_factory=LLMRegistry)
-    prompt_registry: PromptRegistry = Field(default_factory=PromptRegistry)
-    skill_registry: SkillRegistry = Field(default_factory=SkillRegistry)
-    chat_models: dict[str, Any] = Field(default_factory=dict)
+from sherma.registry.bundle import RegistryBundle
 
 
 def load_declarative_config(

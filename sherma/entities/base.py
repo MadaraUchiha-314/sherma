@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 
+DEFAULT_TENANT_ID = "default"
+
 
 class EntityBase(BaseModel):
     """Base class for all registry entities."""
@@ -8,3 +10,4 @@ class EntityBase(BaseModel):
 
     id: str
     version: str = "*"
+    tenant_id: str = DEFAULT_TENANT_ID
