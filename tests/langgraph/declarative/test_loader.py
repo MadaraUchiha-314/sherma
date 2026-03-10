@@ -315,3 +315,295 @@ agents:
 
     tool = await registries.tool_registry.get("get_weather")
     assert tool.id == "get_weather"
+
+
+@pytest.mark.asyncio
+async def test_populate_skill_cards_local(tmp_path):
+    """Skill cards with skill_card_path are loaded during populate."""
+    import json
+
+    card_data = {
+        "name": "Test Skill",
+        "description": "A test skill",
+        "base_uri": str(tmp_path),
+        "files": ["SKILL.md"],
+    }
+    card_file = tmp_path / "skill-card.json"
+    card_file.write_text(json.dumps(card_data))
+
+    yaml_content = f"""\
+skills:
+  - id: test-skill
+    version: "1.0.0"
+    skill_card_path: "{card_file}"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    await populate_registries(config, registries)
+
+    card = await registries.skill_card_registry.get("test-skill", "==1.0.0")
+    assert card.name == "Test Skill"
+    assert card.files == ["SKILL.md"]
+
+
+@pytest.mark.asyncio
+async def test_populate_skill_cards_remote():
+    """Skill cards with url are registered as remote entries."""
+    yaml_content = """\
+skills:
+  - id: remote-skill
+    version: "1.0.0"
+    url: "https://example.com/skill-card.json"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    await populate_registries(config, registries)
+
+    # The entry should be registered but not yet fetched
+    assert "remote-skill" in registries.skill_card_registry._entries
+
+
+def test_load_use_tools_from_registry_config():
+    """YAML with use_tools_from_registry: true parses correctly."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: llm
+      nodes:
+        - name: llm
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            use_tools_from_registry: true
+        - name: tools
+          type: tool_node
+      edges:
+        - source: llm
+          branches:
+            - condition: has_tool_calls
+              target: tools
+          default: __end__
+        - source: tools
+          target: llm
+"""
+    from sherma.langgraph.declarative.schema import CallLLMArgs, ToolNodeArgs
+
+    config = load_declarative_config(yaml_content=yaml_content)
+    agent = config.agents["agent"]
+    llm_node = agent.graph.nodes[0]
+    tool_node = agent.graph.nodes[1]
+
+    assert isinstance(llm_node.args, CallLLMArgs)
+    assert llm_node.args.use_tools_from_registry is True
+    assert llm_node.args.tools is None
+
+    assert isinstance(tool_node.args, ToolNodeArgs)
+    assert tool_node.args.tools is None
+
+
+def test_load_use_tools_from_loaded_skills_config():
+    """YAML with use_tools_from_loaded_skills: true parses correctly."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: llm
+      nodes:
+        - name: llm
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            use_tools_from_loaded_skills: true
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    from sherma.langgraph.declarative.schema import CallLLMArgs
+
+    config = load_declarative_config(yaml_content=yaml_content)
+    agent = config.agents["agent"]
+    llm_node = agent.graph.nodes[0]
+
+    assert isinstance(llm_node.args, CallLLMArgs)
+    assert llm_node.args.use_tools_from_loaded_skills is True
+
+
+def test_validate_registry_tools_with_explicit_tools():
+    """use_tools_from_registry + explicit tools on call_llm is an error."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  bad-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            use_tools_from_registry: true
+            tools:
+              - id: some-tool
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    with pytest.raises(DeclarativeConfigError, match="cannot specify both"):
+        validate_config(config, "bad-agent")
+
+
+def test_validate_both_registry_and_loaded_skills():
+    """use_tools_from_registry + use_tools_from_loaded_skills is an error."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  bad-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            use_tools_from_registry: true
+            use_tools_from_loaded_skills: true
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    with pytest.raises(DeclarativeConfigError, match="cannot specify both"):
+        validate_config(config, "bad-agent")
+
+
+def test_validate_tools_without_tool_node():
+    """call_llm with tool options requires a tool_node in the graph."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  bad-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            use_tools_from_registry: true
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    with pytest.raises(DeclarativeConfigError, match="tool_node"):
+        validate_config(config, "bad-agent")
+
+
+def test_skill_def_with_skill_card_path():
+    yaml_content = """\
+skills:
+  - id: my-skill
+    version: "1.0.0"
+    skill_card_path: "/path/to/card.json"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    assert config.skills[0].skill_card_path == "/path/to/card.json"

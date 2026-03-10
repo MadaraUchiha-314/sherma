@@ -1,0 +1,113 @@
+# Declarative Skill Agent
+# A general-purpose assistant that discovers and uses skills to complete tasks.
+# Follows the skill agent loop: discover skills → execute → reflect → respond.
+# Tool nodes and conditional edges for tool calls are auto-injected.
+
+prompts:
+  - id: discover-skills
+    version: "1.0.0"
+    instructions: >
+      You have access to a catalog of skills. Given the user's request:
+      1. Call list_skills ONCE to see available skills.
+      2. Call load_skill_md ONCE for the most relevant skill.
+      3. After loading, respond with a brief text summary.
+      IMPORTANT: Do NOT repeat tool calls. Call each tool at most once,
+      then reply with text (no tool calls).
+
+  - id: plan-and-execute
+    version: "1.0.0"
+    instructions: >
+      Based on the loaded skills, plan and execute the user's request.
+      Use the available tools to accomplish the task. Be direct and efficient.
+
+  - id: reflect
+    version: "1.0.0"
+    instructions: >
+      Review the results so far. If you have enough information to give the
+      user a useful answer, respond with "TASK_COMPLETE" followed by the answer.
+      Err on the side of completing — a partial but helpful answer is better
+      than unnecessary extra rounds.
+      Only respond with "NEEDS_MORE_WORK" if critical information is clearly missing.
+
+  - id: summarize
+    version: "1.0.0"
+    instructions: >
+      The task is not yet complete. Briefly summarize progress and what
+      remains. This will inform the next attempt.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+skills:
+  - id: weather
+    version: "1.0.0"
+    skill_card_path: examples/skills/weather/skill-card.json
+
+agents:
+  skill-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: discover_skills
+
+      nodes:
+        - name: discover_skills
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["discover-skills"]["instructions"]'
+            tools:
+              - id: list_skills
+              - id: load_skill_md
+
+        - name: execute
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["plan-and-execute"]["instructions"]'
+            use_tools_from_loaded_skills: true
+
+        - name: reflect
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["reflect"]["instructions"]'
+
+        - name: summarize
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt: 'prompts["summarize"]["instructions"]'
+
+      edges:
+        - source: discover_skills
+          target: execute
+
+        - source: execute
+          target: reflect
+
+        # reflect → task complete check
+        - source: reflect
+          branches:
+            - condition: 'messages[size(messages) - 1].contains("TASK_COMPLETE")'
+              target: __end__
+          default: summarize
+
+        # summarize → back to execute
+        - source: summarize
+          target: execute

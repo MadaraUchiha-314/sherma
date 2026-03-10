@@ -7,8 +7,17 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain_core.messages import AIMessage
 
-from sherma.langgraph.declarative.agent import DeclarativeAgent
+from sherma.langgraph.declarative.agent import (
+    DeclarativeAgent,
+    _build_state_class,
+)
 from sherma.langgraph.declarative.loader import RegistryBundle
+from sherma.langgraph.declarative.schema import (
+    AgentDef,
+    GraphDef,
+    StateDef,
+    StateFieldDef,
+)
 
 SET_STATE_YAML = """\
 agents:
@@ -220,3 +229,38 @@ agents:
     graph = await agent.get_graph()
     result = await graph.ainvoke({"result": ""})
     assert result["result"] == "found"
+
+
+def test_state_class_injects_internal_state():
+    """__sherma__ is auto-injected when has_skills=True."""
+    from sherma.langgraph.declarative.nodes import INTERNAL_STATE_KEY
+
+    agent_def = AgentDef(
+        state=StateDef(
+            fields=[StateFieldDef(name="messages", type="list")],
+        ),
+        graph=GraphDef(entry_point="start", nodes=[], edges=[]),
+    )
+
+    state_cls = _build_state_class(agent_def, has_skills=True)
+
+    # Should have __sherma__ in annotations
+    assert INTERNAL_STATE_KEY in state_cls.__annotations__
+    assert state_cls.__annotations__[INTERNAL_STATE_KEY] is dict
+
+
+def test_state_class_no_injection_without_skills():
+    """__sherma__ is NOT injected when has_skills=False."""
+    from langgraph.graph import MessagesState
+
+    agent_def = AgentDef(
+        state=StateDef(
+            fields=[StateFieldDef(name="messages", type="list")],
+        ),
+        graph=GraphDef(entry_point="start", nodes=[], edges=[]),
+    )
+
+    state_cls = _build_state_class(agent_def, has_skills=False)
+
+    # Should be plain MessagesState (no subclass needed)
+    assert state_cls is MessagesState

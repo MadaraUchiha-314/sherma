@@ -1,6 +1,16 @@
 __version__ = "0.5.0"
 
-from sherma.entities import LLM, EntityBase, Prompt, Skill, SkillFrontMatter, Tool
+from sherma.entities import (
+    LLM,
+    EntityBase,
+    LocalToolDef,
+    MCPServerDef,
+    Prompt,
+    Skill,
+    SkillCard,
+    SkillFrontMatter,
+    Tool,
+)
 from sherma.entities.agent import Agent, LocalAgent, RemoteAgent
 from sherma.exceptions import (
     CelEvaluationError,
@@ -18,12 +28,14 @@ from sherma.langgraph.declarative import (
     DeclarativeConfig,
     load_declarative_config,
 )
+from sherma.langgraph.skill_tools import create_skill_tools
 from sherma.registry import (
     AgentRegistry,
     LLMRegistry,
     PromptRegistry,
     Registry,
     RegistryEntry,
+    SkillCardRegistry,
     SkillRegistry,
     ToolRegistry,
 )
@@ -56,6 +68,8 @@ __all__ = [
     "GraphConstructionError",
     "LLMRegistry",
     "LocalAgent",
+    "LocalToolDef",
+    "MCPServerDef",
     "Markdown",
     "Prompt",
     "PromptRegistry",
@@ -68,6 +82,8 @@ __all__ = [
     "SchemaValidationError",
     "ShermaError",
     "Skill",
+    "SkillCard",
+    "SkillCardRegistry",
     "SkillFrontMatter",
     "SkillRegistry",
     "Tool",
@@ -75,6 +91,7 @@ __all__ = [
     "VersionNotFoundError",
     "create_agent_input_as_message_part",
     "create_agent_output_as_message_part",
+    "create_skill_tools",
     "get_agent_input_from_message_part",
     "get_agent_output_from_message_part",
     "load_declarative_config",

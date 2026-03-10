@@ -34,18 +34,22 @@ class CallLLMArgs(BaseModel):
     llm: RegistryRef
     prompt: str
     tools: list[RegistryRef] | None = None
+    use_tools_from_registry: bool = False
+    use_tools_from_loaded_skills: bool = False
 
 
 class ToolNodeArgs(BaseModel):
     """Arguments for a tool_node node.
 
-    Tools are optional. When omitted, the tool_node automatically inherits
-    tools from call_llm nodes in the graph (since it executes whatever
-    tool calls the LLM placed in the AIMessage).
+    The tool_node executes whatever tool calls the LLM placed in the last
+    AIMessage.  It resolves tool implementations from the ToolRegistry at
+    invocation time — no explicit tool list is needed.
+
+    An explicit ``tools`` list may still be provided to restrict execution
+    to a specific subset of registry tools.
     """
 
     tools: list[RegistryRef] | None = None
-    tool_calls: str | None = None
 
 
 class CallAgentArgs(BaseModel):
@@ -145,6 +149,7 @@ class SkillDef(BaseModel):
     id: str
     version: str = "*"
     url: str | None = None
+    skill_card_path: str | None = None
 
 
 class DeclarativeConfig(BaseModel):

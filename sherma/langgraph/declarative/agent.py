@@ -20,20 +20,21 @@ from sherma.langgraph.declarative.loader import (
     validate_config,
 )
 from sherma.langgraph.declarative.nodes import (
+    INTERNAL_STATE_KEY,
+    NodeContext,
     build_call_agent_node,
     build_call_llm_node,
     build_data_transform_node,
     build_set_state_node,
     build_tool_node,
-    resolve_tools_for_node_async,
 )
 from sherma.langgraph.declarative.schema import (
     CallAgentArgs,
     CallLLMArgs,
     DeclarativeConfig,
     NodeDef,
-    ToolNodeArgs,
 )
+from sherma.langgraph.declarative.transform import inject_tool_nodes
 from sherma.logging import get_logger
 
 logger = get_logger(__name__)
@@ -51,8 +52,15 @@ _TYPE_MAP: dict[str, type] = {
 
 def _build_state_class(
     agent_def: Any,
+    *,
+    has_skills: bool = False,
 ) -> type:
-    """Build a dynamic TypedDict state class from the state schema."""
+    """Build a dynamic TypedDict state class from the state schema.
+
+    When *has_skills* is ``True`` the internal ``__sherma__`` field is
+    auto-injected so that nodes can track managed state (e.g. loaded
+    skill tools) at runtime.
+    """
     from typing import TypedDict
 
     fields = agent_def.state.fields
@@ -68,6 +76,9 @@ def _build_state_class(
             py_type = _TYPE_MAP.get(field_def.type, str)
             extra_annotations[field_def.name] = py_type
 
+        if has_skills:
+            extra_annotations[INTERNAL_STATE_KEY] = dict
+
         if not extra_annotations:
             return MessagesState
 
@@ -80,6 +91,9 @@ def _build_state_class(
     for field_def in fields:
         py_type = _TYPE_MAP.get(field_def.type, str)
         td_fields[field_def.name] = py_type
+
+    if has_skills:
+        td_fields[INTERNAL_STATE_KEY] = dict
 
     return TypedDict("DynamicState", td_fields)  # type: ignore[call-overload]
 
@@ -114,6 +128,9 @@ class DeclarativeAgent(LangGraphAgent):
             yaml_content=self.yaml_content,
         )
 
+        # Auto-inject tool_nodes for call_llm nodes with tools
+        config = inject_tool_nodes(config)
+
         # Find the agent definition (use self.id to match)
         agent_name = self._find_agent_name(config)
         validate_config(config, agent_name)
@@ -146,7 +163,7 @@ class DeclarativeAgent(LangGraphAgent):
         config: DeclarativeConfig,
     ) -> CompiledStateGraph:
         """Build a LangGraph StateGraph from the agent definition."""
-        state_class = _build_state_class(agent_def)
+        state_class = _build_state_class(agent_def, has_skills=bool(config.skills))
 
         extra_vars = self._build_cel_extra_vars(config)
         cel = CelEngine(extra_vars=extra_vars)
@@ -154,9 +171,11 @@ class DeclarativeAgent(LangGraphAgent):
         graph = StateGraph(state_class)
 
         # Add nodes
-        all_nodes = list(agent_def.graph.nodes)
-        for node_def in all_nodes:
-            node_fn = await self._build_node(node_def, cel, all_nodes)
+        has_skills = bool(config.skills)
+        for node_def in agent_def.graph.nodes:
+            node_fn = await self._build_node(
+                node_def, cel, config, has_skills=has_skills
+            )
             graph.add_node(node_def.name, node_fn)
 
         # Add entry edge
@@ -185,10 +204,14 @@ class DeclarativeAgent(LangGraphAgent):
         self,
         node_def: NodeDef,
         cel: CelEngine,
-        all_nodes: list[NodeDef] | None = None,
+        config: DeclarativeConfig,
+        *,
+        has_skills: bool = False,
     ) -> Any:
         """Build a node function from a node definition."""
         assert self._registries is not None
+
+        ctx = NodeContext(config=config, node_def=node_def)
 
         if node_def.type == "call_llm":
             args: CallLLMArgs = node_def.args  # type: ignore[assignment]
@@ -200,62 +223,36 @@ class DeclarativeAgent(LangGraphAgent):
                     f"with a valid provider."
                 )
             chat_model = self._registries.chat_models[llm_id]
-            tools = None
-            if args.tools:
-                tools = await resolve_tools_for_node_async(
-                    args.tools, self._registries.tool_registry
-                )
-            return build_call_llm_node(node_def, chat_model, cel, tools)
+            return build_call_llm_node(
+                ctx,
+                chat_model,
+                cel,
+                tool_registry=self._registries.tool_registry,
+            )
 
         if node_def.type == "tool_node":
-            tn_args: ToolNodeArgs = node_def.args  # type: ignore[assignment]
-            tool_refs = tn_args.tools
-            if not tool_refs:
-                tool_refs = self._collect_llm_tools(all_nodes or [])
-            if not tool_refs:
-                raise GraphConstructionError(
-                    f"tool_node '{node_def.name}' has no tools and no "
-                    f"call_llm nodes with tools found to inherit from"
-                )
-            tools = await resolve_tools_for_node_async(
-                tool_refs, self._registries.tool_registry
+            return build_tool_node(
+                ctx,
+                tool_registry=self._registries.tool_registry,
+                skill_card_registry=(
+                    self._registries.skill_card_registry if has_skills else None
+                ),
             )
-            return build_tool_node(node_def, tools)
 
         if node_def.type == "call_agent":
             ca_args: CallAgentArgs = node_def.args  # type: ignore[assignment]
             agent = await self._registries.tool_registry.get(
                 ca_args.agent.id, ca_args.agent.version
             )
-            return build_call_agent_node(node_def, agent, cel)
+            return build_call_agent_node(ctx, agent, cel)
 
         if node_def.type == "data_transform":
-            return build_data_transform_node(node_def, cel)
+            return build_data_transform_node(ctx, cel)
 
         if node_def.type == "set_state":
-            return build_set_state_node(node_def, cel)
+            return build_set_state_node(ctx, cel)
 
         raise GraphConstructionError(f"Unknown node type: {node_def.type}")
-
-    @staticmethod
-    def _collect_llm_tools(
-        all_nodes: list[NodeDef],
-    ) -> list[Any]:
-        """Collect all tool refs from call_llm nodes in the graph."""
-        from sherma.langgraph.declarative.schema import RegistryRef
-
-        tool_refs: list[RegistryRef] = []
-        seen: set[tuple[str, str]] = set()
-        for node in all_nodes:
-            if node.type == "call_llm":
-                llm_args: CallLLMArgs = node.args  # type: ignore[assignment]
-                if llm_args.tools:
-                    for ref in llm_args.tools:
-                        key = (ref.id, ref.version)
-                        if key not in seen:
-                            seen.add(key)
-                            tool_refs.append(ref)
-        return tool_refs
 
     def _build_cel_extra_vars(self, config: DeclarativeConfig) -> dict[str, Any]:
         """Build extra variables for CEL from config registries."""
