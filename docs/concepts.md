@@ -70,7 +70,7 @@ class Registry(ABC, Generic[T]):
     async def refresh(entry: RegistryEntry[T]) -> None
 ```
 
-Each entity type has its own registry subclass: `PromptRegistry`, `LLMRegistry`, `ToolRegistry`, `SkillRegistry`, `SkillCardRegistry`, and `AgentRegistry`.
+Each entity type has its own registry subclass: `PromptRegistry`, `LLMRegistry`, `ToolRegistry`, `SkillRegistry`, and `AgentRegistry`.
 
 ### Versioning
 

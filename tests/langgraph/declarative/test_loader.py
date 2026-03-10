@@ -355,14 +355,17 @@ agents:
     registries = RegistryBundle()
     await populate_registries(config, registries)
 
-    card = await registries.skill_card_registry.get("test-skill", "==1.0.0")
-    assert card.name == "Test Skill"
-    assert card.files == ["SKILL.md"]
+    skill = await registries.skill_registry.get("test-skill", "==1.0.0")
+    assert skill.skill_card is not None
+    assert skill.skill_card.name == "Test Skill"
+    assert skill.skill_card.files == ["SKILL.md"]
 
 
 @pytest.mark.asyncio
 async def test_populate_skill_cards_remote():
-    """Skill cards with url are registered as remote entries."""
+    """Skill cards with url are fetched and registered as Skill with skill_card."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     yaml_content = """\
 skills:
   - id: remote-skill
@@ -383,12 +386,35 @@ agents:
               x: '"hi"'
       edges: []
 """
+    remote_data = {
+        "name": "Remote Skill",
+        "description": "Fetched remotely",
+        "base_uri": "https://example.com/skill",
+        "files": ["SKILL.md"],
+    }
+    mock_response = MagicMock()
+    mock_response.json.return_value = remote_data
+    mock_response.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_response
+
+    async def fake_get_http_client(*a, **kw):
+        return mock_client
+
     config = load_declarative_config(yaml_content=yaml_content)
     registries = RegistryBundle()
-    await populate_registries(config, registries)
 
-    # The entry should be registered but not yet fetched
-    assert "remote-skill" in registries.skill_card_registry._entries
+    with patch(
+        "sherma.registry.skill_card.get_http_client",
+        side_effect=fake_get_http_client,
+    ):
+        await populate_registries(config, registries)
+
+    # The skill should be registered with a skill_card
+    assert "remote-skill" in registries.skill_registry._entries
+    skill = await registries.skill_registry.get("remote-skill", "==1.0.0")
+    assert skill.skill_card is not None
+    assert skill.skill_card.name == "Remote Skill"
 
 
 def test_load_use_tools_from_registry_config():

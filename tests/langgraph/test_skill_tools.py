@@ -7,17 +7,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 
+from sherma.entities.skill import Skill, SkillFrontMatter
 from sherma.entities.skill_card import SkillCard
 from sherma.langgraph.skill_tools import create_skill_tools
 from sherma.registry.base import RegistryEntry
 from sherma.registry.skill import SkillRegistry
-from sherma.registry.skill_card import SkillCardRegistry
 from sherma.registry.tool import ToolRegistry
 
 
 @pytest.fixture
 def registries():
-    return SkillCardRegistry(), SkillRegistry(), ToolRegistry()
+    return SkillRegistry(), ToolRegistry()
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def skill_dir():
 
 @pytest_asyncio.fixture
 async def setup_registries(registries, skill_dir):
-    sc_reg, sk_reg, t_reg = registries
+    sk_reg, t_reg = registries
     card = SkillCard(
         id="my-skill",
         version="1.0.0",
@@ -46,14 +46,20 @@ async def setup_registries(registries, skill_dir):
         base_uri=str(skill_dir),
         files=["SKILL.md", "references/api.md", "assets/logo.txt"],
     )
-    await sc_reg.add(RegistryEntry(id="my-skill", version="1.0.0", instance=card))
-    return sc_reg, sk_reg, t_reg
+    skill = Skill(
+        id="my-skill",
+        version="1.0.0",
+        front_matter=SkillFrontMatter(name="My Skill", description="A test skill"),
+        skill_card=card,
+    )
+    await sk_reg.add(RegistryEntry(id="my-skill", version="1.0.0", instance=skill))
+    return sk_reg, t_reg
 
 
 @pytest.mark.asyncio
 async def test_list_skills(setup_registries):
-    sc_reg, sk_reg, t_reg = setup_registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = setup_registries
+    tools = create_skill_tools(sk_reg, t_reg)
     list_skills = tools[0]
 
     result = await list_skills.ainvoke({})
@@ -64,8 +70,8 @@ async def test_list_skills(setup_registries):
 
 @pytest.mark.asyncio
 async def test_load_skill_md(setup_registries):
-    sc_reg, sk_reg, t_reg = setup_registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = setup_registries
+    tools = create_skill_tools(sk_reg, t_reg)
     load_skill_md = tools[1]
 
     with patch(
@@ -78,15 +84,15 @@ async def test_load_skill_md(setup_registries):
     assert "Instructions" in result
     assert "Do things." in result
 
-    # Skill should now be in skill registry
+    # Skill should now be in skill registry with updated content
     skill = await sk_reg.get("my-skill", "==1.0.0")
     assert skill.front_matter.name == "My Skill"
 
 
 @pytest.mark.asyncio
 async def test_list_skill_resources(setup_registries):
-    sc_reg, sk_reg, t_reg = setup_registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = setup_registries
+    tools = create_skill_tools(sk_reg, t_reg)
     list_resources = tools[2]
 
     result = await list_resources.ainvoke({"skill_id": "my-skill", "version": "*"})
@@ -95,8 +101,8 @@ async def test_list_skill_resources(setup_registries):
 
 @pytest.mark.asyncio
 async def test_load_skill_resource(setup_registries):
-    sc_reg, sk_reg, t_reg = setup_registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = setup_registries
+    tools = create_skill_tools(sk_reg, t_reg)
     load_resource = tools[3]
 
     result = await load_resource.ainvoke(
@@ -107,8 +113,8 @@ async def test_load_skill_resource(setup_registries):
 
 @pytest.mark.asyncio
 async def test_list_skill_assets(setup_registries):
-    sc_reg, sk_reg, t_reg = setup_registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = setup_registries
+    tools = create_skill_tools(sk_reg, t_reg)
     list_assets = tools[4]
 
     result = await list_assets.ainvoke({"skill_id": "my-skill", "version": "*"})
@@ -117,8 +123,8 @@ async def test_list_skill_assets(setup_registries):
 
 @pytest.mark.asyncio
 async def test_load_skill_asset(setup_registries):
-    sc_reg, sk_reg, t_reg = setup_registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = setup_registries
+    tools = create_skill_tools(sk_reg, t_reg)
     load_asset = tools[5]
 
     result = await load_asset.ainvoke(
@@ -129,8 +135,8 @@ async def test_load_skill_asset(setup_registries):
 
 @pytest.mark.asyncio
 async def test_create_skill_tools_returns_six(registries):
-    sc_reg, sk_reg, t_reg = registries
-    tools = create_skill_tools(sc_reg, sk_reg, t_reg)
+    sk_reg, t_reg = registries
+    tools = create_skill_tools(sk_reg, t_reg)
     assert len(tools) == 6
     names = [t.name for t in tools]
     assert "list_skills" in names

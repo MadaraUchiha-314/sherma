@@ -1,17 +1,16 @@
-"""Tests for SkillCardRegistry."""
-
-from unittest.mock import AsyncMock, MagicMock, patch
+"""Tests for SkillCard as an attribute on Skill."""
 
 import pytest
 
+from sherma.entities.skill import Skill, SkillFrontMatter
 from sherma.entities.skill_card import SkillCard
 from sherma.registry.base import RegistryEntry
-from sherma.registry.skill_card import SkillCardRegistry
+from sherma.registry.skill import SkillRegistry
 
 
 @pytest.mark.asyncio
-async def test_skill_card_registry_local():
-    reg = SkillCardRegistry()
+async def test_skill_with_skill_card():
+    reg = SkillRegistry()
     card = SkillCard(
         id="my-skill",
         version="1.0.0",
@@ -20,61 +19,57 @@ async def test_skill_card_registry_local():
         base_uri="/path/to/skill",
         files=["SKILL.md"],
     )
-    await reg.add(RegistryEntry(id="my-skill", version="1.0.0", instance=card))
+    skill = Skill(
+        id="my-skill",
+        version="1.0.0",
+        front_matter=SkillFrontMatter(name="My Skill", description="A skill"),
+        skill_card=card,
+    )
+    await reg.add(RegistryEntry(id="my-skill", version="1.0.0", instance=skill))
     result = await reg.get("my-skill", "==1.0.0")
-    assert result.name == "My Skill"
-    assert result.files == ["SKILL.md"]
+    assert result.skill_card is not None
+    assert result.skill_card.name == "My Skill"
+    assert result.skill_card.files == ["SKILL.md"]
 
 
 @pytest.mark.asyncio
-async def test_skill_card_registry_fetch():
-    reg = SkillCardRegistry()
-    remote_data = {
-        "name": "Remote Skill",
-        "description": "Fetched remotely",
-        "base_uri": "https://example.com/skill",
-        "files": ["SKILL.md", "references/api.md"],
-    }
-
-    mock_response = MagicMock()
-    mock_response.json.return_value = remote_data
-    mock_response.raise_for_status = MagicMock()
-
-    mock_client = AsyncMock()
-    mock_client.get.return_value = mock_response
-
-    async def fake_get_http_client(*a, **kw):
-        return mock_client
-
-    with patch(
-        "sherma.registry.skill_card.get_http_client",
-        side_effect=fake_get_http_client,
-    ):
-        entry = RegistryEntry(
-            id="remote-skill",
-            version="1.0.0",
-            remote=True,
-            url="https://example.com/skill/skill-card.json",
-        )
-        await reg.add(entry)
-        result = await reg.get("remote-skill", "==1.0.0")
-
-    assert result.name == "Remote Skill"
-    assert result.base_uri == "https://example.com/skill"
-    assert "references/api.md" in result.files
+async def test_skill_without_skill_card():
+    reg = SkillRegistry()
+    skill = Skill(
+        id="simple-skill",
+        version="1.0.0",
+        front_matter=SkillFrontMatter(name="Simple", description="No card"),
+    )
+    await reg.add(RegistryEntry(id="simple-skill", version="1.0.0", instance=skill))
+    result = await reg.get("simple-skill", "==1.0.0")
+    assert result.skill_card is None
+    assert result.front_matter.name == "Simple"
 
 
 @pytest.mark.asyncio
-async def test_skill_card_registry_version_matching():
-    reg = SkillCardRegistry()
+async def test_skill_card_version_matching():
+    reg = SkillRegistry()
     card_v1 = SkillCard(
         id="s", version="1.0.0", name="V1", description="v1", base_uri="/v1"
     )
     card_v2 = SkillCard(
         id="s", version="2.0.0", name="V2", description="v2", base_uri="/v2"
     )
-    await reg.add(RegistryEntry(id="s", version="1.0.0", instance=card_v1))
-    await reg.add(RegistryEntry(id="s", version="2.0.0", instance=card_v2))
+    skill_v1 = Skill(
+        id="s",
+        version="1.0.0",
+        front_matter=SkillFrontMatter(name="V1", description="v1"),
+        skill_card=card_v1,
+    )
+    skill_v2 = Skill(
+        id="s",
+        version="2.0.0",
+        front_matter=SkillFrontMatter(name="V2", description="v2"),
+        skill_card=card_v2,
+    )
+    await reg.add(RegistryEntry(id="s", version="1.0.0", instance=skill_v1))
+    await reg.add(RegistryEntry(id="s", version="2.0.0", instance=skill_v2))
 
     result = await reg.get("s", ">=1.0.0")
-    assert result.name == "V2"
+    assert result.skill_card is not None
+    assert result.skill_card.name == "V2"

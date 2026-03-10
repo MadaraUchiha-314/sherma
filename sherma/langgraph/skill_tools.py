@@ -9,7 +9,6 @@ from sherma.langgraph.tools import from_langgraph_tool
 from sherma.logging import get_logger
 from sherma.registry.base import RegistryEntry
 from sherma.registry.skill import SkillRegistry, _parse_skill_md
-from sherma.registry.skill_card import SkillCardRegistry
 from sherma.registry.tool import ToolRegistry
 from sherma.skills.local_tools import load_local_tools_from_skill
 from sherma.skills.mcp import load_mcp_tools_from_skill
@@ -32,7 +31,6 @@ def _normalize_version(version: str) -> str:
 
 
 def create_skill_tools(
-    skill_card_registry: SkillCardRegistry,
     skill_registry: SkillRegistry,
     tool_registry: ToolRegistry,
     hook_manager: HookManager | None = None,
@@ -48,17 +46,28 @@ def create_skill_tools(
         """List all available skills with their metadata."""
         logger.info("list_skills called")
         results: list[dict[str, str]] = []
-        for versions in skill_card_registry._entries.values():
+        for versions in skill_registry._entries.values():
             for entry in versions.values():
-                resolved = await skill_card_registry._resolve(entry)
-                results.append(
-                    {
-                        "id": resolved.id,
-                        "version": resolved.version,
-                        "name": resolved.name,
-                        "description": resolved.description,
-                    }
-                )
+                resolved = await skill_registry._resolve(entry)
+                card = resolved.skill_card
+                if card:
+                    results.append(
+                        {
+                            "id": resolved.id,
+                            "version": resolved.version,
+                            "name": card.name,
+                            "description": card.description,
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "id": resolved.id,
+                            "version": resolved.version,
+                            "name": resolved.front_matter.name,
+                            "description": resolved.front_matter.description,
+                        }
+                    )
         logger.info("list_skills returning %d skills", len(results))
         return results
 
@@ -86,19 +95,24 @@ def create_skill_tools(
             skill_id = before_ctx.skill_id
             version = before_ctx.version
 
-        skill_card = await skill_card_registry.get(skill_id, version)
+        skill = await skill_registry.get(skill_id, version)
+        skill_card = skill.skill_card
+        if skill_card is None:
+            return f"Error: skill '{skill_id}' has no skill card"
+
         resolver = SkillResolver(skill_card)
 
         # Load SKILL.md content
         content = await resolver.load_file("SKILL.md")
 
-        # Parse and store in skill registry
-        skill = _parse_skill_md(content, skill_card.id, skill_card.version)
+        # Parse and update the skill in the registry with loaded content
+        parsed_skill = _parse_skill_md(content, skill_card.id, skill_card.version)
+        parsed_skill.skill_card = skill_card
         await skill_registry.add(
             RegistryEntry(
                 id=skill_card.id,
                 version=skill_card.version,
-                instance=skill,
+                instance=parsed_skill,
             )
         )
 
@@ -151,8 +165,10 @@ def create_skill_tools(
     async def list_skill_resources(skill_id: str, version: str = "*") -> list[str]:
         """List reference files available in a skill."""
         version = _normalize_version(version)
-        skill_card = await skill_card_registry.get(skill_id, version)
-        resolver = SkillResolver(skill_card)
+        skill = await skill_registry.get(skill_id, version)
+        if skill.skill_card is None:
+            return []
+        resolver = SkillResolver(skill.skill_card)
         return resolver.list_files_by_prefix("references/")
 
     @tool
@@ -161,19 +177,23 @@ def create_skill_tools(
     ) -> str:
         """Load a reference file. Use list_skill_resources first."""
         version = _normalize_version(version)
-        skill_card = await skill_card_registry.get(skill_id, version)
-        available = [f for f in skill_card.files if f.startswith("references/")]
+        skill = await skill_registry.get(skill_id, version)
+        if skill.skill_card is None:
+            return f"Error: skill '{skill_id}' has no skill card"
+        available = [f for f in skill.skill_card.files if f.startswith("references/")]
         if resource_path not in available:
             return f"Error: '{resource_path}' not found. Available: {available}"
-        resolver = SkillResolver(skill_card)
+        resolver = SkillResolver(skill.skill_card)
         return await resolver.load_file(resource_path)
 
     @tool
     async def list_skill_assets(skill_id: str, version: str = "*") -> list[str]:
         """List asset files available in a skill."""
         version = _normalize_version(version)
-        skill_card = await skill_card_registry.get(skill_id, version)
-        resolver = SkillResolver(skill_card)
+        skill = await skill_registry.get(skill_id, version)
+        if skill.skill_card is None:
+            return []
+        resolver = SkillResolver(skill.skill_card)
         return resolver.list_files_by_prefix("assets/")
 
     @tool
@@ -182,11 +202,13 @@ def create_skill_tools(
     ) -> str:
         """Load an asset file. Use list_skill_assets first."""
         version = _normalize_version(version)
-        skill_card = await skill_card_registry.get(skill_id, version)
-        available = [f for f in skill_card.files if f.startswith("assets/")]
+        skill = await skill_registry.get(skill_id, version)
+        if skill.skill_card is None:
+            return f"Error: skill '{skill_id}' has no skill card"
+        available = [f for f in skill.skill_card.files if f.startswith("assets/")]
         if asset_path not in available:
             return f"Error: '{asset_path}' not found. Available: {available}"
-        resolver = SkillResolver(skill_card)
+        resolver = SkillResolver(skill.skill_card)
         return await resolver.load_file(asset_path)
 
     return [

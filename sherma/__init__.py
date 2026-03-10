@@ -41,7 +41,6 @@ from sherma.registry import (
     PromptRegistry,
     Registry,
     RegistryEntry,
-    SkillCardRegistry,
     SkillRegistry,
     ToolRegistry,
 )
@@ -93,7 +92,6 @@ __all__ = [
     "ShermaError",
     "Skill",
     "SkillCard",
-    "SkillCardRegistry",
     "SkillFrontMatter",
     "SkillRegistry",
     "Tool",

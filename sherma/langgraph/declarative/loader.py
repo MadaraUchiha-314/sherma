@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sherma.entities.llm import LLM
 from sherma.entities.prompt import Prompt
+from sherma.entities.skill import Skill, SkillFrontMatter
 from sherma.entities.skill_card import SkillCard
 from sherma.exceptions import DeclarativeConfigError
 from sherma.hooks.executor import HookExecutor
@@ -26,7 +27,6 @@ from sherma.registry.base import RegistryEntry
 from sherma.registry.llm import LLMRegistry
 from sherma.registry.prompt import PromptRegistry
 from sherma.registry.skill import SkillRegistry
-from sherma.registry.skill_card import SkillCardRegistry
 from sherma.registry.tool import ToolRegistry
 
 
@@ -39,7 +39,6 @@ class RegistryBundle(BaseModel):
     llm_registry: LLMRegistry = Field(default_factory=LLMRegistry)
     prompt_registry: PromptRegistry = Field(default_factory=PromptRegistry)
     skill_registry: SkillRegistry = Field(default_factory=SkillRegistry)
-    skill_card_registry: SkillCardRegistry = Field(default_factory=SkillCardRegistry)
     chat_models: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -233,7 +232,7 @@ async def populate_registries(
             )
         )
 
-    # Register skill cards
+    # Register skill cards as attributes on Skill entities
     for skill_def in config.skills:
         if skill_def.skill_card_path:
             path = Path(skill_def.skill_card_path)
@@ -252,20 +251,53 @@ async def populate_registries(
                 version=skill_def.version,
                 **{k: v for k, v in data.items() if k not in ("id", "version")},
             )
-            await registries.skill_card_registry.add(
+            skill = Skill(
+                id=skill_def.id,
+                version=skill_def.version,
+                front_matter=SkillFrontMatter(
+                    name=skill_card.name,
+                    description=skill_card.description,
+                ),
+                skill_card=skill_card,
+            )
+            await registries.skill_registry.add(
                 RegistryEntry(
                     id=skill_def.id,
                     version=skill_def.version,
-                    instance=skill_card,
+                    instance=skill,
                 )
             )
         elif skill_def.url:
-            await registries.skill_card_registry.add(
+            # For remote skills, create a Skill with a remote URL
+            # The skill card will be fetched lazily via the skill registry
+            from sherma.registry.skill_card import SkillCardRegistry
+
+            temp_registry = SkillCardRegistry()
+            await temp_registry.add(
                 RegistryEntry(
                     id=skill_def.id,
                     version=skill_def.version,
                     remote=True,
                     url=skill_def.url,
+                )
+            )
+            fetched_card = await temp_registry.get(
+                skill_def.id, f"=={skill_def.version}"
+            )
+            skill = Skill(
+                id=skill_def.id,
+                version=skill_def.version,
+                front_matter=SkillFrontMatter(
+                    name=fetched_card.name,
+                    description=fetched_card.description,
+                ),
+                skill_card=fetched_card,
+            )
+            await registries.skill_registry.add(
+                RegistryEntry(
+                    id=skill_def.id,
+                    version=skill_def.version,
+                    instance=skill,
                 )
             )
 
@@ -274,7 +306,6 @@ async def populate_registries(
         from sherma.langgraph.skill_tools import create_skill_tools
 
         skill_tools = create_skill_tools(
-            registries.skill_card_registry,
             registries.skill_registry,
             registries.tool_registry,
         )
@@ -293,18 +324,19 @@ async def populate_registries(
 
         for skill_def in config.skills:
             if skill_def.skill_card_path:
-                card = await registries.skill_card_registry.get(
+                skill = await registries.skill_registry.get(
                     skill_def.id, f"=={skill_def.version}"
                 )
-                for lt in load_local_tools_from_skill(card):
-                    sherma_tool = from_langgraph_tool(lt)
-                    await registries.tool_registry.add(
-                        RegistryEntry(
-                            id=sherma_tool.id,
-                            version=sherma_tool.version,
-                            instance=sherma_tool,
+                if skill.skill_card:
+                    for lt in load_local_tools_from_skill(skill.skill_card):
+                        sherma_tool = from_langgraph_tool(lt)
+                        await registries.tool_registry.add(
+                            RegistryEntry(
+                                id=sherma_tool.id,
+                                version=sherma_tool.version,
+                                instance=sherma_tool,
+                            )
                         )
-                    )
 
     # Auto-import tools declared with import_path
     for tool_def in config.tools:

@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from sherma.entities.base import EntityBase
+from sherma.entities.skill_card import SkillCard
 from sherma.entities.tool import Tool
 from sherma.types import Markdown
 
@@ -26,3 +27,4 @@ class Skill(EntityBase):
     scripts: list[Tool] = Field(default_factory=list)
     references: list[Markdown] = Field(default_factory=list)
     assets: list[Any] = Field(default_factory=list)
+    skill_card: SkillCard | None = None
