@@ -168,10 +168,21 @@ class ChatModelCreateContext:
     provider: str              # Provider name (e.g. "openai")
     model_name: str            # Model name (e.g. "gpt-4o-mini")
     kwargs: dict[str, Any]     # Constructor kwargs passed to the chat model
-    chat_model: Any | None = None  # Set to override the chat model instance
+    chat_model: Any | None = None  # Instance, or callable factory
 ```
 
 The `on_chat_model_create` hook fires when a chat model is being instantiated from an LLM definition. Use it to customize model creation -- swap the model, inject API keys, or provide a fully constructed chat model instance.
+
+#### `chat_model`: instance or factory
+
+`chat_model` accepts either:
+
+- **An instance** -- a ready-to-use chat model (e.g., `ChatOpenAI(...)`)
+- **A callable factory** -- a zero-arg callable that returns a chat model
+
+When a callable is provided, sherma wraps it in a `LazyChatModel` proxy that defers construction until the model is first used (i.e., on the first LLM call during request handling). This is important when model construction depends on infrastructure that isn't available at import time or during server startup -- for example, secret managers, auth token providers, or database connections that initialize asynchronously.
+
+sherma distinguishes instances from factories by checking `callable(chat_model) and not hasattr(chat_model, "invoke")`. Any object with an `invoke` method is treated as a ready-to-use model.
 
 **Example: inject an API key and swap model**
 
@@ -207,6 +218,28 @@ class CustomChatModelHook(BaseHookExecutor):
         ctx.chat_model = ChatOpenAI(model="gpt-4o", temperature=0)
         return ctx
 ```
+
+**Example: lazy factory for deferred construction**
+
+Use a factory when the chat model depends on infrastructure that initializes after import time (e.g., a secret manager, an auth service, or database-backed config):
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import ChatModelCreateContext
+
+class LazyModelHook(BaseHookExecutor):
+    async def on_chat_model_create(
+        self, ctx: ChatModelCreateContext
+    ) -> ChatModelCreateContext | None:
+        if ctx.llm_id == "gpt-4o":
+            model_name = ctx.model_name
+            # Factory -- called lazily on first LLM invocation,
+            # not during graph construction at startup.
+            ctx.chat_model = lambda: create_authenticated_model(model_name)
+        return ctx
+```
+
+The `LazyChatModel` proxy is transparent -- it forwards all attribute access and method calls to the real model once constructed. After the first access, the factory is never called again.
 
 ### `GraphInvokeContext`
 

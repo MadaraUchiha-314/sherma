@@ -341,6 +341,28 @@ def get_agent_input_from_message_part(message: Message, schema_model) -> BaseMod
 def get_agent_output_from_message_part(message: Message, schema_model) -> BaseModel
 ```
 
+## LangGraph Utilities
+
+### `combine_ai_messages`
+
+```python
+from sherma.langgraph.agent import combine_ai_messages
+
+def combine_ai_messages(messages: list[AIMessage]) -> AIMessage
+```
+
+Merges multiple `AIMessage` instances into one by concatenating their content into list-form. Collapses to a plain string when the result contains exactly one text block.
+
+### `LazyChatModel`
+
+```python
+from sherma.langgraph.declarative.loader import LazyChatModel
+
+proxy = LazyChatModel(factory=lambda: ChatOpenAI(model="gpt-4o"))
+```
+
+A transparent proxy that defers chat model construction until first attribute access. Used internally when `on_chat_model_create` hooks set `chat_model` to a callable factory. All attribute access and method calls are forwarded to the real model after construction.
+
 ## Skill Tools
 
 ```python

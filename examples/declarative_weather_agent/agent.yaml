@@ -66,11 +66,11 @@ agents:
           args:
             expression: '{"query_count": query_count + 1, "last_status": "done"}'
 
-        # interrupt: ask the user for the next place to check weather
+        # interrupt: pause and wait for user input.
+        # The last AIMessage from the agent node is sent as the response.
         - name: ask_next_place
           type: interrupt
-          args:
-            value: '"Which place would you like to check the weather for next?"'
+          args: {}
 
       edges:
         - source: init

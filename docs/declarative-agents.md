@@ -268,11 +268,32 @@ Pauses graph execution to request human input:
 ```yaml
 - name: ask_user
   type: interrupt
-  args:
-    value: '"What would you like to do next?"'  # CEL expression
+  args: {}
 ```
 
-The interrupt value is sent to the client as an A2A `TaskStatusUpdateEvent` with state `input_required`. When the user responds, execution resumes from this node.
+The interrupt value sent to the A2A client is always the **last `AIMessage`** from the graph state — not the CEL `value` expression. This is a hard contract: every `interrupt` node must be preceded by a `call_llm` node that produces an `AIMessage`. If no `AIMessage` exists in state when the interrupt fires, a `RuntimeError` is raised.
+
+This design ensures the user always sees the agent's actual reply (e.g., a question, a summary, a status update) rather than a raw interrupt string.
+
+When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
+
+#### Interrupt contract for tool-level interrupts
+
+The same contract applies to tools that call `interrupt()` directly (e.g., a `request_user_input` tool). The interrupt value **must** be an `AIMessage`:
+
+```python
+from langchain_core.messages import AIMessage
+from langchain_core.tools import tool
+from langgraph.types import interrupt
+
+@tool
+def request_user_input(question: str) -> str:
+    """Ask the user for more information."""
+    response = interrupt(AIMessage(content=question))
+    return str(response)
+```
+
+This ensures `send_message` can always convert interrupt values to A2A messages without inspecting the graph's message history.
 
 ## Edges
 

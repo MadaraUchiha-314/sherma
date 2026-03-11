@@ -157,13 +157,19 @@ class AfterInterruptContext:
 
 @dataclass
 class ChatModelCreateContext:
-    """Context for on_chat_model_create hooks."""
+    """Context for on_chat_model_create hooks.
+
+    ``chat_model`` accepts either a ready-to-use chat model instance
+    **or** a zero-arg callable (factory) that returns one.  When a
+    callable is provided, the model is constructed lazily on first use
+    so that expensive setup (secrets, network) is deferred.
+    """
 
     llm_id: str
     provider: str
     model_name: str
     kwargs: dict[str, Any]
-    chat_model: Any | None = None
+    chat_model: Any | None = None  # BaseChatModel | Callable[[], BaseChatModel] | None
 
 
 @dataclass

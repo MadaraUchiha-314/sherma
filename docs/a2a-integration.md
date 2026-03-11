@@ -186,10 +186,32 @@ weather_input = get_agent_input_from_message_part(msg, WeatherInput)
 
 ## Interrupts
 
-When a LangGraph agent enters an interrupted state (e.g., via an `interrupt` node in a declarative agent), sherma:
+When a LangGraph agent enters an interrupted state (e.g., via an `interrupt` node or a tool calling `interrupt()`), `send_message` handles it as follows:
 
 1. Detects the `__interrupt__` key in the graph result
-2. Creates an A2A `TaskStatusUpdateEvent` with state `input_required`
-3. The interrupt value is sent as the status message
+2. Collects the `AIMessage` from each interrupt value (every interrupt **must** yield an `AIMessage` -- see the [interrupt contract](declarative-agents.md#interrupt))
+3. Combines all interrupt `AIMessage`s into a single `AIMessage` using `combine_ai_messages`
+4. Converts the combined message to an A2A `Message` and wraps it in a `TaskStatusUpdateEvent` with state `input_required`
+5. Yields **only** the `TaskStatusUpdateEvent` -- no `Message` event is yielded, so the task stays in a non-terminal state
 
-When the client sends a follow-up message, graph execution resumes from the interrupt point.
+This design avoids a race condition where yielding both a `Message` (which triggers `task_updater.complete()`) and a `TaskStatusUpdateEvent` would cause a "task already in terminal state" error.
+
+When the client sends a follow-up message, `send_message` detects the pending interrupt via `aget_state().tasks` and resumes execution with `Command(resume=messages)`.
+
+### `combine_ai_messages`
+
+A utility for merging multiple `AIMessage` instances into one:
+
+```python
+from sherma.langgraph.agent import combine_ai_messages
+from langchain_core.messages import AIMessage
+
+msgs = [
+    AIMessage(content="Here's the weather."),
+    AIMessage(content="Anything else?"),
+]
+combined = combine_ai_messages(msgs)
+# AIMessage(content=["Here's the weather.", "Anything else?"])
+```
+
+Content from each message is collected into list-form content. If the result is a single string block, it collapses to a plain string for simplicity. This is used internally for interrupt handling but is a general-purpose utility.

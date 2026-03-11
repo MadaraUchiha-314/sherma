@@ -9,15 +9,14 @@ from a2a.client.client import UpdateEvent
 from a2a.client.middleware import ClientCallContext
 from a2a.types import (
     Message,
-    Part,
     Role,
     Task,
     TaskIdParams,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
+from langchain_core.messages import AIMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 from pydantic import Field
@@ -30,6 +29,27 @@ from sherma.logging import get_logger
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
 
 logger = get_logger(__name__)
+
+
+def combine_ai_messages(messages: list[AIMessage | str]) -> AIMessage:
+    """Combine multiple AIMessages (or plain strings) into one AIMessage.
+
+    Content from each message is merged into list-form content so
+    nothing is lost.  Collapses to a plain string when the result
+    contains exactly one text block.
+    """
+    content_blocks: list[str | dict[str, Any]] = []
+    for msg in messages:
+        if isinstance(msg, str):
+            content_blocks.append(msg)
+        elif isinstance(msg.content, str):
+            content_blocks.append(msg.content)
+        elif isinstance(msg.content, list):
+            content_blocks.extend(msg.content)
+
+    if len(content_blocks) == 1 and isinstance(content_blocks[0], str):
+        return AIMessage(content=content_blocks[0])
+    return AIMessage(content=content_blocks)
 
 
 class LangGraphAgent(Agent):
@@ -103,28 +123,38 @@ class LangGraphAgent(Agent):
             msg_type = type(msg).__name__
             logger.debug("  msg[%d] %s: %.150s...", i, msg_type, str(content))
 
-        response_messages = result.get("messages", [])
-        if response_messages:
-            last_message = response_messages[-1]
-            yield langgraph_to_a2a(last_message)
-
         interrupts: tuple[Interrupt, ...] | None = result.get("__interrupt__")
+
         if interrupts:
-            parts = [Part(root=TextPart(text=str(i.value))) for i in interrupts]
-            interrupt_msg = Message(
-                message_id=str(uuid.uuid4()),
-                role=Role.agent,
-                parts=parts,
+            # Yield any partial AI messages produced before the interrupt.
+            response_messages = result.get("messages", [])
+            if response_messages:
+                last = response_messages[-1]
+                if isinstance(last, AIMessage) and getattr(last, "content", ""):
+                    yield langgraph_to_a2a(last)
+
+            # Combine interrupt values into a single input_required
+            # status update.
+            ai_message = combine_ai_messages([intr.value for intr in interrupts])
+            a2a_msg = langgraph_to_a2a(ai_message)
+            status = TaskStatus(
+                state=TaskState.input_required,
+                message=Message(
+                    message_id=str(uuid.uuid4()),
+                    role=Role.agent,
+                    parts=a2a_msg.parts,
+                ),
             )
-            status = TaskStatus(state=TaskState.input_required, message=interrupt_msg)
-            task_id = request.task_id or ""
-            context_id = request.context_id or ""
             yield TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
+                task_id=request.task_id or "",
+                context_id=request.context_id or "",
                 status=status,
                 final=False,
             )
+        else:
+            response_messages = result.get("messages", [])
+            if response_messages:
+                yield langgraph_to_a2a(response_messages[-1])
 
     async def cancel_task(
         self,

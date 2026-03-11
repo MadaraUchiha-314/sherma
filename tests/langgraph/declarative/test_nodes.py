@@ -702,55 +702,77 @@ async def test_node_receives_config_via_partial():
 
 @pytest.mark.asyncio
 async def test_build_interrupt_node():
-    """interrupt node evaluates CEL, calls interrupt(), wraps resume as HumanMessage."""
+    """interrupt node uses last AIMessage as value, wraps resume as HumanMessage."""
     from unittest.mock import patch
 
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import AIMessage, HumanMessage
 
     node_def = NodeDef(
         name="ask",
         type="interrupt",
-        args=InterruptArgs(value='"What is your name?"'),
+        args=InterruptArgs(),
     )
     cel = CelEngine()
     fn = build_interrupt_node(_make_ctx(node_def), cel)
 
+    ai_msg = AIMessage(content="What is your name?")
     with patch(
         "sherma.langgraph.declarative.nodes.interrupt",
         return_value="Alice",
     ) as mock_interrupt:
-        result = await fn({"messages": []})
+        result = await fn({"messages": [ai_msg]})
 
-    mock_interrupt.assert_called_once_with("What is your name?")
+    mock_interrupt.assert_called_once_with(ai_msg)
     assert len(result["messages"]) == 1
     assert isinstance(result["messages"][0], HumanMessage)
     assert result["messages"][0].content == "Alice"
 
 
 @pytest.mark.asyncio
-async def test_build_interrupt_node_with_cel_expression():
-    """interrupt node evaluates dynamic CEL expression referencing state."""
+async def test_build_interrupt_node_uses_last_ai_message():
+    """interrupt node picks the last AIMessage even when other messages follow."""
     from unittest.mock import patch
 
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import AIMessage, HumanMessage
 
     node_def = NodeDef(
         name="ask_age",
         type="interrupt",
-        args=InterruptArgs(value='"Hello " + name + ", how old are you?"'),
+        args=InterruptArgs(),
     )
     cel = CelEngine()
     fn = build_interrupt_node(_make_ctx(node_def), cel)
 
+    first_ai = AIMessage(content="First response")
+    human = HumanMessage(content="user reply")
+    last_ai = AIMessage(content="How old are you?")
     with patch(
         "sherma.langgraph.declarative.nodes.interrupt",
         return_value="25",
     ) as mock_interrupt:
-        result = await fn({"messages": [], "name": "Bob"})
+        result = await fn({"messages": [first_ai, human, last_ai]})
 
-    mock_interrupt.assert_called_once_with("Hello Bob, how old are you?")
+    mock_interrupt.assert_called_once_with(last_ai)
     assert isinstance(result["messages"][0], HumanMessage)
     assert result["messages"][0].content == "25"
+
+
+@pytest.mark.asyncio
+async def test_build_interrupt_node_falls_back_to_none_without_ai_message():
+    """interrupt node uses None value when no AIMessage and no args.value."""
+    node_def = NodeDef(
+        name="ask",
+        type="interrupt",
+        args=InterruptArgs(),
+    )
+    cel = CelEngine()
+    fn = build_interrupt_node(_make_ctx(node_def), cel)
+
+    # Without a runnable context, interrupt() raises a different error.
+    # The key assertion is that _find_last_ai_message no longer raises
+    # RuntimeError about a preceding AIMessage.
+    with pytest.raises(RuntimeError, match="runnable context"):
+        await fn({"messages": []})
 
 
 # --- Hook integration tests ---

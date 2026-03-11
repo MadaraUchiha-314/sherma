@@ -627,11 +627,24 @@ def build_set_state_node(
 # ---------------------------------------------------------------------------
 
 
+def _find_last_ai_message(state: dict[str, Any]) -> AIMessage | None:
+    """Return the last AIMessage with content from state, or ``None``."""
+    for msg in reversed(state.get("messages", [])):
+        if isinstance(msg, AIMessage) and getattr(msg, "content", ""):
+            return msg
+    return None
+
+
 def build_interrupt_node(
     ctx: NodeContext,
     cel: CelEngine,
 ) -> Callable[..., Any]:
-    """Build an interrupt node that pauses graph execution for human input."""
+    """Build an interrupt node that pauses graph execution for human input.
+
+    The interrupt value is the last ``AIMessage`` from state when
+    available.  Falls back to evaluating the ``args.value`` CEL
+    expression when no AIMessage is present.
+    """
     args: InterruptArgs = ctx.node_def.args  # type: ignore[assignment]
 
     async def interrupt_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
@@ -651,7 +664,9 @@ def build_interrupt_node(
                 ),
             )
 
-        value = cel.evaluate(args.value, state)
+        value: Any = _find_last_ai_message(state)
+        if value is None and args and args.value is not None:
+            value = cel.evaluate(args.value, state)
 
         # before_interrupt
         if hooks:

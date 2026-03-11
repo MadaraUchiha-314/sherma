@@ -73,9 +73,14 @@ class SetStateArgs(BaseModel):
 
 
 class InterruptArgs(BaseModel):
-    """Arguments for an interrupt node."""
+    """Arguments for an interrupt node.
 
-    value: str  # CEL expression evaluated at runtime to produce the interrupt value
+    The interrupt value is the last ``AIMessage`` from state when
+    available.  Falls back to the ``value`` CEL expression when no
+    AIMessage is present.
+    """
+
+    value: str | None = None
 
 
 class NodeDef(BaseModel):
