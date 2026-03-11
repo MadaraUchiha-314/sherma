@@ -147,6 +147,7 @@ class DeclarativeAgent(LangGraphAgent):
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = []
     tenant_id: str = DEFAULT_TENANT_ID  # "default"
+    checkpointer: BaseCheckpointSaver = MemorySaver()  # State persistence
 ```
 
 Provide one of `yaml_path`, `yaml_content`, or `config`.
@@ -294,6 +295,15 @@ class DeclarativeConfig(BaseModel):
     prompts: list[PromptDef] = []
     skills: list[SkillDef] = []
     hooks: list[HookDef] = []
+    sub_agents: list[SubAgentDef] = []
+    checkpointer: CheckpointerDef | None = None
+```
+
+### `CheckpointerDef`
+
+```python
+class CheckpointerDef(BaseModel):
+    type: Literal["memory"] = "memory"
 ```
 
 ### `load_declarative_config`

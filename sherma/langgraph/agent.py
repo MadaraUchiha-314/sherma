@@ -62,9 +62,13 @@ class LangGraphAgent(Agent):
         lg_messages = a2a_to_langgraph(request)
         logger.info("Invoking graph with %d initial messages", len(lg_messages))
 
+        thread_id = request.context_id or request.task_id or str(uuid.uuid4())
         result = await graph.ainvoke(
             {"messages": lg_messages},
-            config={"recursion_limit": 25},
+            config={
+                "recursion_limit": 25,
+                "configurable": {"thread_id": thread_id},
+            },
         )
 
         all_messages = result.get("messages", [])

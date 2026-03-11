@@ -71,7 +71,8 @@ async def test_declarative_agent_set_state():
         yaml_content=SET_STATE_YAML,
     )
     graph = await agent.get_graph()
-    result = await graph.ainvoke({"messages": [], "result": ""})
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"messages": [], "result": ""}, config)
     assert result["result"] == "done"
 
 
@@ -83,7 +84,8 @@ async def test_declarative_agent_data_transform():
         yaml_content=DATA_TRANSFORM_YAML,
     )
     graph = await agent.get_graph()
-    result = await graph.ainvoke({"count": 0})
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"count": 0}, config)
     assert result["count"] == 1
 
 
@@ -145,7 +147,8 @@ agents:
     agent._registries = registries
 
     graph = await agent.get_graph()
-    result = await graph.ainvoke({"messages": []})
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"messages": []}, config)
 
     assert len(result["messages"]) > 0
     mock_model.ainvoke.assert_called_once()
@@ -196,10 +199,12 @@ agents:
     )
     graph = await agent.get_graph()
 
-    result_high = await graph.ainvoke({"x": 15, "result": ""})
+    config_high = {"configurable": {"thread_id": "t-high"}}
+    result_high = await graph.ainvoke({"x": 15, "result": ""}, config_high)
     assert result_high["result"] == "high"
 
-    result_low = await graph.ainvoke({"x": 3, "result": ""})
+    config_low = {"configurable": {"thread_id": "t-low"}}
+    result_low = await graph.ainvoke({"x": 3, "result": ""}, config_low)
     assert result_low["result"] == "low"
 
 
@@ -230,7 +235,8 @@ agents:
         yaml_content=yaml_content,
     )
     graph = await agent.get_graph()
-    result = await graph.ainvoke({"result": ""})
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"result": ""}, config)
     assert result["result"] == "found"
 
 
@@ -300,11 +306,6 @@ async def test_declarative_agent_interrupt_node():
     )
     compiled = await agent.get_graph()
 
-    # Attach a checkpointer so interrupt/resume works
-    from langgraph.checkpoint.memory import MemorySaver
-
-    compiled.checkpointer = MemorySaver()
-
     config = {"configurable": {"thread_id": "t1"}}
     result = await compiled.ainvoke({"messages": []}, config)
 
@@ -356,5 +357,56 @@ async def test_declarative_agent_with_config_object():
         config=config,
     )
     graph = await agent.get_graph()
-    result = await graph.ainvoke({"result": ""})
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"result": ""}, config)
     assert result["result"] == "from_config"
+
+
+CHECKPOINTER_YAML = """\
+checkpointer:
+  type: memory
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: ask
+      nodes:
+        - name: ask
+          type: interrupt
+          args:
+            value: '"What is your name?"'
+      edges: []
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_yaml_checkpointer():
+    """Checkpointer declared in YAML config is wired into the compiled graph."""
+    from langgraph.types import Command
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=CHECKPOINTER_YAML,
+    )
+    compiled = await agent.get_graph()
+
+    # The checkpointer should be set from YAML config
+    assert compiled.checkpointer is not None
+
+    config = {"configurable": {"thread_id": "t-yaml"}}
+    await compiled.ainvoke({"messages": []}, config)
+
+    state = await compiled.aget_state(config)
+    assert len(state.tasks) > 0
+
+    result = await compiled.ainvoke(Command(resume="Bob"), config)
+    from langchain_core.messages import HumanMessage
+
+    human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
+    assert any(m.content == "Bob" for m in human_msgs)

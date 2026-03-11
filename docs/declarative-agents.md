@@ -13,6 +13,7 @@ tools:        # Tool imports
 skills:       # Skill card references
 sub_agents:   # Sub-agent declarations (for multi-agent orchestration)
 hooks:        # Hook executor imports
+checkpointer: # Checkpointer configuration (for state persistence)
 agents:       # Agent graph definitions
 ```
 
@@ -102,6 +103,32 @@ sub_agents:
     version: "1.0.0"
     # No source -- expects the agent to already be in the registry
 ```
+
+### Checkpointer
+
+The checkpointer enables state persistence across graph invocations, which is required for features like `interrupt` nodes (human-in-the-loop). By default, `DeclarativeAgent` uses an in-memory checkpointer (`MemorySaver`), so you don't need to configure anything for basic usage.
+
+To explicitly declare a checkpointer in YAML:
+
+```yaml
+checkpointer:
+  type: memory    # In-memory checkpointer (currently the only supported type)
+```
+
+You can also pass a checkpointer programmatically via the constructor:
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+agent = DeclarativeAgent(
+    id="my-agent",
+    version="1.0.0",
+    yaml_path="agent.yaml",
+    checkpointer=MemorySaver(),
+)
+```
+
+When a checkpointer is active, all graph invocations require a `thread_id` in the config to identify the conversation thread. The `send_message` method handles this automatically using `context_id`, `task_id`, or a generated UUID.
 
 ## Agent Definition
 

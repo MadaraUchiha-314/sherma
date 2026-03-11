@@ -195,6 +195,12 @@ class SubAgentDef(BaseModel):
     yaml_path: str | None = None
 
 
+class CheckpointerDef(BaseModel):
+    """Checkpointer configuration."""
+
+    type: Literal["memory"] = "memory"
+
+
 class DeclarativeConfig(BaseModel):
     """Top-level declarative configuration parsed from YAML."""
 
@@ -205,3 +211,4 @@ class DeclarativeConfig(BaseModel):
     skills: list[SkillDef] = Field(default_factory=list)
     hooks: list[HookDef] = Field(default_factory=list)
     sub_agents: list[SubAgentDef] = Field(default_factory=list)
+    checkpointer: CheckpointerDef | None = None

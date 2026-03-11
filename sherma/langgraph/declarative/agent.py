@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ConfigDict, Field
@@ -122,6 +124,7 @@ class DeclarativeAgent(LangGraphAgent):
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = Field(default_factory=list)
     tenant_id: str = DEFAULT_TENANT_ID
+    checkpointer: BaseCheckpointSaver = Field(default_factory=MemorySaver)
     _registries: RegistryBundle | None = None
     _compiled_graph: CompiledStateGraph | None = None
 
@@ -172,9 +175,16 @@ class DeclarativeAgent(LangGraphAgent):
         # Track sub-agent tool IDs for use_sub_agents_as_tools
         self._sub_agent_tool_ids: list[str] = [sa.id for sa in config.sub_agents]
 
-        # 3. Build the graph
+        # 3. Resolve checkpointer
+        checkpointer = self.checkpointer
+        if config.checkpointer is not None and config.checkpointer.type == "memory":
+            checkpointer = MemorySaver()
+
+        # 4. Build the graph
         agent_def = config.agents[agent_name]
-        self._compiled_graph = await self._build_graph(agent_def, config)
+        self._compiled_graph = await self._build_graph(
+            agent_def, config, checkpointer=checkpointer
+        )
         return self._compiled_graph
 
     def _find_agent_name(self, config: DeclarativeConfig) -> str:
@@ -193,6 +203,8 @@ class DeclarativeAgent(LangGraphAgent):
         self,
         agent_def: Any,
         config: DeclarativeConfig,
+        *,
+        checkpointer: BaseCheckpointSaver | None = None,
     ) -> CompiledStateGraph:
         """Build a LangGraph StateGraph from the agent definition."""
         state_class = _build_state_class(agent_def, has_skills=bool(config.skills))
@@ -230,7 +242,7 @@ class DeclarativeAgent(LangGraphAgent):
                     target = END
                 graph.add_edge(edge_def.source, target)
 
-        return graph.compile()
+        return graph.compile(checkpointer=checkpointer)
 
     async def _build_node(
         self,
