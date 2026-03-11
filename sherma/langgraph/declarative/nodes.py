@@ -194,6 +194,14 @@ def build_call_llm_node(
         if current_tools:
             model = model.bind_tools(current_tools)
 
+        if args.response_format:
+            json_schema = {
+                "name": args.response_format.name,
+                "description": args.response_format.description,
+                "schema": args.response_format.schema_,
+            }
+            model = model.with_structured_output(json_schema)
+
         system_msg = SystemMessage(content=str(prompt_text))
         logger.info(
             "[%s] Invoking LLM (%d tools) with %d messages, system prompt: %.100s...",
@@ -203,6 +211,11 @@ def build_call_llm_node(
             str(prompt_text),
         )
         response = await model.ainvoke([system_msg, *messages])
+
+        if args.response_format and isinstance(response, dict):
+            import json
+
+            response = AIMessage(content=json.dumps(response))
 
         # after_llm_call
         if hooks:

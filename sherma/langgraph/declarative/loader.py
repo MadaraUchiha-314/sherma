@@ -624,6 +624,22 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                         f"tool_node exists in the graph"
                     )
 
+    # Validate response_format is not combined with tools
+    for node in graph.nodes:
+        if node.type == "call_llm":
+            llm_args_rf: CallLLMArgs = node.args  # type: ignore[assignment]
+            has_tools = bool(
+                llm_args_rf.tools
+                or llm_args_rf.use_tools_from_registry
+                or llm_args_rf.use_tools_from_loaded_skills
+                or llm_args_rf.use_sub_agents_as_tools
+            )
+            if llm_args_rf.response_format and has_tools:
+                raise DeclarativeConfigError(
+                    f"call_llm node '{node.name}' cannot use both "
+                    f"'response_format' and tools"
+                )
+
     # Validate that at most one dynamic tool flag is set
     for node in graph.nodes:
         if node.type == "call_llm":

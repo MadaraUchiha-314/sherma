@@ -28,6 +28,14 @@ class StateDef(BaseModel):
     fields: list[StateFieldDef] = Field(default_factory=list)
 
 
+class ResponseFormatDef(BaseModel):
+    """Structured output schema for call_llm."""
+
+    name: str
+    description: str = ""
+    schema_: dict[str, Any] = Field(alias="schema")
+
+
 class CallLLMArgs(BaseModel):
     """Arguments for a call_llm node."""
 
@@ -37,6 +45,7 @@ class CallLLMArgs(BaseModel):
     use_tools_from_registry: bool = False
     use_tools_from_loaded_skills: bool = False
     use_sub_agents_as_tools: bool = False
+    response_format: ResponseFormatDef | None = None
 
 
 class ToolNodeArgs(BaseModel):

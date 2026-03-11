@@ -614,6 +614,126 @@ agents:
         validate_config(config, "bad-agent")
 
 
+def test_validate_response_format_with_tools_raises():
+    """response_format + tools on call_llm is an error."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  bad-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            response_format:
+              name: UserInfo
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+            tools:
+              - id: some-tool
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    with pytest.raises(DeclarativeConfigError, match="cannot use both"):
+        validate_config(config, "bad-agent")
+
+
+def test_validate_response_format_with_registry_tools_raises():
+    """response_format + use_tools_from_registry on call_llm is an error."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  bad-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            response_format:
+              name: UserInfo
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+            use_tools_from_registry: true
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    with pytest.raises(DeclarativeConfigError, match="cannot use both"):
+        validate_config(config, "bad-agent")
+
+
+def test_validate_response_format_without_tools_ok():
+    """response_format alone on call_llm is valid."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt: '"hello"'
+            response_format:
+              name: UserInfo
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    validate_config(config, "agent")  # should not raise
+
+
 def test_validate_tools_without_tool_node():
     """call_llm with tool options requires a tool_node in the graph."""
     yaml_content = """\

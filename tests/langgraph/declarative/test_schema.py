@@ -164,3 +164,46 @@ def test_node_def_interrupt():
     assert node.name == "ask"
     assert node.type == "interrupt"
     assert isinstance(node.args, InterruptArgs)
+
+
+def test_response_format_def():
+    from sherma.langgraph.declarative.schema import ResponseFormatDef
+
+    rf = ResponseFormatDef(
+        name="UserInfo",
+        description="Extracted user info",
+        **{"schema": {"type": "object", "properties": {"name": {"type": "string"}}}},
+    )
+    assert rf.name == "UserInfo"
+    assert rf.description == "Extracted user info"
+    assert rf.schema_["type"] == "object"
+
+
+def test_call_llm_args_with_response_format():
+    from sherma.langgraph.declarative.schema import ResponseFormatDef
+
+    args = CallLLMArgs(
+        llm=RegistryRef(id="gpt-4"),
+        prompt='"Extract info"',
+        response_format=ResponseFormatDef(
+            name="UserInfo",
+            **{
+                "schema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                }
+            },
+        ),
+    )
+    assert args.response_format is not None
+    assert args.response_format.name == "UserInfo"
+    assert args.response_format.schema_["required"] == ["name"]
+
+
+def test_call_llm_args_response_format_default_none():
+    args = CallLLMArgs(
+        llm=RegistryRef(id="gpt-4"),
+        prompt='"hello"',
+    )
+    assert args.response_format is None
