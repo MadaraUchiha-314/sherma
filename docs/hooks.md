@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 13 lifecycle hook points:
+sherma provides 14 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -21,6 +21,7 @@ sherma provides 13 lifecycle hook points:
 | `before_interrupt` | Before an interrupt pauses graph execution |
 | `after_interrupt` | After an interrupt resumes with user input |
 | `on_chat_model_create` | When a chat model is being instantiated |
+| `on_graph_invoke` | Before the LangGraph state graph is invoked |
 
 ## HookExecutor Protocol
 
@@ -204,6 +205,49 @@ class CustomChatModelHook(BaseHookExecutor):
     ) -> ChatModelCreateContext | None:
         # Supply a fully constructed chat model -- skips default creation
         ctx.chat_model = ChatOpenAI(model="gpt-4o", temperature=0)
+        return ctx
+```
+
+### `GraphInvokeContext`
+
+```python
+@dataclass
+class GraphInvokeContext:
+    agent_id: str              # ID of the agent being invoked
+    thread_id: str             # Thread ID for the conversation
+    config: dict[str, Any]     # The full RunnableConfig dict (mutable)
+    input: dict[str, Any]      # The input being passed to ainvoke
+```
+
+The `on_graph_invoke` hook fires just before `graph.ainvoke()` is called in `LangGraphAgent.send_message()`. Use it to customize the LangGraph `RunnableConfig` -- change the recursion limit, add custom configurable keys, set callbacks, etc.
+
+**Example: increase recursion limit and add custom configurable**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import GraphInvokeContext
+
+class GraphConfigHook(BaseHookExecutor):
+    async def on_graph_invoke(
+        self, ctx: GraphInvokeContext
+    ) -> GraphInvokeContext | None:
+        ctx.config["recursion_limit"] = 50
+        ctx.config["configurable"]["user_id"] = "user-123"
+        return ctx
+```
+
+**Example: add LangChain callbacks**
+
+```python
+from langchain_core.callbacks import StdOutCallbackHandler
+from sherma import BaseHookExecutor
+from sherma.hooks.types import GraphInvokeContext
+
+class CallbackHook(BaseHookExecutor):
+    async def on_graph_invoke(
+        self, ctx: GraphInvokeContext
+    ) -> GraphInvokeContext | None:
+        ctx.config["callbacks"] = [StdOutCallbackHandler()]
         return ctx
 ```
 

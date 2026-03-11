@@ -25,6 +25,7 @@ from pydantic import Field
 from sherma.entities.agent.base import Agent
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.manager import HookManager
+from sherma.hooks.types import GraphInvokeContext
 from sherma.logging import get_logger
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
 
@@ -63,12 +64,24 @@ class LangGraphAgent(Agent):
         logger.info("Invoking graph with %d initial messages", len(lg_messages))
 
         thread_id = request.context_id or request.task_id or str(uuid.uuid4())
+        config: dict[str, Any] = {
+            "recursion_limit": 25,
+            "configurable": {"thread_id": thread_id},
+        }
+
+        if self.hook_manager._executors:
+            invoke_ctx = GraphInvokeContext(
+                agent_id=self.id,
+                thread_id=thread_id,
+                config=config,
+                input={"messages": lg_messages},
+            )
+            invoke_ctx = await self.hook_manager.run_hook("on_graph_invoke", invoke_ctx)
+            config = invoke_ctx.config
+
         result = await graph.ainvoke(
             {"messages": lg_messages},
-            config={
-                "recursion_limit": 25,
-                "configurable": {"thread_id": thread_id},
-            },
+            config=config,  # type: ignore[arg-type]
         )
 
         all_messages = result.get("messages", [])
