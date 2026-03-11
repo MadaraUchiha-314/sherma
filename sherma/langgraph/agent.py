@@ -19,7 +19,7 @@ from a2a.types import (
     TextPart,
 )
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Interrupt
+from langgraph.types import Command, Interrupt
 from pydantic import Field
 
 from sherma.entities.agent.base import Agent
@@ -79,10 +79,22 @@ class LangGraphAgent(Agent):
             invoke_ctx = await self.hook_manager.run_hook("on_graph_invoke", invoke_ctx)
             config = invoke_ctx.config
 
-        result = await graph.ainvoke(
-            {"messages": lg_messages},
-            config=config,  # type: ignore[arg-type]
-        )
+        # Check if graph is in interrupted state
+        state_snapshot = await graph.aget_state(config)  # type: ignore[arg-type]
+        if state_snapshot.tasks:  # pending interrupts exist
+            logger.info(
+                "Graph is interrupted, resuming with %d messages",
+                len(lg_messages),
+            )
+            result = await graph.ainvoke(
+                Command(resume=lg_messages),
+                config=config,  # type: ignore[arg-type]
+            )
+        else:
+            result = await graph.ainvoke(
+                {"messages": lg_messages},
+                config=config,  # type: ignore[arg-type]
+            )
 
         all_messages = result.get("messages", [])
         logger.info("Graph completed with %d total messages", len(all_messages))
