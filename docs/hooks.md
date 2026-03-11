@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 12 lifecycle hook points:
+sherma provides 13 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -20,6 +20,7 @@ sherma provides 12 lifecycle hook points:
 | `node_exit` | When execution leaves any graph node |
 | `before_interrupt` | Before an interrupt pauses graph execution |
 | `after_interrupt` | After an interrupt resumes with user input |
+| `on_chat_model_create` | When a chat model is being instantiated |
 
 ## HookExecutor Protocol
 
@@ -155,6 +156,55 @@ class AfterSkillLoadContext:
     version: str
     content: str               # SKILL.md content
     tools_loaded: list[str]    # IDs of tools registered
+```
+
+### `ChatModelCreateContext`
+
+```python
+@dataclass
+class ChatModelCreateContext:
+    llm_id: str                # Registry ID of the LLM
+    provider: str              # Provider name (e.g. "openai")
+    model_name: str            # Model name (e.g. "gpt-4o-mini")
+    kwargs: dict[str, Any]     # Constructor kwargs passed to the chat model
+    chat_model: Any | None = None  # Set to override the chat model instance
+```
+
+The `on_chat_model_create` hook fires when a chat model is being instantiated from an LLM definition. Use it to customize model creation -- swap the model, inject API keys, or provide a fully constructed chat model instance.
+
+**Example: inject an API key and swap model**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import ChatModelCreateContext
+
+class ChatModelConfigHook(BaseHookExecutor):
+    async def on_chat_model_create(
+        self, ctx: ChatModelCreateContext
+    ) -> ChatModelCreateContext | None:
+        # Inject a custom API key
+        ctx.kwargs["api_key"] = get_secret("OPENAI_API_KEY")
+
+        # Swap to a different model at runtime
+        ctx.model_name = "gpt-4o"
+
+        return ctx  # Return modified context
+```
+
+**Example: provide a pre-built chat model**
+
+```python
+from langchain_openai import ChatOpenAI
+from sherma import BaseHookExecutor
+from sherma.hooks.types import ChatModelCreateContext
+
+class CustomChatModelHook(BaseHookExecutor):
+    async def on_chat_model_create(
+        self, ctx: ChatModelCreateContext
+    ) -> ChatModelCreateContext | None:
+        # Supply a fully constructed chat model -- skips default creation
+        ctx.chat_model = ChatOpenAI(model="gpt-4o", temperature=0)
+        return ctx
 ```
 
 ## Registering Hooks

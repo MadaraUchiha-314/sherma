@@ -189,14 +189,16 @@ Calls an LLM with a prompt and optional tool bindings.
     # use_sub_agents_as_tools: true        # Or: bind sub-agents as tools
 ```
 
-**Tool binding modes** (mutually exclusive):
+**Tool binding modes:**
 
 | Mode | Description |
 | --- | --- |
-| `tools` (explicit list) | Bind only the listed tools |
+| `tools` (explicit list) | Bind the listed tools (can be combined with any flag below) |
 | `use_tools_from_registry: true` | Bind all tools in the registry |
 | `use_tools_from_loaded_skills: true` | Bind only tools loaded via skill discovery |
 | `use_sub_agents_as_tools: true` | Bind sub-agents declared in `sub_agents` as tools |
+
+The dynamic flags (`use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools`) are mutually exclusive with each other. However, an explicit `tools` list can be combined with any single dynamic flag -- the tools are merged additively and deduplicated by name.
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma automatically injects a `tool_node` after it with the correct conditional edges. If the LLM responds with tool calls, execution routes to the tool node; otherwise it continues to the next edge. You don't need to wire this manually.
 
@@ -310,6 +312,8 @@ Branches are evaluated in order. The first matching condition determines the tar
 - **LLMs**: `llms["llm-id"]["model_name"]`
 
 CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing), map construction, comparisons, and boolean logic.
+
+CEL can also handle Pydantic models, dataclasses, and any object with `__dict__` -- these are automatically converted to CEL maps, so you can access their fields with standard map syntax (e.g., `obj.field` or `obj["field"]`).
 
 ### Examples
 

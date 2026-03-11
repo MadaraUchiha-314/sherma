@@ -262,6 +262,7 @@ class HookType(Enum):
     NODE_EXIT = "node_exit"
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
+    ON_CHAT_MODEL_CREATE = "on_chat_model_create"
 ```
 
 ### Hook Context Types
@@ -280,6 +281,7 @@ Imported from `sherma.hooks.types`:
 - `NodeExitContext`
 - `BeforeInterruptContext`
 - `AfterInterruptContext`
+- `ChatModelCreateContext`
 
 ## Declarative Config
 
