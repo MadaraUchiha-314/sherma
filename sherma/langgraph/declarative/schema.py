@@ -129,11 +129,21 @@ class GraphDef(BaseModel):
     edges: list[EdgeDef]
 
 
+class LangGraphConfigDef(BaseModel):
+    """LangGraph runtime configuration settable per-agent in YAML."""
+
+    recursion_limit: int | None = None
+    max_concurrency: int | None = None
+    tags: list[str] | None = None
+    metadata: dict[str, Any] | None = None
+
+
 class AgentDef(BaseModel):
     """A single agent definition."""
 
     state: StateDef
     graph: GraphDef
+    langgraph_config: LangGraphConfigDef | None = None
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
 

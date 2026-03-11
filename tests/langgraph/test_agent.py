@@ -96,13 +96,9 @@ async def test_send_message_single_interrupt():
     async for event in agent.send_message(request):
         events.append(event)
 
-    assert len(events) == 2
-    # First event: the partial response message
-    msg = events[0]
-    assert isinstance(msg, Message)
-    assert msg.parts[0].root.text == "partial"  # type: ignore[union-attr]
-    # Second event: the interrupt status update
-    event = events[1]
+    assert len(events) == 1
+    # Only event: the interrupt status update (partial messages are not yielded)
+    event = events[0]
     assert isinstance(event, TaskStatusUpdateEvent)
     assert event.status.state == TaskState.input_required
     assert event.final is False
@@ -187,3 +183,44 @@ async def test_send_message_resumes_interrupted_graph():
     invocation_input = call_args[0][0]
     assert isinstance(invocation_input, Command)
     assert invocation_input.resume is not None
+
+
+@pytest.mark.asyncio
+async def test_send_message_default_config():
+    """Default config uses recursion_limit=25 and no extra keys."""
+    graph = _make_graph({"messages": [AIMessage(content="ok")]})
+    agent = MockLangGraphAgent(graph=graph, id="test-agent")
+    request = _make_message("hello", context_id="ctx1")
+
+    async for _ in agent.send_message(request):
+        pass
+
+    config = graph.ainvoke.call_args[1].get("config") or graph.ainvoke.call_args[0][1]
+    assert config["recursion_limit"] == 25
+    assert "max_concurrency" not in config
+    assert "tags" not in config
+    assert "metadata" not in config
+
+
+@pytest.mark.asyncio
+async def test_send_message_custom_config():
+    """Custom recursion_limit, max_concurrency, tags, metadata flow into config."""
+    graph = _make_graph({"messages": [AIMessage(content="ok")]})
+    agent = MockLangGraphAgent(
+        graph=graph,
+        id="test-agent",
+        recursion_limit=50,
+        max_concurrency=3,
+        tags=["a", "b"],
+        metadata={"key": "value"},
+    )
+    request = _make_message("hello", context_id="ctx1")
+
+    async for _ in agent.send_message(request):
+        pass
+
+    config = graph.ainvoke.call_args[1].get("config") or graph.ainvoke.call_args[0][1]
+    assert config["recursion_limit"] == 50
+    assert config["max_concurrency"] == 3
+    assert config["tags"] == ["a", "b"]
+    assert config["metadata"] == {"key": "value"}

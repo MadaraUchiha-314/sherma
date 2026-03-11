@@ -60,6 +60,10 @@ class LangGraphAgent(Agent):
     """
 
     hook_manager: HookManager = Field(default_factory=HookManager)
+    recursion_limit: int = 25
+    max_concurrency: int | None = None
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def register_hooks(self, executor: HookExecutor) -> None:
         """Register a hook executor with this agent's hook manager."""
@@ -85,9 +89,15 @@ class LangGraphAgent(Agent):
 
         thread_id = request.context_id or request.task_id or str(uuid.uuid4())
         config: dict[str, Any] = {
-            "recursion_limit": 25,
+            "recursion_limit": self.recursion_limit,
             "configurable": {"thread_id": thread_id},
         }
+        if self.max_concurrency is not None:
+            config["max_concurrency"] = self.max_concurrency
+        if self.tags:
+            config["tags"] = self.tags
+        if self.metadata:
+            config["metadata"] = self.metadata
 
         if self.hook_manager._executors:
             invoke_ctx = GraphInvokeContext(
@@ -126,13 +136,6 @@ class LangGraphAgent(Agent):
         interrupts: tuple[Interrupt, ...] | None = result.get("__interrupt__")
 
         if interrupts:
-            # Yield any partial AI messages produced before the interrupt.
-            response_messages = result.get("messages", [])
-            if response_messages:
-                last = response_messages[-1]
-                if isinstance(last, AIMessage) and getattr(last, "content", ""):
-                    yield langgraph_to_a2a(last)
-
             # Combine interrupt values into a single input_required
             # status update.
             ai_message = combine_ai_messages([intr.value for intr in interrupts])
