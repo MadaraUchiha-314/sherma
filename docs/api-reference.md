@@ -143,12 +143,15 @@ class DeclarativeAgent(LangGraphAgent):
     yaml_path: str | Path | None = None
     yaml_content: str | None = None
     config: DeclarativeConfig | None = None
+    base_path: Path | None = None
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = []
     tenant_id: str = DEFAULT_TENANT_ID  # "default"
 ```
 
 Provide one of `yaml_path`, `yaml_content`, or `config`.
+
+When `yaml_path` is provided, `base_path` is automatically derived from the YAML file's parent directory. When using `yaml_content` or `config`, set `base_path` explicitly to resolve relative file paths (skill card paths, sub-agent YAML paths).
 
 ## Registries
 

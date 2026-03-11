@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from sherma.exceptions import DeclarativeConfigError
@@ -642,6 +644,217 @@ agents:
     config = load_declarative_config(yaml_content=yaml_content)
     with pytest.raises(DeclarativeConfigError, match="tool_node"):
         validate_config(config, "bad-agent")
+
+
+@pytest.mark.asyncio
+async def test_base_path_resolves_relative_skill_card_path(tmp_path):
+    """Relative skill_card_path is resolved against base_path."""
+    import json
+
+    card_data = {
+        "name": "Test Skill",
+        "description": "A test skill",
+        "base_uri": str(tmp_path),
+        "files": ["SKILL.md"],
+    }
+    card_file = tmp_path / "skill-card.json"
+    card_file.write_text(json.dumps(card_data))
+
+    yaml_content = """\
+skills:
+  - id: test-skill
+    version: "1.0.0"
+    skill_card_path: "skill-card.json"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    await populate_registries(config, registries, base_path=tmp_path)
+
+    skill = await registries.skill_registry.get("test-skill", "==1.0.0")
+    assert skill.skill_card is not None
+    assert skill.skill_card.name == "Test Skill"
+
+
+@pytest.mark.asyncio
+async def test_base_path_resolves_relative_sub_agent_yaml_path(tmp_path):
+    """Relative sub-agent yaml_path is resolved against base_path."""
+    from unittest.mock import MagicMock
+
+    sub_yaml = tmp_path / "sub.yaml"
+    sub_yaml.write_text("""\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  sub-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+""")
+
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+sub_agents:
+  - id: sub-agent
+    version: "1.0.0"
+    yaml_path: "sub.yaml"
+
+agents:
+  main:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle(chat_models={"gpt-4": MagicMock()})
+    await populate_registries(config, registries, base_path=tmp_path)
+
+    agent = await registries.agent_registry.get("sub-agent", "==1.0.0")
+    assert agent is not None
+
+
+@pytest.mark.asyncio
+async def test_relative_skill_card_path_without_base_path_raises():
+    """Relative skill_card_path without base_path raises DeclarativeConfigError."""
+    yaml_content = """\
+skills:
+  - id: test-skill
+    version: "1.0.0"
+    skill_card_path: "relative/path/card.json"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    with pytest.raises(DeclarativeConfigError, match="requires a base_path"):
+        await populate_registries(config, registries)
+
+
+@pytest.mark.asyncio
+async def test_relative_sub_agent_yaml_path_without_base_path_raises():
+    """Relative sub-agent yaml_path without base_path raises DeclarativeConfigError."""
+    yaml_content = """\
+sub_agents:
+  - id: sub-agent
+    version: "1.0.0"
+    yaml_path: "relative/sub.yaml"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    with pytest.raises(DeclarativeConfigError, match="requires a base_path"):
+        await populate_registries(config, registries)
+
+
+@pytest.mark.asyncio
+async def test_absolute_skill_card_path_ignores_base_path(tmp_path):
+    """Absolute skill_card_path works regardless of base_path."""
+    import json
+
+    card_data = {
+        "name": "Abs Skill",
+        "description": "An absolute skill",
+        "base_uri": str(tmp_path),
+        "files": ["SKILL.md"],
+    }
+    card_file = tmp_path / "skill-card.json"
+    card_file.write_text(json.dumps(card_data))
+
+    yaml_content = f"""\
+skills:
+  - id: abs-skill
+    version: "1.0.0"
+    skill_card_path: "{card_file}"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    # Pass a different base_path — should be ignored for absolute path
+    await populate_registries(config, registries, base_path=Path("/some/other/path"))
+
+    skill = await registries.skill_registry.get("abs-skill", "==1.0.0")
+    assert skill.skill_card is not None
+    assert skill.skill_card.name == "Abs Skill"
 
 
 def test_skill_def_with_skill_card_path():

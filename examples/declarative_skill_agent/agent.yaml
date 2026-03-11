@@ -44,7 +44,7 @@ llms:
 skills:
   - id: weather
     version: "1.0.0"
-    skill_card_path: examples/skills/weather/skill-card.json
+    skill_card_path: ../skills/weather/skill-card.json
 
 agents:
   skill-agent:

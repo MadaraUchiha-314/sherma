@@ -134,8 +134,10 @@ These tools are created by `create_skill_tools()` and registered automatically w
 skills:
   - id: weather
     version: "1.0.0"
-    skill_card_path: skills/weather/skill-card.json
+    skill_card_path: ../skills/weather/skill-card.json  # Relative to YAML file
 ```
+
+Relative `skill_card_path` values are resolved against the YAML file's directory (i.e., `base_path`). When using `yaml_content` instead of `yaml_path`, set `base_path` explicitly on the `DeclarativeAgent`. Absolute paths work regardless. See [Path Resolution](declarative-agents.md#path-resolution).
 
 ### Discovery node
 

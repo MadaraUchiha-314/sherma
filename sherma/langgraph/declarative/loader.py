@@ -241,6 +241,7 @@ async def populate_registries(
     registries: RegistryBundle,
     http_async_client: Any | None = None,
     hook_manager: HookManager | None = None,
+    base_path: Path | None = None,
 ) -> None:
     """Register entities declared in the config into registries."""
     from sherma.hooks.types import ChatModelCreateContext
@@ -305,6 +306,14 @@ async def populate_registries(
     for skill_def in config.skills:
         if skill_def.skill_card_path:
             path = Path(skill_def.skill_card_path)
+            if not path.is_absolute():
+                if base_path is None:
+                    raise DeclarativeConfigError(
+                        f"Relative skill_card_path '{skill_def.skill_card_path}' "
+                        f"requires a base_path. Provide base_path or use "
+                        f"an absolute path."
+                    )
+                path = (base_path / path).resolve()
             if not path.exists():
                 raise DeclarativeConfigError(f"Skill card file not found: {path}")
             data = json.loads(path.read_text())
@@ -454,6 +463,14 @@ async def populate_registries(
             from sherma.langgraph.declarative.agent import DeclarativeAgent
 
             yaml_path = Path(sub_agent_def.yaml_path)
+            if not yaml_path.is_absolute():
+                if base_path is None:
+                    raise DeclarativeConfigError(
+                        f"Relative sub-agent yaml_path '{sub_agent_def.yaml_path}' "
+                        f"requires a base_path. Provide base_path or use "
+                        f"an absolute path."
+                    )
+                yaml_path = (base_path / yaml_path).resolve()
             if not yaml_path.exists():
                 raise DeclarativeConfigError(
                     f"Sub-agent YAML file not found: {yaml_path}"

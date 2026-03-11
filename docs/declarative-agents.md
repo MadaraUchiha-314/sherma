@@ -64,7 +64,7 @@ The import path should point to a LangChain/LangGraph `@tool`-decorated function
 skills:
   - id: weather
     version: "1.0.0"
-    skill_card_path: path/to/skill-card.json  # Local path
+    skill_card_path: ../skills/weather/skill-card.json  # Relative to YAML file
     # url: https://example.com/skill-card.json  # Or remote URL
 ```
 
@@ -88,7 +88,7 @@ Declare other agents as sub-agents to enable multi-agent orchestration. Sub-agen
 sub_agents:
   - id: weather-agent
     version: "1.0.0"
-    yaml_path: agents/weather-agent.yaml        # From a YAML file
+    yaml_path: weather-agent.yaml               # Relative to this YAML file
 
   - id: search-agent
     version: "1.0.0"
@@ -327,8 +327,11 @@ agent = DeclarativeAgent(
     id="my-agent",
     version="1.0.0",
     yaml_content=yaml_string,
+    base_path=Path("path/to/yaml/dir"),  # Required for relative file paths
 )
 ```
+
+When using `yaml_content`, relative file paths in the YAML (like `skill_card_path` or sub-agent `yaml_path`) cannot be resolved without a `base_path`. If your YAML references only absolute paths or Python import paths, `base_path` is not needed.
 
 ### From a parsed config
 
@@ -340,6 +343,7 @@ agent = DeclarativeAgent(
     id="my-agent",
     version="1.0.0",
     config=config,
+    base_path=Path("path/to/yaml/dir"),  # Required for relative file paths
 )
 ```
 
@@ -355,6 +359,35 @@ agent = DeclarativeAgent(
     hooks=[LoggingHook(), GuardrailHook()],
 )
 ```
+
+## Path Resolution
+
+All file paths in a YAML config (`skill_card_path`, sub-agent `yaml_path`) are resolved against a **`base_path`**:
+
+- **`yaml_path` provided**: `base_path` is automatically derived from the YAML file's parent directory. No manual setup needed.
+- **`yaml_content` or `config` provided**: Set `base_path` explicitly if the YAML contains relative file paths.
+- **Absolute paths**: Always work regardless of `base_path`.
+- **Relative paths without `base_path`**: Raise a `DeclarativeConfigError`.
+
+This ensures agents work correctly from any working directory, not just the project root.
+
+```yaml
+# These paths are resolved relative to the YAML file's directory:
+skills:
+  - id: weather
+    version: "1.0.0"
+    skill_card_path: ../skills/weather/skill-card.json  # Relative to YAML dir
+
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    yaml_path: weather_agent.yaml  # Relative to YAML dir
+```
+
+**What is NOT affected by `base_path`:**
+- `import_path` (tools, agents, hooks) -- uses Python's `importlib` and `sys.path`
+- Skill card `base_uri` -- resolved relative to the skill card file's own location
+- Remote URLs -- used as-is
 
 ## Complete Example
 

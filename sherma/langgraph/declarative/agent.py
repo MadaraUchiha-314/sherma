@@ -118,6 +118,7 @@ class DeclarativeAgent(LangGraphAgent):
     yaml_path: str | Path | None = None
     yaml_content: str | None = None
     config: DeclarativeConfig | None = None
+    base_path: Path | None = None
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = Field(default_factory=list)
     tenant_id: str = DEFAULT_TENANT_ID
@@ -152,11 +153,20 @@ class DeclarativeAgent(LangGraphAgent):
         if config.hooks:
             populate_hooks(config, self.hook_manager)
 
+        # Derive base_path for resolving relative file paths in the YAML
+        base_path = self.base_path
+        if base_path is None and self.yaml_path is not None:
+            base_path = Path(self.yaml_path).resolve().parent
+
         # 2. Auto-build registries from config
         if self._registries is None:
             self._registries = RegistryBundle(tenant_id=self.tenant_id)
         await populate_registries(
-            config, self._registries, self.http_async_client, self.hook_manager
+            config,
+            self._registries,
+            self.http_async_client,
+            self.hook_manager,
+            base_path=base_path,
         )
 
         # Track sub-agent tool IDs for use_sub_agents_as_tools
