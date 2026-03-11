@@ -18,6 +18,7 @@ from sherma.hooks.types import (
     BeforeLLMCallContext,
     BeforeSkillLoadContext,
     BeforeToolCallContext,
+    GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
 )
@@ -70,6 +71,12 @@ async def test_all_methods_return_none():
     )
     assert (
         await executor.after_interrupt(AfterInterruptContext(nc, "n", "", "", {}))
+        is None
+    )
+    assert (
+        await executor.on_graph_invoke(
+            GraphInvokeContext("agent-1", "t1", {}, {"messages": []})
+        )
         is None
     )
 

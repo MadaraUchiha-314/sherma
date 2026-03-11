@@ -22,8 +22,10 @@ The simplest approach -- point directly to another declarative agent's YAML. The
 sub_agents:
   - id: weather-agent
     version: "1.0.0"
-    yaml_path: agents/weather-agent.yaml
+    yaml_path: weather-agent.yaml  # Relative to the parent YAML file
 ```
+
+Relative `yaml_path` values are resolved against the parent YAML file's directory (i.e., `base_path`). The sub-agent automatically derives its own `base_path` from its resolved YAML path, so nested sub-agents chain correctly. See [Path Resolution](declarative-agents.md#path-resolution).
 
 ### From a Python module
 
@@ -82,7 +84,7 @@ llms:
 sub_agents:
   - id: weather-agent
     version: "1.0.0"
-    yaml_path: weather-agent.yaml
+    yaml_path: weather-agent.yaml  # Resolved relative to this YAML file
 
 agents:
   travel-planner:

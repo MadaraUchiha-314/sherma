@@ -10,6 +10,7 @@ from sherma.hooks.executor import BaseHookExecutor
 from sherma.hooks.manager import HookManager
 from sherma.hooks.types import (
     BeforeLLMCallContext,
+    GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
 )
@@ -140,6 +141,29 @@ async def test_run_hook_node_exit_modifies_result():
     ctx = NodeExitContext(nc, "agent", "call_llm", {"messages": []}, {})
     result = await manager.run_hook("node_exit", ctx)
     assert result.result["extra"] == "added"
+
+
+@pytest.mark.asyncio
+async def test_run_hook_on_graph_invoke():
+    """on_graph_invoke hook can modify the config."""
+
+    class SetRecursionLimit(BaseHookExecutor):
+        async def on_graph_invoke(
+            self, ctx: GraphInvokeContext
+        ) -> GraphInvokeContext | None:
+            ctx.config["recursion_limit"] = 50
+            return ctx
+
+    manager = HookManager()
+    manager.register(SetRecursionLimit())
+    ctx = GraphInvokeContext(
+        agent_id="agent-1",
+        thread_id="t1",
+        config={"recursion_limit": 25, "configurable": {"thread_id": "t1"}},
+        input={"messages": []},
+    )
+    result = await manager.run_hook("on_graph_invoke", ctx)
+    assert result.config["recursion_limit"] == 50
 
 
 def test_register_multiple():

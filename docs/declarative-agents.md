@@ -13,6 +13,7 @@ tools:        # Tool imports
 skills:       # Skill card references
 sub_agents:   # Sub-agent declarations (for multi-agent orchestration)
 hooks:        # Hook executor imports
+checkpointer: # Checkpointer configuration (for state persistence)
 agents:       # Agent graph definitions
 ```
 
@@ -64,7 +65,7 @@ The import path should point to a LangChain/LangGraph `@tool`-decorated function
 skills:
   - id: weather
     version: "1.0.0"
-    skill_card_path: path/to/skill-card.json  # Local path
+    skill_card_path: ../skills/weather/skill-card.json  # Relative to YAML file
     # url: https://example.com/skill-card.json  # Or remote URL
 ```
 
@@ -88,7 +89,7 @@ Declare other agents as sub-agents to enable multi-agent orchestration. Sub-agen
 sub_agents:
   - id: weather-agent
     version: "1.0.0"
-    yaml_path: agents/weather-agent.yaml        # From a YAML file
+    yaml_path: weather-agent.yaml               # Relative to this YAML file
 
   - id: search-agent
     version: "1.0.0"
@@ -102,6 +103,32 @@ sub_agents:
     version: "1.0.0"
     # No source -- expects the agent to already be in the registry
 ```
+
+### Checkpointer
+
+The checkpointer enables state persistence across graph invocations, which is required for features like `interrupt` nodes (human-in-the-loop). By default, `DeclarativeAgent` uses an in-memory checkpointer (`MemorySaver`), so you don't need to configure anything for basic usage.
+
+To explicitly declare a checkpointer in YAML:
+
+```yaml
+checkpointer:
+  type: memory    # In-memory checkpointer (currently the only supported type)
+```
+
+You can also pass a checkpointer programmatically via the constructor:
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+agent = DeclarativeAgent(
+    id="my-agent",
+    version="1.0.0",
+    yaml_path="agent.yaml",
+    checkpointer=MemorySaver(),
+)
+```
+
+When a checkpointer is active, all graph invocations require a `thread_id` in the config to identify the conversation thread. The `send_message` method handles this automatically using `context_id`, `task_id`, or a generated UUID.
 
 ## Agent Definition
 
@@ -162,14 +189,16 @@ Calls an LLM with a prompt and optional tool bindings.
     # use_sub_agents_as_tools: true        # Or: bind sub-agents as tools
 ```
 
-**Tool binding modes** (mutually exclusive):
+**Tool binding modes:**
 
 | Mode | Description |
 | --- | --- |
-| `tools` (explicit list) | Bind only the listed tools |
+| `tools` (explicit list) | Bind the listed tools (can be combined with any flag below) |
 | `use_tools_from_registry: true` | Bind all tools in the registry |
 | `use_tools_from_loaded_skills: true` | Bind only tools loaded via skill discovery |
 | `use_sub_agents_as_tools: true` | Bind sub-agents declared in `sub_agents` as tools |
+
+The dynamic flags (`use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools`) are mutually exclusive with each other. However, an explicit `tools` list can be combined with any single dynamic flag -- the tools are merged additively and deduplicated by name.
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma automatically injects a `tool_node` after it with the correct conditional edges. If the LLM responds with tool calls, execution routes to the tool node; otherwise it continues to the next edge. You don't need to wire this manually.
 
@@ -284,6 +313,8 @@ Branches are evaluated in order. The first matching condition determines the tar
 
 CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing), map construction, comparisons, and boolean logic.
 
+CEL can also handle Pydantic models, dataclasses, and any object with `__dict__` -- these are automatically converted to CEL maps, so you can access their fields with standard map syntax (e.g., `obj.field` or `obj["field"]`).
+
 ### Examples
 
 ```yaml
@@ -327,8 +358,11 @@ agent = DeclarativeAgent(
     id="my-agent",
     version="1.0.0",
     yaml_content=yaml_string,
+    base_path=Path("path/to/yaml/dir"),  # Required for relative file paths
 )
 ```
+
+When using `yaml_content`, relative file paths in the YAML (like `skill_card_path` or sub-agent `yaml_path`) cannot be resolved without a `base_path`. If your YAML references only absolute paths or Python import paths, `base_path` is not needed.
 
 ### From a parsed config
 
@@ -340,6 +374,7 @@ agent = DeclarativeAgent(
     id="my-agent",
     version="1.0.0",
     config=config,
+    base_path=Path("path/to/yaml/dir"),  # Required for relative file paths
 )
 ```
 
@@ -355,6 +390,35 @@ agent = DeclarativeAgent(
     hooks=[LoggingHook(), GuardrailHook()],
 )
 ```
+
+## Path Resolution
+
+All file paths in a YAML config (`skill_card_path`, sub-agent `yaml_path`) are resolved against a **`base_path`**:
+
+- **`yaml_path` provided**: `base_path` is automatically derived from the YAML file's parent directory. No manual setup needed.
+- **`yaml_content` or `config` provided**: Set `base_path` explicitly if the YAML contains relative file paths.
+- **Absolute paths**: Always work regardless of `base_path`.
+- **Relative paths without `base_path`**: Raise a `DeclarativeConfigError`.
+
+This ensures agents work correctly from any working directory, not just the project root.
+
+```yaml
+# These paths are resolved relative to the YAML file's directory:
+skills:
+  - id: weather
+    version: "1.0.0"
+    skill_card_path: ../skills/weather/skill-card.json  # Relative to YAML dir
+
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    yaml_path: weather_agent.yaml  # Relative to YAML dir
+```
+
+**What is NOT affected by `base_path`:**
+- `import_path` (tools, agents, hooks) -- uses Python's `importlib` and `sys.path`
+- Skill card `base_uri` -- resolved relative to the skill card file's own location
+- Remote URLs -- used as-is
 
 ## Complete Example
 

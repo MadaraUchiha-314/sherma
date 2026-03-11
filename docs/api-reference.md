@@ -143,12 +143,16 @@ class DeclarativeAgent(LangGraphAgent):
     yaml_path: str | Path | None = None
     yaml_content: str | None = None
     config: DeclarativeConfig | None = None
+    base_path: Path | None = None
     http_async_client: Any | None = None
     hooks: list[HookExecutor] = []
     tenant_id: str = DEFAULT_TENANT_ID  # "default"
+    checkpointer: BaseCheckpointSaver = MemorySaver()  # State persistence
 ```
 
 Provide one of `yaml_path`, `yaml_content`, or `config`.
+
+When `yaml_path` is provided, `base_path` is automatically derived from the YAML file's parent directory. When using `yaml_content` or `config`, set `base_path` explicitly to resolve relative file paths (skill card paths, sub-agent YAML paths).
 
 ## Registries
 
@@ -258,6 +262,8 @@ class HookType(Enum):
     NODE_EXIT = "node_exit"
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
+    ON_CHAT_MODEL_CREATE = "on_chat_model_create"
+    ON_GRAPH_INVOKE = "on_graph_invoke"
 ```
 
 ### Hook Context Types
@@ -276,6 +282,8 @@ Imported from `sherma.hooks.types`:
 - `NodeExitContext`
 - `BeforeInterruptContext`
 - `AfterInterruptContext`
+- `ChatModelCreateContext`
+- `GraphInvokeContext`
 
 ## Declarative Config
 
@@ -291,6 +299,15 @@ class DeclarativeConfig(BaseModel):
     prompts: list[PromptDef] = []
     skills: list[SkillDef] = []
     hooks: list[HookDef] = []
+    sub_agents: list[SubAgentDef] = []
+    checkpointer: CheckpointerDef | None = None
+```
+
+### `CheckpointerDef`
+
+```python
+class CheckpointerDef(BaseModel):
+    type: Literal["memory"] = "memory"
 ```
 
 ### `load_declarative_config`

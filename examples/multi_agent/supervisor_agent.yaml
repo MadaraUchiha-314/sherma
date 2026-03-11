@@ -24,7 +24,7 @@ llms:
 sub_agents:
   - id: weather-agent
     version: "1.0.0"
-    yaml_path: examples/multi_agent/weather_agent.yaml
+    yaml_path: weather_agent.yaml
 
 agents:
   travel-planner:

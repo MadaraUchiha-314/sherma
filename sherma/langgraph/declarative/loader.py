@@ -163,6 +163,62 @@ def _extract_bearer_token(http_async_client: Any) -> str | None:
     return None
 
 
+def _build_chat_model_kwargs(
+    provider: str,
+    model_name: str,
+    http_async_client: Any | None = None,
+) -> dict[str, Any]:
+    """Build constructor kwargs for a chat model without instantiating it."""
+    api_key = _extract_bearer_token(http_async_client) if http_async_client else None
+
+    if provider == "openai":
+        kwargs: dict[str, Any] = {"model": model_name, "max_retries": 5}
+        if http_async_client is not None:
+            kwargs["http_async_client"] = http_async_client
+        if api_key is not None:
+            kwargs["api_key"] = api_key
+        return kwargs
+
+    if provider == "anthropic":
+        kwargs_a: dict[str, Any] = {"model": model_name}
+        if http_async_client is not None:
+            kwargs_a["http_async_client"] = http_async_client
+        if api_key is not None:
+            kwargs_a["api_key"] = api_key
+        return kwargs_a
+
+    raise DeclarativeConfigError(
+        f"Unsupported LLM provider '{provider}'. Supported: openai, anthropic"
+    )
+
+
+def _construct_chat_model(provider: str, kwargs: dict[str, Any]) -> Any:
+    """Construct a chat model instance from provider and kwargs."""
+    if provider == "openai":
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise DeclarativeConfigError(
+                "langchain-openai is required for provider 'openai'. "
+                "Install with: uv add langchain-openai"
+            ) from exc
+        return ChatOpenAI(**kwargs)
+
+    if provider == "anthropic":
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError as exc:
+            raise DeclarativeConfigError(
+                "langchain-anthropic is required for provider 'anthropic'. "
+                "Install with: uv add langchain-anthropic"
+            ) from exc
+        return ChatAnthropic(**kwargs)  # type: ignore[call-arg]
+
+    raise DeclarativeConfigError(
+        f"Unsupported LLM provider '{provider}'. Supported: openai, anthropic"
+    )
+
+
 def create_chat_model(
     provider: str,
     model_name: str,
@@ -176,49 +232,20 @@ def create_chat_model(
     is also passed as the ``api_key`` so that provider SDKs that require
     an explicit key (e.g. OpenAI) are satisfied.
     """
-    api_key = _extract_bearer_token(http_async_client) if http_async_client else None
-
-    if provider == "openai":
-        try:
-            from langchain_openai import ChatOpenAI
-        except ImportError as exc:
-            raise DeclarativeConfigError(
-                "langchain-openai is required for provider 'openai'. "
-                "Install with: uv add langchain-openai"
-            ) from exc
-        kwargs: dict[str, Any] = {"model": model_name, "max_retries": 5}
-        if http_async_client is not None:
-            kwargs["http_async_client"] = http_async_client
-        if api_key is not None:
-            kwargs["api_key"] = api_key
-        return ChatOpenAI(**kwargs)
-
-    if provider == "anthropic":
-        try:
-            from langchain_anthropic import ChatAnthropic
-        except ImportError as exc:
-            raise DeclarativeConfigError(
-                "langchain-anthropic is required for provider 'anthropic'. "
-                "Install with: uv add langchain-anthropic"
-            ) from exc
-        kwargs_a: dict[str, Any] = {"model": model_name}
-        if http_async_client is not None:
-            kwargs_a["http_async_client"] = http_async_client
-        if api_key is not None:
-            kwargs_a["api_key"] = api_key
-        return ChatAnthropic(**kwargs_a)  # type: ignore[call-arg]
-
-    raise DeclarativeConfigError(
-        f"Unsupported LLM provider '{provider}'. Supported: openai, anthropic"
-    )
+    kwargs = _build_chat_model_kwargs(provider, model_name, http_async_client)
+    return _construct_chat_model(provider, kwargs)
 
 
 async def populate_registries(
     config: DeclarativeConfig,
     registries: RegistryBundle,
     http_async_client: Any | None = None,
+    hook_manager: HookManager | None = None,
+    base_path: Path | None = None,
 ) -> None:
     """Register entities declared in the config into registries."""
+    from sherma.hooks.types import ChatModelCreateContext
+
     tenant_id = registries.tenant_id
 
     for llm_def in config.llms:
@@ -237,9 +264,28 @@ async def populate_registries(
         )
         # Auto-create chat model if not already provided
         if llm_def.id not in registries.chat_models:
-            registries.chat_models[llm_def.id] = create_chat_model(
+            kwargs = _build_chat_model_kwargs(
                 llm_def.provider, llm_def.model_name, http_async_client
             )
+
+            if hook_manager is not None and hook_manager._executors:
+                ctx = ChatModelCreateContext(
+                    llm_id=llm_def.id,
+                    provider=llm_def.provider,
+                    model_name=llm_def.model_name,
+                    kwargs=kwargs,
+                )
+                ctx = await hook_manager.run_hook("on_chat_model_create", ctx)
+                if ctx.chat_model is not None:
+                    registries.chat_models[llm_def.id] = ctx.chat_model
+                else:
+                    registries.chat_models[llm_def.id] = _construct_chat_model(
+                        ctx.provider, ctx.kwargs
+                    )
+            else:
+                registries.chat_models[llm_def.id] = _construct_chat_model(
+                    llm_def.provider, kwargs
+                )
 
     for prompt_def in config.prompts:
         await registries.prompt_registry.add(
@@ -260,6 +306,14 @@ async def populate_registries(
     for skill_def in config.skills:
         if skill_def.skill_card_path:
             path = Path(skill_def.skill_card_path)
+            if not path.is_absolute():
+                if base_path is None:
+                    raise DeclarativeConfigError(
+                        f"Relative skill_card_path '{skill_def.skill_card_path}' "
+                        f"requires a base_path. Provide base_path or use "
+                        f"an absolute path."
+                    )
+                path = (base_path / path).resolve()
             if not path.exists():
                 raise DeclarativeConfigError(f"Skill card file not found: {path}")
             data = json.loads(path.read_text())
@@ -409,6 +463,14 @@ async def populate_registries(
             from sherma.langgraph.declarative.agent import DeclarativeAgent
 
             yaml_path = Path(sub_agent_def.yaml_path)
+            if not yaml_path.is_absolute():
+                if base_path is None:
+                    raise DeclarativeConfigError(
+                        f"Relative sub-agent yaml_path '{sub_agent_def.yaml_path}' "
+                        f"requires a base_path. Provide base_path or use "
+                        f"an absolute path."
+                    )
+                yaml_path = (base_path / yaml_path).resolve()
             if not yaml_path.exists():
                 raise DeclarativeConfigError(
                     f"Sub-agent YAML file not found: {yaml_path}"
@@ -524,22 +586,10 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                         f"tool_node exists in the graph"
                     )
 
-    # Validate use_tools_from_registry/use_tools_from_loaded_skills
-    # are not combined with explicit tools
+    # Validate that at most one dynamic tool flag is set
     for node in graph.nodes:
         if node.type == "call_llm":
             llm_args: CallLLMArgs = node.args  # type: ignore[assignment]
-            if llm_args.tools and (
-                llm_args.use_tools_from_registry
-                or llm_args.use_tools_from_loaded_skills
-                or llm_args.use_sub_agents_as_tools
-            ):
-                raise DeclarativeConfigError(
-                    f"call_llm node '{node.name}' cannot specify both "
-                    f"an explicit 'tools' list and "
-                    f"'use_tools_from_registry', 'use_tools_from_loaded_skills', "
-                    f"or 'use_sub_agents_as_tools'"
-                )
             exclusive_flags = sum(
                 [
                     llm_args.use_tools_from_registry,

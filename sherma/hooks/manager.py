@@ -16,6 +16,8 @@ from sherma.hooks.types import (
     BeforeLLMCallContext,
     BeforeSkillLoadContext,
     BeforeToolCallContext,
+    ChatModelCreateContext,
+    GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
 )
@@ -34,6 +36,8 @@ _ContextT = TypeVar(
     NodeExitContext,
     BeforeInterruptContext,
     AfterInterruptContext,
+    ChatModelCreateContext,
+    GraphInvokeContext,
 )
 
 

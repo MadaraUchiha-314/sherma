@@ -19,12 +19,13 @@ from a2a.types import (
     TextPart,
 )
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Interrupt
+from langgraph.types import Command, Interrupt
 from pydantic import Field
 
 from sherma.entities.agent.base import Agent
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.manager import HookManager
+from sherma.hooks.types import GraphInvokeContext
 from sherma.logging import get_logger
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
 
@@ -62,10 +63,38 @@ class LangGraphAgent(Agent):
         lg_messages = a2a_to_langgraph(request)
         logger.info("Invoking graph with %d initial messages", len(lg_messages))
 
-        result = await graph.ainvoke(
-            {"messages": lg_messages},
-            config={"recursion_limit": 25},
-        )
+        thread_id = request.context_id or request.task_id or str(uuid.uuid4())
+        config: dict[str, Any] = {
+            "recursion_limit": 25,
+            "configurable": {"thread_id": thread_id},
+        }
+
+        if self.hook_manager._executors:
+            invoke_ctx = GraphInvokeContext(
+                agent_id=self.id,
+                thread_id=thread_id,
+                config=config,
+                input={"messages": lg_messages},
+            )
+            invoke_ctx = await self.hook_manager.run_hook("on_graph_invoke", invoke_ctx)
+            config = invoke_ctx.config
+
+        # Check if graph is in interrupted state
+        state_snapshot = await graph.aget_state(config)  # type: ignore[arg-type]
+        if state_snapshot.tasks:  # pending interrupts exist
+            logger.info(
+                "Graph is interrupted, resuming with %d messages",
+                len(lg_messages),
+            )
+            result = await graph.ainvoke(
+                Command(resume=lg_messages),
+                config=config,  # type: ignore[arg-type]
+            )
+        else:
+            result = await graph.ainvoke(
+                {"messages": lg_messages},
+                config=config,  # type: ignore[arg-type]
+            )
 
         all_messages = result.get("messages", [])
         logger.info("Graph completed with %d total messages", len(all_messages))

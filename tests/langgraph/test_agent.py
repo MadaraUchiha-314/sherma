@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from a2a.client.client import UpdateEvent
@@ -18,7 +18,7 @@ from a2a.types import (
 )
 from langchain_core.messages import AIMessage
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Interrupt
+from langgraph.types import Command, Interrupt
 
 from sherma.langgraph.agent import LangGraphAgent
 
@@ -32,6 +32,20 @@ class MockLangGraphAgent(LangGraphAgent):
 
     async def get_graph(self) -> CompiledStateGraph:
         return self._graph
+
+
+def _make_graph(
+    invoke_return: dict[str, Any],
+    *,
+    interrupted: bool = False,
+) -> AsyncMock:
+    """Create a mock CompiledStateGraph with aget_state support."""
+    graph = AsyncMock(spec=CompiledStateGraph)
+    graph.ainvoke = AsyncMock(return_value=invoke_return)
+    state_snapshot = MagicMock()
+    state_snapshot.tasks = (MagicMock(),) if interrupted else ()
+    graph.aget_state = AsyncMock(return_value=state_snapshot)
+    return graph
 
 
 def _make_message(
@@ -49,12 +63,7 @@ def _make_message(
 @pytest.mark.asyncio
 async def test_send_message_normal_response():
     """LangGraphAgent yields a Message for normal (non-interrupted) responses."""
-    graph = AsyncMock(spec=CompiledStateGraph)
-    graph.ainvoke = AsyncMock(
-        return_value={
-            "messages": [AIMessage(content="hello back")],
-        }
-    )
+    graph = _make_graph({"messages": [AIMessage(content="hello back")]})
 
     agent = MockLangGraphAgent(graph=graph, id="test-agent")
     request = _make_message("hello")
@@ -73,9 +82,8 @@ async def test_send_message_normal_response():
 @pytest.mark.asyncio
 async def test_send_message_single_interrupt():
     """LangGraphAgent yields TaskStatusUpdateEvent(input_required) on interrupt."""
-    graph = AsyncMock(spec=CompiledStateGraph)
-    graph.ainvoke = AsyncMock(
-        return_value={
+    graph = _make_graph(
+        {
             "messages": [AIMessage(content="partial")],
             "__interrupt__": (Interrupt(value="What is your name?"),),
         }
@@ -110,9 +118,8 @@ async def test_send_message_single_interrupt():
 @pytest.mark.asyncio
 async def test_send_message_multiple_interrupts():
     """All interrupt values become parts of a single message."""
-    graph = AsyncMock(spec=CompiledStateGraph)
-    graph.ainvoke = AsyncMock(
-        return_value={
+    graph = _make_graph(
+        {
             "messages": [],
             "__interrupt__": (
                 Interrupt(value="What is your name?"),
@@ -143,8 +150,7 @@ async def test_send_message_multiple_interrupts():
 @pytest.mark.asyncio
 async def test_send_message_no_messages():
     """LangGraphAgent yields nothing when graph returns no messages."""
-    graph = AsyncMock(spec=CompiledStateGraph)
-    graph.ainvoke = AsyncMock(return_value={"messages": []})
+    graph = _make_graph({"messages": []})
 
     agent = MockLangGraphAgent(graph=graph, id="test-agent")
     request = _make_message("hello")
@@ -154,3 +160,30 @@ async def test_send_message_no_messages():
         events.append(event)
 
     assert len(events) == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_resumes_interrupted_graph():
+    """When graph is interrupted, send_message resumes with Command(resume=...)."""
+    graph = _make_graph(
+        {"messages": [AIMessage(content="resumed response")]},
+        interrupted=True,
+    )
+
+    agent = MockLangGraphAgent(graph=graph, id="test-agent")
+    request = _make_message("my name is Alice", context_id="ctx1")
+
+    events: list[UpdateEvent | Message | Task] = []
+    async for event in agent.send_message(request):
+        events.append(event)
+
+    assert len(events) == 1
+    msg = events[0]
+    assert isinstance(msg, Message)
+    assert msg.parts[0].root.text == "resumed response"  # type: ignore[union-attr]
+
+    # Verify ainvoke was called with Command(resume=...) not {"messages": ...}
+    call_args = graph.ainvoke.call_args
+    invocation_input = call_args[0][0]
+    assert isinstance(invocation_input, Command)
+    assert invocation_input.resume is not None

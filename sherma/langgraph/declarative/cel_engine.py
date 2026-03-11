@@ -24,6 +24,23 @@ _CEL_CONCRETE_TYPES = (
 )
 
 
+def _object_to_dict(value: Any) -> dict[str, Any] | None:
+    """Try to convert an arbitrary object to a dict for CEL map conversion.
+
+    Supports Pydantic models (.model_dump()), dataclasses, and objects with __dict__.
+    Returns None if no dict representation can be extracted.
+    """
+    if hasattr(value, "model_dump"):
+        return value.model_dump()  # type: ignore[no-any-return]
+    if hasattr(value, "__dataclass_fields__"):
+        import dataclasses
+
+        return dataclasses.asdict(value)
+    if hasattr(value, "__dict__") and not isinstance(value, type):
+        return {k: v for k, v in value.__dict__.items() if not k.startswith("_")}
+    return None
+
+
 def _python_to_cel(value: Any) -> Any:
     """Convert a Python value to a CEL type."""
     if isinstance(value, _CEL_CONCRETE_TYPES):
@@ -44,6 +61,9 @@ def _python_to_cel(value: Any) -> Any:
         return celtypes.MapType(
             {_python_to_cel(k): _python_to_cel(v) for k, v in value.items()}
         )
+    obj_dict = _object_to_dict(value)
+    if obj_dict is not None:
+        return _python_to_cel(obj_dict)
     return celtypes.StringType(str(value))
 
 

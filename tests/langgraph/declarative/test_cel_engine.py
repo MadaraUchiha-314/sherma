@@ -100,3 +100,93 @@ def test_evaluate_list_result():
     cel = CelEngine()
     result = cel.evaluate("[1, 2, 3]", {})
     assert result == [1, 2, 3]
+
+
+def test_evaluate_message_content_field():
+    """CEL can access .content on LangChain message objects."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    messages = [AIMessage(content="TASK_COMPLETE: done")]
+    result = cel.evaluate('messages[0]["content"]', {"messages": messages})
+    assert result == "TASK_COMPLETE: done"
+
+
+def test_evaluate_message_type_field():
+    """CEL can access .type on LangChain message objects."""
+    from langchain_core.messages import HumanMessage
+
+    cel = CelEngine()
+    result = cel.evaluate('msg["type"]', {"msg": HumanMessage(content="hi")})
+    assert result == "human"
+
+
+def test_evaluate_message_content_contains():
+    """CEL can use .contains() on message content for routing."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    messages = [AIMessage(content="TASK_COMPLETE: all done")]
+    result = cel.evaluate_bool(
+        'messages[0]["content"].contains("TASK_COMPLETE")', {"messages": messages}
+    )
+    assert result is True
+
+
+def test_evaluate_message_tool_calls():
+    """CEL can access tool_calls on AI messages."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "foo", "args": {}}])
+    result = cel.evaluate('size(msg["tool_calls"])', {"msg": msg})
+    assert result == 1
+
+
+def test_evaluate_message_no_tool_calls_key():
+    """HumanMessage has no tool_calls key — CEL should not find it."""
+    from langchain_core.messages import HumanMessage
+
+    cel = CelEngine()
+    result = cel.evaluate_bool(
+        "!has(msg.tool_calls)", {"msg": HumanMessage(content="hi")}
+    )
+    assert result is True
+
+
+def test_evaluate_ai_message_empty_tool_calls():
+    """AIMessage with no tool calls has an empty tool_calls list."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    result = cel.evaluate(
+        'size(msg["tool_calls"])', {"msg": AIMessage(content="hello")}
+    )
+    assert result == 0
+
+
+def test_evaluate_dataclass_as_map():
+    """Dataclass objects are converted to CEL maps with field access."""
+    import dataclasses
+
+    @dataclasses.dataclass
+    class Point:
+        x: int
+        y: int
+
+    cel = CelEngine()
+    result = cel.evaluate('p["x"] + p["y"]', {"p": Point(x=3, y=7)})
+    assert result == 10
+
+
+def test_evaluate_plain_object_as_map():
+    """Plain objects with __dict__ are converted to CEL maps."""
+
+    class Config:
+        def __init__(self) -> None:
+            self.name = "test"
+            self.enabled = True
+
+    cel = CelEngine()
+    result = cel.evaluate('cfg["name"]', {"cfg": Config()})
+    assert result == "test"
