@@ -163,6 +163,62 @@ def _extract_bearer_token(http_async_client: Any) -> str | None:
     return None
 
 
+def _build_chat_model_kwargs(
+    provider: str,
+    model_name: str,
+    http_async_client: Any | None = None,
+) -> dict[str, Any]:
+    """Build constructor kwargs for a chat model without instantiating it."""
+    api_key = _extract_bearer_token(http_async_client) if http_async_client else None
+
+    if provider == "openai":
+        kwargs: dict[str, Any] = {"model": model_name, "max_retries": 5}
+        if http_async_client is not None:
+            kwargs["http_async_client"] = http_async_client
+        if api_key is not None:
+            kwargs["api_key"] = api_key
+        return kwargs
+
+    if provider == "anthropic":
+        kwargs_a: dict[str, Any] = {"model": model_name}
+        if http_async_client is not None:
+            kwargs_a["http_async_client"] = http_async_client
+        if api_key is not None:
+            kwargs_a["api_key"] = api_key
+        return kwargs_a
+
+    raise DeclarativeConfigError(
+        f"Unsupported LLM provider '{provider}'. Supported: openai, anthropic"
+    )
+
+
+def _construct_chat_model(provider: str, kwargs: dict[str, Any]) -> Any:
+    """Construct a chat model instance from provider and kwargs."""
+    if provider == "openai":
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise DeclarativeConfigError(
+                "langchain-openai is required for provider 'openai'. "
+                "Install with: uv add langchain-openai"
+            ) from exc
+        return ChatOpenAI(**kwargs)
+
+    if provider == "anthropic":
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError as exc:
+            raise DeclarativeConfigError(
+                "langchain-anthropic is required for provider 'anthropic'. "
+                "Install with: uv add langchain-anthropic"
+            ) from exc
+        return ChatAnthropic(**kwargs)  # type: ignore[call-arg]
+
+    raise DeclarativeConfigError(
+        f"Unsupported LLM provider '{provider}'. Supported: openai, anthropic"
+    )
+
+
 def create_chat_model(
     provider: str,
     model_name: str,
@@ -176,49 +232,19 @@ def create_chat_model(
     is also passed as the ``api_key`` so that provider SDKs that require
     an explicit key (e.g. OpenAI) are satisfied.
     """
-    api_key = _extract_bearer_token(http_async_client) if http_async_client else None
-
-    if provider == "openai":
-        try:
-            from langchain_openai import ChatOpenAI
-        except ImportError as exc:
-            raise DeclarativeConfigError(
-                "langchain-openai is required for provider 'openai'. "
-                "Install with: uv add langchain-openai"
-            ) from exc
-        kwargs: dict[str, Any] = {"model": model_name, "max_retries": 5}
-        if http_async_client is not None:
-            kwargs["http_async_client"] = http_async_client
-        if api_key is not None:
-            kwargs["api_key"] = api_key
-        return ChatOpenAI(**kwargs)
-
-    if provider == "anthropic":
-        try:
-            from langchain_anthropic import ChatAnthropic
-        except ImportError as exc:
-            raise DeclarativeConfigError(
-                "langchain-anthropic is required for provider 'anthropic'. "
-                "Install with: uv add langchain-anthropic"
-            ) from exc
-        kwargs_a: dict[str, Any] = {"model": model_name}
-        if http_async_client is not None:
-            kwargs_a["http_async_client"] = http_async_client
-        if api_key is not None:
-            kwargs_a["api_key"] = api_key
-        return ChatAnthropic(**kwargs_a)  # type: ignore[call-arg]
-
-    raise DeclarativeConfigError(
-        f"Unsupported LLM provider '{provider}'. Supported: openai, anthropic"
-    )
+    kwargs = _build_chat_model_kwargs(provider, model_name, http_async_client)
+    return _construct_chat_model(provider, kwargs)
 
 
 async def populate_registries(
     config: DeclarativeConfig,
     registries: RegistryBundle,
     http_async_client: Any | None = None,
+    hook_manager: HookManager | None = None,
 ) -> None:
     """Register entities declared in the config into registries."""
+    from sherma.hooks.types import ChatModelCreateContext
+
     tenant_id = registries.tenant_id
 
     for llm_def in config.llms:
@@ -237,9 +263,28 @@ async def populate_registries(
         )
         # Auto-create chat model if not already provided
         if llm_def.id not in registries.chat_models:
-            registries.chat_models[llm_def.id] = create_chat_model(
+            kwargs = _build_chat_model_kwargs(
                 llm_def.provider, llm_def.model_name, http_async_client
             )
+
+            if hook_manager is not None and hook_manager._executors:
+                ctx = ChatModelCreateContext(
+                    llm_id=llm_def.id,
+                    provider=llm_def.provider,
+                    model_name=llm_def.model_name,
+                    kwargs=kwargs,
+                )
+                ctx = await hook_manager.run_hook("on_chat_model_create", ctx)
+                if ctx.chat_model is not None:
+                    registries.chat_models[llm_def.id] = ctx.chat_model
+                else:
+                    registries.chat_models[llm_def.id] = _construct_chat_model(
+                        ctx.provider, ctx.kwargs
+                    )
+            else:
+                registries.chat_models[llm_def.id] = _construct_chat_model(
+                    llm_def.provider, kwargs
+                )
 
     for prompt_def in config.prompts:
         await registries.prompt_registry.add(

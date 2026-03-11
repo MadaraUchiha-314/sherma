@@ -15,6 +15,7 @@ from sherma.hooks.types import (
     BeforeLLMCallContext,
     BeforeSkillLoadContext,
     BeforeToolCallContext,
+    ChatModelCreateContext,
     NodeEnterContext,
     NodeExitContext,
 )
@@ -72,6 +73,10 @@ class HookExecutor(Protocol):
     async def after_interrupt(
         self, ctx: AfterInterruptContext
     ) -> AfterInterruptContext | None: ...
+
+    async def on_chat_model_create(
+        self, ctx: ChatModelCreateContext
+    ) -> ChatModelCreateContext | None: ...
 
 
 class BaseHookExecutor:
@@ -134,4 +139,9 @@ class BaseHookExecutor:
     async def after_interrupt(
         self, ctx: AfterInterruptContext
     ) -> AfterInterruptContext | None:
+        return None
+
+    async def on_chat_model_create(
+        self, ctx: ChatModelCreateContext
+    ) -> ChatModelCreateContext | None:
         return None

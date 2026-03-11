@@ -145,21 +145,22 @@ class DeclarativeAgent(LangGraphAgent):
         agent_name = self._find_agent_name(config)
         validate_config(config, agent_name)
 
-        # 2. Auto-build registries from config
-        if self._registries is None:
-            self._registries = RegistryBundle(tenant_id=self.tenant_id)
-        await populate_registries(config, self._registries, self.http_async_client)
-
-        # Track sub-agent tool IDs for use_sub_agents_as_tools
-        self._sub_agent_tool_ids: list[str] = [sa.id for sa in config.sub_agents]
-
-        # Register hooks from constructor
+        # Register hooks BEFORE populating registries (needed for on_chat_model_create)
         for executor in self.hooks:
             self.hook_manager.register(executor)
 
-        # Register hooks from YAML config
         if config.hooks:
             populate_hooks(config, self.hook_manager)
+
+        # 2. Auto-build registries from config
+        if self._registries is None:
+            self._registries = RegistryBundle(tenant_id=self.tenant_id)
+        await populate_registries(
+            config, self._registries, self.http_async_client, self.hook_manager
+        )
+
+        # Track sub-agent tool IDs for use_sub_agents_as_tools
+        self._sub_agent_tool_ids: list[str] = [sa.id for sa in config.sub_agents]
 
         # 3. Build the graph
         agent_def = config.agents[agent_name]

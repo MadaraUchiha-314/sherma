@@ -686,3 +686,115 @@ async def test_populate_registries_propagates_tenant_id():
 
     prompt = await registries.prompt_registry.get("sys")
     assert prompt.tenant_id == "acme"
+
+
+# ---------------------------------------------------------------------------
+# on_chat_model_create hook tests
+# ---------------------------------------------------------------------------
+
+HOOK_YAML = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+
+
+@pytest.mark.asyncio
+async def test_on_chat_model_create_modifies_kwargs():
+    """Hook that modifies kwargs (e.g., adds temperature) is applied."""
+    from unittest.mock import MagicMock, patch
+
+    from sherma.hooks.executor import BaseHookExecutor
+    from sherma.hooks.manager import HookManager
+    from sherma.hooks.types import ChatModelCreateContext
+
+    class TempHook(BaseHookExecutor):
+        async def on_chat_model_create(
+            self, ctx: ChatModelCreateContext
+        ) -> ChatModelCreateContext:
+            ctx.kwargs["temperature"] = 0.5
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(TempHook())
+
+    config = load_declarative_config(yaml_content=HOOK_YAML)
+    registries = RegistryBundle()
+
+    mock_chat = MagicMock()
+    with patch(
+        "sherma.langgraph.declarative.loader._construct_chat_model",
+        return_value=mock_chat,
+    ) as mock_construct:
+        await populate_registries(config, registries, hook_manager=hook_manager)
+
+    assert registries.chat_models["gpt-4"] is mock_chat
+    # Verify temperature was passed through kwargs
+    call_kwargs = mock_construct.call_args[0][1]
+    assert call_kwargs["temperature"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_on_chat_model_create_provides_custom_model():
+    """Hook that sets chat_model bypasses default construction."""
+    from unittest.mock import MagicMock, patch
+
+    from sherma.hooks.executor import BaseHookExecutor
+    from sherma.hooks.manager import HookManager
+    from sherma.hooks.types import ChatModelCreateContext
+
+    custom_model = MagicMock(name="custom_model")
+
+    class CustomModelHook(BaseHookExecutor):
+        async def on_chat_model_create(
+            self, ctx: ChatModelCreateContext
+        ) -> ChatModelCreateContext:
+            ctx.chat_model = custom_model
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(CustomModelHook())
+
+    config = load_declarative_config(yaml_content=HOOK_YAML)
+    registries = RegistryBundle()
+
+    with patch(
+        "sherma.langgraph.declarative.loader._construct_chat_model",
+    ) as mock_construct:
+        await populate_registries(config, registries, hook_manager=hook_manager)
+
+    assert registries.chat_models["gpt-4"] is custom_model
+    mock_construct.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_no_hook_manager_default_behavior():
+    """Without a hook manager, default chat model creation is used."""
+    from unittest.mock import MagicMock, patch
+
+    config = load_declarative_config(yaml_content=HOOK_YAML)
+    registries = RegistryBundle()
+
+    mock_chat = MagicMock()
+    with patch(
+        "sherma.langgraph.declarative.loader._construct_chat_model",
+        return_value=mock_chat,
+    ):
+        await populate_registries(config, registries)
+
+    assert registries.chat_models["gpt-4"] is mock_chat

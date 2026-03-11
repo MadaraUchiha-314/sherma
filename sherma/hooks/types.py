@@ -25,6 +25,7 @@ class HookType(Enum):
     NODE_EXIT = "node_exit"
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
+    ON_CHAT_MODEL_CREATE = "on_chat_model_create"
 
 
 @dataclass
@@ -151,3 +152,14 @@ class AfterInterruptContext:
     value: Any
     response: Any
     state: dict[str, Any]
+
+
+@dataclass
+class ChatModelCreateContext:
+    """Context for on_chat_model_create hooks."""
+
+    llm_id: str
+    provider: str
+    model_name: str
+    kwargs: dict[str, Any]
+    chat_model: Any | None = None
