@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 
 from sherma.hooks.types import (
     AfterAgentCallContext,
+    AfterGraphInvokeContext,
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
@@ -79,9 +80,13 @@ class HookExecutor(Protocol):
         self, ctx: ChatModelCreateContext
     ) -> ChatModelCreateContext | None: ...
 
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None: ...
+
+    async def after_graph_invoke(
+        self, ctx: AfterGraphInvokeContext
+    ) -> AfterGraphInvokeContext | None: ...
 
 
 class BaseHookExecutor:
@@ -151,7 +156,12 @@ class BaseHookExecutor:
     ) -> ChatModelCreateContext | None:
         return None
 
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None:
+        return None
+
+    async def after_graph_invoke(
+        self, ctx: AfterGraphInvokeContext
+    ) -> AfterGraphInvokeContext | None:
         return None

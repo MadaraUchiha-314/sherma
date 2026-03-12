@@ -24,7 +24,7 @@ from pydantic import Field
 from sherma.entities.agent.base import Agent
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.manager import HookManager
-from sherma.hooks.types import GraphInvokeContext
+from sherma.hooks.types import AfterGraphInvokeContext, GraphInvokeContext
 from sherma.logging import get_logger
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
 
@@ -99,14 +99,17 @@ class LangGraphAgent(Agent):
         if self.metadata:
             config["metadata"] = self.metadata
 
+        graph_input = {"messages": lg_messages}
         if self.hook_manager._executors:
             invoke_ctx = GraphInvokeContext(
                 agent_id=self.id,
                 thread_id=thread_id,
                 config=config,
-                input={"messages": lg_messages},
+                input=graph_input,
             )
-            invoke_ctx = await self.hook_manager.run_hook("on_graph_invoke", invoke_ctx)
+            invoke_ctx = await self.hook_manager.run_hook(
+                "before_graph_invoke", invoke_ctx
+            )
             config = invoke_ctx.config
 
         # Check if graph is in interrupted state
@@ -122,9 +125,22 @@ class LangGraphAgent(Agent):
             )
         else:
             result = await graph.ainvoke(
-                {"messages": lg_messages},
+                graph_input,
                 config=config,  # type: ignore[arg-type]
             )
+
+        if self.hook_manager._executors:
+            after_ctx = AfterGraphInvokeContext(
+                agent_id=self.id,
+                thread_id=thread_id,
+                config=config,
+                input=graph_input,
+                result=result,
+            )
+            after_ctx = await self.hook_manager.run_hook(
+                "after_graph_invoke", after_ctx
+            )
+            result = after_ctx.result
 
         all_messages = result.get("messages", [])
         logger.info("Graph completed with %d total messages", len(all_messages))

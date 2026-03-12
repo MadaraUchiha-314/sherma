@@ -9,6 +9,7 @@ import pytest
 from sherma.hooks.executor import BaseHookExecutor, HookExecutor
 from sherma.hooks.types import (
     AfterAgentCallContext,
+    AfterGraphInvokeContext,
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
@@ -74,8 +75,14 @@ async def test_all_methods_return_none():
         is None
     )
     assert (
-        await executor.on_graph_invoke(
+        await executor.before_graph_invoke(
             GraphInvokeContext("agent-1", "t1", {}, {"messages": []})
+        )
+        is None
+    )
+    assert (
+        await executor.after_graph_invoke(
+            AfterGraphInvokeContext("agent-1", "t1", {}, {"messages": []}, {})
         )
         is None
     )

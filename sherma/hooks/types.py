@@ -26,7 +26,8 @@ class HookType(Enum):
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
-    ON_GRAPH_INVOKE = "on_graph_invoke"
+    BEFORE_GRAPH_INVOKE = "before_graph_invoke"
+    AFTER_GRAPH_INVOKE = "after_graph_invoke"
 
 
 @dataclass
@@ -174,9 +175,20 @@ class ChatModelCreateContext:
 
 @dataclass
 class GraphInvokeContext:
-    """Context for on_graph_invoke hooks."""
+    """Context for before_graph_invoke hooks."""
 
     agent_id: str
     thread_id: str
     config: dict[str, Any]
     input: dict[str, Any]
+
+
+@dataclass
+class AfterGraphInvokeContext:
+    """Context for after_graph_invoke hooks."""
+
+    agent_id: str
+    thread_id: str
+    config: dict[str, Any]
+    input: dict[str, Any]
+    result: dict[str, Any]

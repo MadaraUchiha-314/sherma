@@ -4,6 +4,7 @@ from sherma.hooks.executor import BaseHookExecutor, HookExecutor
 from sherma.hooks.manager import HookManager
 from sherma.hooks.types import (
     AfterAgentCallContext,
+    AfterGraphInvokeContext,
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
@@ -22,6 +23,7 @@ from sherma.hooks.types import (
 
 __all__ = [
     "AfterAgentCallContext",
+    "AfterGraphInvokeContext",
     "AfterInterruptContext",
     "AfterLLMCallContext",
     "AfterSkillLoadContext",

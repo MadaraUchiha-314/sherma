@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 14 lifecycle hook points:
+sherma provides 15 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -21,7 +21,8 @@ sherma provides 14 lifecycle hook points:
 | `before_interrupt` | Before an interrupt pauses graph execution |
 | `after_interrupt` | After an interrupt resumes with user input |
 | `on_chat_model_create` | When a chat model is being instantiated |
-| `on_graph_invoke` | Before the LangGraph state graph is invoked |
+| `before_graph_invoke` | Before the LangGraph state graph is invoked |
+| `after_graph_invoke` | After the LangGraph state graph completes |
 
 ## HookExecutor Protocol
 
@@ -252,7 +253,7 @@ class GraphInvokeContext:
     input: dict[str, Any]      # The input being passed to ainvoke
 ```
 
-The `on_graph_invoke` hook fires just before `graph.ainvoke()` is called in `LangGraphAgent.send_message()`. Use it to customize the LangGraph `RunnableConfig` -- change the recursion limit, add custom configurable keys, set callbacks, etc.
+The `before_graph_invoke` hook fires just before `graph.ainvoke()` is called in `LangGraphAgent.send_message()`. Use it to customize the LangGraph `RunnableConfig` -- change the recursion limit, add custom configurable keys, set callbacks, etc.
 
 **Example: increase recursion limit and add custom configurable**
 
@@ -261,7 +262,7 @@ from sherma import BaseHookExecutor
 from sherma.hooks.types import GraphInvokeContext
 
 class GraphConfigHook(BaseHookExecutor):
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None:
         ctx.config["recursion_limit"] = 50
@@ -277,10 +278,39 @@ from sherma import BaseHookExecutor
 from sherma.hooks.types import GraphInvokeContext
 
 class CallbackHook(BaseHookExecutor):
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None:
         ctx.config["callbacks"] = [StdOutCallbackHandler()]
+        return ctx
+```
+
+### `AfterGraphInvokeContext`
+
+```python
+@dataclass
+class AfterGraphInvokeContext:
+    agent_id: str              # ID of the agent being invoked
+    thread_id: str             # Thread ID for the conversation
+    config: dict[str, Any]     # The RunnableConfig dict used for invocation
+    input: dict[str, Any]      # The input that was passed to ainvoke
+    result: dict[str, Any]     # The graph result (mutable)
+```
+
+The `after_graph_invoke` hook fires after `graph.ainvoke()` returns. Use it to inspect or modify the graph result before it is converted to an A2A response.
+
+**Example: post-process the graph result**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import AfterGraphInvokeContext
+
+class PostProcessHook(BaseHookExecutor):
+    async def after_graph_invoke(
+        self, ctx: AfterGraphInvokeContext
+    ) -> AfterGraphInvokeContext | None:
+        # Log or modify the result
+        print(f"Graph returned {len(ctx.result.get('messages', []))} messages")
         return ctx
 ```
 

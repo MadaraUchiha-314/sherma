@@ -263,7 +263,8 @@ class HookType(Enum):
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
-    ON_GRAPH_INVOKE = "on_graph_invoke"
+    BEFORE_GRAPH_INVOKE = "before_graph_invoke"
+    AFTER_GRAPH_INVOKE = "after_graph_invoke"
 ```
 
 ### Hook Context Types
@@ -284,6 +285,7 @@ Imported from `sherma.hooks.types`:
 - `AfterInterruptContext`
 - `ChatModelCreateContext`
 - `GraphInvokeContext`
+- `AfterGraphInvokeContext`
 
 ## Declarative Config
 

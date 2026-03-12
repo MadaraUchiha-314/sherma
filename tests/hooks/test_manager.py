@@ -9,6 +9,7 @@ import pytest
 from sherma.hooks.executor import BaseHookExecutor
 from sherma.hooks.manager import HookManager
 from sherma.hooks.types import (
+    AfterGraphInvokeContext,
     BeforeLLMCallContext,
     GraphInvokeContext,
     NodeEnterContext,
@@ -144,11 +145,11 @@ async def test_run_hook_node_exit_modifies_result():
 
 
 @pytest.mark.asyncio
-async def test_run_hook_on_graph_invoke():
-    """on_graph_invoke hook can modify the config."""
+async def test_run_hook_before_graph_invoke():
+    """before_graph_invoke hook can modify the config."""
 
     class SetRecursionLimit(BaseHookExecutor):
-        async def on_graph_invoke(
+        async def before_graph_invoke(
             self, ctx: GraphInvokeContext
         ) -> GraphInvokeContext | None:
             ctx.config["recursion_limit"] = 50
@@ -162,8 +163,32 @@ async def test_run_hook_on_graph_invoke():
         config={"recursion_limit": 25, "configurable": {"thread_id": "t1"}},
         input={"messages": []},
     )
-    result = await manager.run_hook("on_graph_invoke", ctx)
+    result = await manager.run_hook("before_graph_invoke", ctx)
     assert result.config["recursion_limit"] == 50
+
+
+@pytest.mark.asyncio
+async def test_run_hook_after_graph_invoke():
+    """after_graph_invoke hook can modify the result."""
+
+    class ModifyResult(BaseHookExecutor):
+        async def after_graph_invoke(
+            self, ctx: AfterGraphInvokeContext
+        ) -> AfterGraphInvokeContext | None:
+            ctx.result["extra"] = "added_by_hook"
+            return ctx
+
+    manager = HookManager()
+    manager.register(ModifyResult())
+    ctx = AfterGraphInvokeContext(
+        agent_id="agent-1",
+        thread_id="t1",
+        config={"recursion_limit": 25, "configurable": {"thread_id": "t1"}},
+        input={"messages": []},
+        result={"messages": []},
+    )
+    result = await manager.run_hook("after_graph_invoke", ctx)
+    assert result.result["extra"] == "added_by_hook"
 
 
 def test_register_multiple():
