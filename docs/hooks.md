@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 14 lifecycle hook points:
+sherma provides 17 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -21,7 +21,10 @@ sherma provides 14 lifecycle hook points:
 | `before_interrupt` | Before an interrupt pauses graph execution |
 | `after_interrupt` | After an interrupt resumes with user input |
 | `on_chat_model_create` | When a chat model is being instantiated |
-| `on_graph_invoke` | Before the LangGraph state graph is invoked |
+| `before_graph_invoke` | Before the LangGraph state graph is invoked |
+| `after_graph_invoke` | After the LangGraph state graph completes |
+| `on_node_error` | When a declarative node function raises an exception |
+| `on_error` | When `graph.ainvoke()` raises an exception (catch-all) |
 
 ## HookExecutor Protocol
 
@@ -168,10 +171,21 @@ class ChatModelCreateContext:
     provider: str              # Provider name (e.g. "openai")
     model_name: str            # Model name (e.g. "gpt-4o-mini")
     kwargs: dict[str, Any]     # Constructor kwargs passed to the chat model
-    chat_model: Any | None = None  # Set to override the chat model instance
+    chat_model: Any | None = None  # Instance, or callable factory
 ```
 
 The `on_chat_model_create` hook fires when a chat model is being instantiated from an LLM definition. Use it to customize model creation -- swap the model, inject API keys, or provide a fully constructed chat model instance.
+
+#### `chat_model`: instance or factory
+
+`chat_model` accepts either:
+
+- **An instance** -- a ready-to-use chat model (e.g., `ChatOpenAI(...)`)
+- **A callable factory** -- a zero-arg callable that returns a chat model
+
+When a callable is provided, sherma wraps it in a `LazyChatModel` proxy that defers construction until the model is first used (i.e., on the first LLM call during request handling). This is important when model construction depends on infrastructure that isn't available at import time or during server startup -- for example, secret managers, auth token providers, or database connections that initialize asynchronously.
+
+sherma distinguishes instances from factories by checking `callable(chat_model) and not hasattr(chat_model, "invoke")`. Any object with an `invoke` method is treated as a ready-to-use model.
 
 **Example: inject an API key and swap model**
 
@@ -208,6 +222,28 @@ class CustomChatModelHook(BaseHookExecutor):
         return ctx
 ```
 
+**Example: lazy factory for deferred construction**
+
+Use a factory when the chat model depends on infrastructure that initializes after import time (e.g., a secret manager, an auth service, or database-backed config):
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import ChatModelCreateContext
+
+class LazyModelHook(BaseHookExecutor):
+    async def on_chat_model_create(
+        self, ctx: ChatModelCreateContext
+    ) -> ChatModelCreateContext | None:
+        if ctx.llm_id == "gpt-4o":
+            model_name = ctx.model_name
+            # Factory -- called lazily on first LLM invocation,
+            # not during graph construction at startup.
+            ctx.chat_model = lambda: create_authenticated_model(model_name)
+        return ctx
+```
+
+The `LazyChatModel` proxy is transparent -- it forwards all attribute access and method calls to the real model once constructed. After the first access, the factory is never called again.
+
 ### `GraphInvokeContext`
 
 ```python
@@ -219,7 +255,7 @@ class GraphInvokeContext:
     input: dict[str, Any]      # The input being passed to ainvoke
 ```
 
-The `on_graph_invoke` hook fires just before `graph.ainvoke()` is called in `LangGraphAgent.send_message()`. Use it to customize the LangGraph `RunnableConfig` -- change the recursion limit, add custom configurable keys, set callbacks, etc.
+The `before_graph_invoke` hook fires just before `graph.ainvoke()` is called in `LangGraphAgent.send_message()`. Use it to customize the LangGraph `RunnableConfig` -- change the recursion limit, add custom configurable keys, set callbacks, etc.
 
 **Example: increase recursion limit and add custom configurable**
 
@@ -228,7 +264,7 @@ from sherma import BaseHookExecutor
 from sherma.hooks.types import GraphInvokeContext
 
 class GraphConfigHook(BaseHookExecutor):
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None:
         ctx.config["recursion_limit"] = 50
@@ -244,10 +280,152 @@ from sherma import BaseHookExecutor
 from sherma.hooks.types import GraphInvokeContext
 
 class CallbackHook(BaseHookExecutor):
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None:
         ctx.config["callbacks"] = [StdOutCallbackHandler()]
+        return ctx
+```
+
+### `AfterGraphInvokeContext`
+
+```python
+@dataclass
+class AfterGraphInvokeContext:
+    agent_id: str              # ID of the agent being invoked
+    thread_id: str             # Thread ID for the conversation
+    config: dict[str, Any]     # The RunnableConfig dict used for invocation
+    input: dict[str, Any]      # The input that was passed to ainvoke
+    result: dict[str, Any]     # The graph result (mutable)
+```
+
+The `after_graph_invoke` hook fires after `graph.ainvoke()` returns. Use it to inspect or modify the graph result before it is converted to an A2A response.
+
+**Example: post-process the graph result**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import AfterGraphInvokeContext
+
+class PostProcessHook(BaseHookExecutor):
+    async def after_graph_invoke(
+        self, ctx: AfterGraphInvokeContext
+    ) -> AfterGraphInvokeContext | None:
+        # Log or modify the result
+        print(f"Graph returned {len(ctx.result.get('messages', []))} messages")
+        return ctx
+```
+
+### `OnNodeErrorContext`
+
+```python
+@dataclass
+class OnNodeErrorContext:
+    node_context: NodeContext
+    node_name: str             # Name of the node that raised
+    node_type: str             # "call_llm", "tool_node", etc.
+    error: BaseException | None  # The exception (mutable)
+    state: dict[str, Any]
+```
+
+The `on_node_error` hook fires when any declarative node function raises an exception. All six node types are covered: `call_llm`, `tool_node`, `call_agent`, `data_transform`, `set_state`, and `interrupt`.
+
+#### Error hook semantics
+
+The `error` field controls what happens after all hooks run:
+
+- **Pass through** -- return `None` to leave the context unchanged (error continues to the next hook)
+- **Consume** -- set `error = None` and return the context to swallow the error (node returns an empty dict as fallback)
+- **Replace** -- set `error` to a different exception to replace the original
+
+Multiple hooks chain in registration order. Each hook sees the `error` as left by the previous hook.
+
+**Example: log and consume errors from a specific node**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import OnNodeErrorContext
+
+class NodeErrorHandler(BaseHookExecutor):
+    async def on_node_error(
+        self, ctx: OnNodeErrorContext
+    ) -> OnNodeErrorContext | None:
+        print(f"Node '{ctx.node_name}' ({ctx.node_type}) failed: {ctx.error}")
+
+        # Swallow errors from the "summarize" node
+        if ctx.node_name == "summarize":
+            ctx.error = None
+            return ctx
+
+        # Let all other errors propagate
+        return None
+```
+
+**Example: replace errors with a custom exception**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import OnNodeErrorContext
+
+class WrapNodeError(BaseHookExecutor):
+    async def on_node_error(
+        self, ctx: OnNodeErrorContext
+    ) -> OnNodeErrorContext | None:
+        ctx.error = RuntimeError(
+            f"Node '{ctx.node_name}' failed: {ctx.error}"
+        )
+        return ctx
+```
+
+### `OnErrorContext`
+
+```python
+@dataclass
+class OnErrorContext:
+    agent_id: str              # ID of the agent
+    thread_id: str             # Thread ID for the conversation
+    config: dict[str, Any]     # The RunnableConfig dict
+    input: dict[str, Any]      # The input that was passed to ainvoke
+    error: BaseException | None  # The exception (mutable)
+```
+
+The `on_error` hook fires when `graph.ainvoke()` raises an exception in `LangGraphAgent.send_message()`. It acts as a catch-all for errors that escape individual nodes.
+
+The `error` field follows the same semantics as `on_node_error`:
+
+- **Pass through** -- return `None` (error continues)
+- **Consume** -- set `error = None` (send_message returns without yielding any events)
+- **Replace** -- set `error` to a different exception
+
+**Example: catch-all error logging**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import OnErrorContext
+
+class GraphErrorLogger(BaseHookExecutor):
+    async def on_error(
+        self, ctx: OnErrorContext
+    ) -> OnErrorContext | None:
+        print(
+            f"Agent '{ctx.agent_id}' graph invocation failed: {ctx.error}"
+        )
+        return None  # Let the error propagate
+```
+
+**Example: swallow errors and return gracefully**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import OnErrorContext
+
+class GracefulErrorHandler(BaseHookExecutor):
+    async def on_error(
+        self, ctx: OnErrorContext
+    ) -> OnErrorContext | None:
+        # Consume the error -- send_message returns without events.
+        # The A2A executor will call task_updater.complete() with no message.
+        ctx.error = None
         return ctx
 ```
 

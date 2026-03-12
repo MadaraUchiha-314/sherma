@@ -263,7 +263,10 @@ class HookType(Enum):
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
-    ON_GRAPH_INVOKE = "on_graph_invoke"
+    BEFORE_GRAPH_INVOKE = "before_graph_invoke"
+    AFTER_GRAPH_INVOKE = "after_graph_invoke"
+    ON_NODE_ERROR = "on_node_error"
+    ON_ERROR = "on_error"
 ```
 
 ### Hook Context Types
@@ -284,6 +287,9 @@ Imported from `sherma.hooks.types`:
 - `AfterInterruptContext`
 - `ChatModelCreateContext`
 - `GraphInvokeContext`
+- `AfterGraphInvokeContext`
+- `OnNodeErrorContext`
+- `OnErrorContext`
 
 ## Declarative Config
 
@@ -340,6 +346,28 @@ def create_agent_output_as_message_part(data, schema_uri, *, role=Role.agent, ..
 def get_agent_input_from_message_part(message: Message, schema_model) -> BaseModel
 def get_agent_output_from_message_part(message: Message, schema_model) -> BaseModel
 ```
+
+## LangGraph Utilities
+
+### `combine_ai_messages`
+
+```python
+from sherma.langgraph.agent import combine_ai_messages
+
+def combine_ai_messages(messages: list[AIMessage]) -> AIMessage
+```
+
+Merges multiple `AIMessage` instances into one by concatenating their content into list-form. Collapses to a plain string when the result contains exactly one text block.
+
+### `LazyChatModel`
+
+```python
+from sherma.langgraph.declarative.loader import LazyChatModel
+
+proxy = LazyChatModel(factory=lambda: ChatOpenAI(model="gpt-4o"))
+```
+
+A transparent proxy that defers chat model construction until first attribute access. Used internally when `on_chat_model_create` hooks set `chat_model` to a callable factory. All attribute access and method calls are forwarded to the real model after construction.
 
 ## Skill Tools
 

@@ -1,0 +1,8 @@
+- Add error handling and on_error hooks
+- If a graph or any part of the agentic execution throws an error, then the hook should be invoked.
+    - Hook can choose to consume the error or re-throw the error
+    - Handle the cases where multiple on-error hooks are registered
+    - The hook that's executed next should get the re-thrown error by the previous hook ?
+        - Is this the right pattern ?
+- I don't know if the A2A executor automatically handles the error and the right A2A response to send if the agent throws an error
+    - Find out about this

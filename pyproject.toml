@@ -7,7 +7,7 @@ name = "sherma"
 dynamic = ["version"]
 description = "Agent Framework rising through the citadel!"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Rohith Ramakrishnan" }]
 dependencies = [
@@ -23,13 +23,12 @@ dependencies = [
   "cel-python>=0.5.0",
   "pyyaml>=6.0.3",
   "langchain-mcp-adapters>=0.1.0",
+  "langchain-openai>=0.3.0",
+  "langchain-anthropic>=0.3.0",
 ]
 
-[project.optional-dependencies]
-examples = ["langchain-openai>=0.3.0"]
-
 [dependency-groups]
-dev = ["ruff", "pyright", "pytest", "pytest-asyncio", "pre-commit", "commitizen", "pyyaml", "sherma[examples]"]
+dev = ["ruff", "pyright", "pytest", "pytest-asyncio", "pre-commit", "commitizen", "pyyaml"]
 
 [tool.ruff]
 target-version = "py313"

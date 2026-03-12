@@ -48,6 +48,8 @@ skills:
 
 agents:
   skill-agent:
+    langgraph_config:
+      recursion_limit: 50
     state:
       fields:
         - name: messages
@@ -104,7 +106,7 @@ agents:
         # reflect → task complete check
         - source: reflect
           branches:
-            - condition: 'messages[size(messages) - 1].contains("TASK_COMPLETE")'
+            - condition: 'messages[size(messages) - 1]["content"].contains("TASK_COMPLETE")'
               target: __end__
           default: summarize
 

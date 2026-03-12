@@ -180,8 +180,20 @@ class DeclarativeAgent(LangGraphAgent):
         if config.checkpointer is not None and config.checkpointer.type == "memory":
             checkpointer = MemorySaver()
 
-        # 4. Build the graph
+        # 4. Apply langgraph_config from YAML to agent fields
         agent_def = config.agents[agent_name]
+        if agent_def.langgraph_config:
+            lgc = agent_def.langgraph_config
+            if lgc.recursion_limit is not None:
+                self.recursion_limit = lgc.recursion_limit
+            if lgc.max_concurrency is not None:
+                self.max_concurrency = lgc.max_concurrency
+            if lgc.tags is not None:
+                self.tags = lgc.tags
+            if lgc.metadata is not None:
+                self.metadata = lgc.metadata
+
+        # 5. Build the graph
         self._compiled_graph = await self._build_graph(
             agent_def, config, checkpointer=checkpointer
         )

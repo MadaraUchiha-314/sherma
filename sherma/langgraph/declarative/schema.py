@@ -28,6 +28,14 @@ class StateDef(BaseModel):
     fields: list[StateFieldDef] = Field(default_factory=list)
 
 
+class ResponseFormatDef(BaseModel):
+    """Structured output schema for call_llm."""
+
+    name: str
+    description: str = ""
+    schema_: dict[str, Any] = Field(alias="schema")
+
+
 class CallLLMArgs(BaseModel):
     """Arguments for a call_llm node."""
 
@@ -37,6 +45,7 @@ class CallLLMArgs(BaseModel):
     use_tools_from_registry: bool = False
     use_tools_from_loaded_skills: bool = False
     use_sub_agents_as_tools: bool = False
+    response_format: ResponseFormatDef | None = None
 
 
 class ToolNodeArgs(BaseModel):
@@ -73,9 +82,14 @@ class SetStateArgs(BaseModel):
 
 
 class InterruptArgs(BaseModel):
-    """Arguments for an interrupt node."""
+    """Arguments for an interrupt node.
 
-    value: str  # CEL expression evaluated at runtime to produce the interrupt value
+    The interrupt value is the last ``AIMessage`` from state when
+    available.  Falls back to the ``value`` CEL expression when no
+    AIMessage is present.
+    """
+
+    value: str | None = None
 
 
 class NodeDef(BaseModel):
@@ -124,11 +138,21 @@ class GraphDef(BaseModel):
     edges: list[EdgeDef]
 
 
+class LangGraphConfigDef(BaseModel):
+    """LangGraph runtime configuration settable per-agent in YAML."""
+
+    recursion_limit: int | None = None
+    max_concurrency: int | None = None
+    tags: list[str] | None = None
+    metadata: dict[str, Any] | None = None
+
+
 class AgentDef(BaseModel):
     """A single agent definition."""
 
     state: StateDef
     graph: GraphDef
+    langgraph_config: LangGraphConfigDef | None = None
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
 

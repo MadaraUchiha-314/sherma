@@ -7,6 +7,7 @@ from typing import TypeVar
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.types import (
     AfterAgentCallContext,
+    AfterGraphInvokeContext,
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
@@ -20,6 +21,8 @@ from sherma.hooks.types import (
     GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
+    OnErrorContext,
+    OnNodeErrorContext,
 )
 
 _ContextT = TypeVar(
@@ -38,6 +41,9 @@ _ContextT = TypeVar(
     AfterInterruptContext,
     ChatModelCreateContext,
     GraphInvokeContext,
+    AfterGraphInvokeContext,
+    OnNodeErrorContext,
+    OnErrorContext,
 )
 
 

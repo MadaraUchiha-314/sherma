@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 
 from sherma.hooks.types import (
     AfterAgentCallContext,
+    AfterGraphInvokeContext,
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
@@ -19,6 +20,8 @@ from sherma.hooks.types import (
     GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
+    OnErrorContext,
+    OnNodeErrorContext,
 )
 
 
@@ -79,9 +82,19 @@ class HookExecutor(Protocol):
         self, ctx: ChatModelCreateContext
     ) -> ChatModelCreateContext | None: ...
 
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None: ...
+
+    async def after_graph_invoke(
+        self, ctx: AfterGraphInvokeContext
+    ) -> AfterGraphInvokeContext | None: ...
+
+    async def on_node_error(
+        self, ctx: OnNodeErrorContext
+    ) -> OnNodeErrorContext | None: ...
+
+    async def on_error(self, ctx: OnErrorContext) -> OnErrorContext | None: ...
 
 
 class BaseHookExecutor:
@@ -151,7 +164,18 @@ class BaseHookExecutor:
     ) -> ChatModelCreateContext | None:
         return None
 
-    async def on_graph_invoke(
+    async def before_graph_invoke(
         self, ctx: GraphInvokeContext
     ) -> GraphInvokeContext | None:
+        return None
+
+    async def after_graph_invoke(
+        self, ctx: AfterGraphInvokeContext
+    ) -> AfterGraphInvokeContext | None:
+        return None
+
+    async def on_node_error(self, ctx: OnNodeErrorContext) -> OnNodeErrorContext | None:
+        return None
+
+    async def on_error(self, ctx: OnErrorContext) -> OnErrorContext | None:
         return None
