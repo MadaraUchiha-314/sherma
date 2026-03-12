@@ -265,6 +265,8 @@ class HookType(Enum):
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
     BEFORE_GRAPH_INVOKE = "before_graph_invoke"
     AFTER_GRAPH_INVOKE = "after_graph_invoke"
+    ON_NODE_ERROR = "on_node_error"
+    ON_ERROR = "on_error"
 ```
 
 ### Hook Context Types
@@ -286,6 +288,8 @@ Imported from `sherma.hooks.types`:
 - `ChatModelCreateContext`
 - `GraphInvokeContext`
 - `AfterGraphInvokeContext`
+- `OnNodeErrorContext`
+- `OnErrorContext`
 
 ## Declarative Config
 

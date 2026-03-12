@@ -20,6 +20,8 @@ from sherma.hooks.types import (
     GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
+    OnErrorContext,
+    OnNodeErrorContext,
 )
 
 
@@ -87,6 +89,12 @@ class HookExecutor(Protocol):
     async def after_graph_invoke(
         self, ctx: AfterGraphInvokeContext
     ) -> AfterGraphInvokeContext | None: ...
+
+    async def on_node_error(
+        self, ctx: OnNodeErrorContext
+    ) -> OnNodeErrorContext | None: ...
+
+    async def on_error(self, ctx: OnErrorContext) -> OnErrorContext | None: ...
 
 
 class BaseHookExecutor:
@@ -164,4 +172,10 @@ class BaseHookExecutor:
     async def after_graph_invoke(
         self, ctx: AfterGraphInvokeContext
     ) -> AfterGraphInvokeContext | None:
+        return None
+
+    async def on_node_error(self, ctx: OnNodeErrorContext) -> OnNodeErrorContext | None:
+        return None
+
+    async def on_error(self, ctx: OnErrorContext) -> OnErrorContext | None:
         return None

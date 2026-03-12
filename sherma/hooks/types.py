@@ -28,6 +28,8 @@ class HookType(Enum):
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
     BEFORE_GRAPH_INVOKE = "before_graph_invoke"
     AFTER_GRAPH_INVOKE = "after_graph_invoke"
+    ON_NODE_ERROR = "on_node_error"
+    ON_ERROR = "on_error"
 
 
 @dataclass
@@ -192,3 +194,25 @@ class AfterGraphInvokeContext:
     config: dict[str, Any]
     input: dict[str, Any]
     result: dict[str, Any]
+
+
+@dataclass
+class OnNodeErrorContext:
+    """Context for on_node_error hooks."""
+
+    node_context: NodeContext
+    node_name: str
+    node_type: str
+    error: BaseException | None
+    state: dict[str, Any]
+
+
+@dataclass
+class OnErrorContext:
+    """Context for on_error hooks."""
+
+    agent_id: str
+    thread_id: str
+    config: dict[str, Any]
+    input: dict[str, Any]
+    error: BaseException | None

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import uuid
+
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     DataPart,
     Message,
+    Part,
+    Role,
     Task,
     TaskArtifactUpdateEvent,
     TaskIdParams,
     TaskStatusUpdateEvent,
+    TextPart,
 )
 from a2a.utils.task import new_task
 
@@ -73,44 +78,53 @@ class ShermaAgentExecutor(AgentExecutor):
                     validate_data(part.root.data, self.agent.input_schema)
 
         # Call agent and process responses
-        has_events = False
-        async for event in self.agent.send_message(message):
-            has_events = True
-            if isinstance(event, Message):
-                # Validate outgoing DataParts against output_schema
-                if self.agent.output_schema is not None:
-                    for part in event.parts:
-                        if (
-                            isinstance(part.root, DataPart)
-                            and part.root.metadata is not None
-                            and part.root.metadata.get("agent_output") is True
-                        ):
-                            validate_data(part.root.data, self.agent.output_schema)
-                await task_updater.complete(message=event)
-            elif isinstance(event, Task):
-                logger.debug(
-                    "Received initial task event for task=%s",
-                    event.id,
-                )
-            elif isinstance(event, TaskArtifactUpdateEvent):
-                artifact = event.artifact
-                await task_updater.add_artifact(
-                    parts=artifact.parts,
-                    artifact_id=artifact.artifact_id,
-                    name=artifact.name,
-                    metadata=artifact.metadata,
-                    append=event.append,
-                    last_chunk=event.last_chunk,
-                )
-            elif isinstance(event, TaskStatusUpdateEvent):
-                await task_updater.update_status(
-                    state=event.status.state,
-                    message=event.status.message,
-                    final=event.final,
-                )
+        try:
+            has_events = False
+            async for event in self.agent.send_message(message):
+                has_events = True
+                if isinstance(event, Message):
+                    # Validate outgoing DataParts against output_schema
+                    if self.agent.output_schema is not None:
+                        for part in event.parts:
+                            if (
+                                isinstance(part.root, DataPart)
+                                and part.root.metadata is not None
+                                and part.root.metadata.get("agent_output") is True
+                            ):
+                                validate_data(part.root.data, self.agent.output_schema)
+                    await task_updater.complete(message=event)
+                elif isinstance(event, Task):
+                    logger.debug(
+                        "Received initial task event for task=%s",
+                        event.id,
+                    )
+                elif isinstance(event, TaskArtifactUpdateEvent):
+                    artifact = event.artifact
+                    await task_updater.add_artifact(
+                        parts=artifact.parts,
+                        artifact_id=artifact.artifact_id,
+                        name=artifact.name,
+                        metadata=artifact.metadata,
+                        append=event.append,
+                        last_chunk=event.last_chunk,
+                    )
+                elif isinstance(event, TaskStatusUpdateEvent):
+                    await task_updater.update_status(
+                        state=event.status.state,
+                        message=event.status.message,
+                        final=event.final,
+                    )
 
-        if not has_events:
-            await task_updater.complete()
+            if not has_events:
+                await task_updater.complete()
+        except Exception as exc:
+            logger.error("Agent execution failed for task=%s: %s", task.id, str(exc))
+            error_message = Message(
+                message_id=str(uuid.uuid4()),
+                role=Role.agent,
+                parts=[Part(root=TextPart(text=f"Agent execution failed: {exc}"))],
+            )
+            await task_updater.failed(message=error_message)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancel a running task."""

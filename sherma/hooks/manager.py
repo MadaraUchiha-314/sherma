@@ -21,6 +21,8 @@ from sherma.hooks.types import (
     GraphInvokeContext,
     NodeEnterContext,
     NodeExitContext,
+    OnErrorContext,
+    OnNodeErrorContext,
 )
 
 _ContextT = TypeVar(
@@ -40,6 +42,8 @@ _ContextT = TypeVar(
     ChatModelCreateContext,
     GraphInvokeContext,
     AfterGraphInvokeContext,
+    OnNodeErrorContext,
+    OnErrorContext,
 )
 
 

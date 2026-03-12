@@ -24,7 +24,11 @@ from pydantic import Field
 from sherma.entities.agent.base import Agent
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.manager import HookManager
-from sherma.hooks.types import AfterGraphInvokeContext, GraphInvokeContext
+from sherma.hooks.types import (
+    AfterGraphInvokeContext,
+    GraphInvokeContext,
+    OnErrorContext,
+)
 from sherma.logging import get_logger
 from sherma.messages.converter import a2a_to_langgraph, langgraph_to_a2a
 
@@ -114,20 +118,37 @@ class LangGraphAgent(Agent):
 
         # Check if graph is in interrupted state
         state_snapshot = await graph.aget_state(config)  # type: ignore[arg-type]
-        if state_snapshot.tasks:  # pending interrupts exist
-            logger.info(
-                "Graph is interrupted, resuming with %d messages",
-                len(lg_messages),
-            )
-            result = await graph.ainvoke(
-                Command(resume=lg_messages),
-                config=config,  # type: ignore[arg-type]
-            )
-        else:
-            result = await graph.ainvoke(
-                graph_input,
-                config=config,  # type: ignore[arg-type]
-            )
+        try:
+            if state_snapshot.tasks:  # pending interrupts exist
+                logger.info(
+                    "Graph is interrupted, resuming with %d messages",
+                    len(lg_messages),
+                )
+                result = await graph.ainvoke(
+                    Command(resume=lg_messages),
+                    config=config,  # type: ignore[arg-type]
+                )
+            else:
+                result = await graph.ainvoke(
+                    graph_input,
+                    config=config,  # type: ignore[arg-type]
+                )
+        except Exception as exc:
+            if self.hook_manager._executors:
+                err_ctx = await self.hook_manager.run_hook(
+                    "on_error",
+                    OnErrorContext(
+                        agent_id=self.id,
+                        thread_id=thread_id,
+                        config=config,
+                        input=graph_input,
+                        error=exc,
+                    ),
+                )
+                if err_ctx.error is None:
+                    return
+                raise err_ctx.error from exc
+            raise
 
         if self.hook_manager._executors:
             after_ctx = AfterGraphInvokeContext(

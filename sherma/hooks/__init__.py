@@ -19,6 +19,8 @@ from sherma.hooks.types import (
     HookType,
     NodeEnterContext,
     NodeExitContext,
+    OnErrorContext,
+    OnNodeErrorContext,
 )
 
 __all__ = [
@@ -41,4 +43,6 @@ __all__ = [
     "HookType",
     "NodeEnterContext",
     "NodeExitContext",
+    "OnErrorContext",
+    "OnNodeErrorContext",
 ]

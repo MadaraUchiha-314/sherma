@@ -35,10 +35,22 @@ executor = ShermaAgentExecutor(agent)
 ### Task lifecycle
 
 ```
-New message → create Task → start_work → send_message → process events → complete/cancel
+New message → create Task → start_work → send_message → process events → complete/cancel/failed
 ```
 
 If no events are received from the agent, the task completes with no message.
+
+### Error handling
+
+If `agent.send_message()` raises an exception during execution, `ShermaAgentExecutor` catches it and transitions the task to a `failed` state via `task_updater.failed()`. The error message is sent as an A2A `Message` with role `agent` containing the exception text.
+
+```
+send_message raises → log error → task_updater.failed(message=error_message)
+```
+
+This ensures the A2A client always receives a terminal task state, even when the agent encounters an unexpected error. The error is also logged at the `ERROR` level for server-side observability.
+
+Errors can also be intercepted earlier using the `on_error` and `on_node_error` hooks (see [Hooks -- Error Handling](hooks.md#onnodeerrorcontext)).
 
 ## Serving an Agent
 
