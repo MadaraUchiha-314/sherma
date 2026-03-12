@@ -1,3 +1,9 @@
+## v0.10.2 (2026-03-12)
+
+### Fix
+
+- fixes to make it work in other ecosystems (#15)
+
 ## v0.10.1 (2026-03-11)
 
 ### Fix
