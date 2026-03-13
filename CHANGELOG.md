@@ -1,3 +1,9 @@
+## v0.11.0 (2026-03-13)
+
+### Feat
+
+- introducing hooks over json rpc (#17)
+
 ## v0.10.2 (2026-03-12)
 
 ### Fix
