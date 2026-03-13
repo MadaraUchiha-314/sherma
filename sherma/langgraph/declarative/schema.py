@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RegistryRef(BaseModel):
@@ -198,9 +198,22 @@ class SkillDef(BaseModel):
 
 
 class HookDef(BaseModel):
-    """A hook executor declaration in the YAML."""
+    """A hook executor declaration in the YAML.
 
-    import_path: str
+    Provide either ``import_path`` for a local Python hook executor
+    or ``url`` for a remote JSON-RPC 2.0 hook server.
+    """
+
+    import_path: str | None = None
+    url: str | None = None
+
+    @model_validator(mode="after")
+    def _check_one_source(self) -> Self:
+        if not self.import_path and not self.url:
+            raise ValueError("HookDef requires either 'import_path' or 'url'")
+        if self.import_path and self.url:
+            raise ValueError("HookDef cannot have both 'import_path' and 'url'")
+        return self
 
 
 class SubAgentDef(BaseModel):

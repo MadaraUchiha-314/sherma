@@ -238,6 +238,66 @@ Protocol (interface) for hook executors. All methods are async and return `Conte
 
 Default implementation with all hooks returning `None`. Subclass and override what you need.
 
+### `RemoteHookExecutor`
+
+Hook executor that delegates to a remote JSON-RPC 2.0 server. Implements the `HookExecutor` protocol.
+
+```python
+class RemoteHookExecutor(BaseHookExecutor):
+    def __init__(self, url: str, timeout: float = 30.0) -> None
+```
+
+The `on_chat_model_create` hook is a no-op (cannot return Python objects over JSON-RPC). On any network or protocol error, logs a warning and passes through.
+
+### `HookHandler`
+
+Base class for implementing remote hook servers. The remote equivalent of `BaseHookExecutor` -- works with plain dicts instead of dataclasses.
+
+```python
+class HookHandler:
+    async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def after_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def before_tool_call(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def after_tool_call(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def before_agent_call(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def after_agent_call(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def before_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def after_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def node_enter(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def node_exit(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def before_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def after_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def before_graph_invoke(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def after_graph_invoke(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def on_node_error(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def on_error(self, params: dict[str, Any]) -> dict[str, Any] | None
+```
+
+All methods return `None` by default. `on_chat_model_create` is intentionally absent.
+
+### `HookFastAPIApplication`
+
+Builds a FastAPI application from a `HookHandler`.
+
+```python
+class HookFastAPIApplication:
+    def __init__(self, handler: HookHandler) -> None
+    def build(self, rpc_url: str = "/hooks", **kwargs) -> FastAPI
+    def add_routes_to_app(self, app: FastAPI, rpc_url: str = "/hooks") -> None
+```
+
+### `HookStarletteApplication`
+
+Builds a Starlette application from a `HookHandler`.
+
+```python
+class HookStarletteApplication:
+    def __init__(self, handler: HookHandler) -> None
+    def build(self, rpc_url: str = "/hooks", **kwargs) -> Starlette
+    def add_routes_to_app(self, app: Starlette, rpc_url: str = "/hooks") -> None
+    def routes(self, rpc_url: str = "/hooks") -> list[Route]
+```
+
 ### `HookManager`
 
 ```python
@@ -308,6 +368,16 @@ class DeclarativeConfig(BaseModel):
     sub_agents: list[SubAgentDef] = []
     checkpointer: CheckpointerDef | None = None
 ```
+
+### `HookDef`
+
+```python
+class HookDef(BaseModel):
+    import_path: str | None = None  # Local Python hook executor
+    url: str | None = None          # Remote JSON-RPC hook server
+```
+
+Exactly one of `import_path` or `url` must be provided.
 
 ### `CheckpointerDef`
 

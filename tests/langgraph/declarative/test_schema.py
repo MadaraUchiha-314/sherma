@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from sherma.langgraph.declarative.schema import (
     AgentDef,
     BranchDef,
@@ -10,6 +13,7 @@ from sherma.langgraph.declarative.schema import (
     DeclarativeConfig,
     EdgeDef,
     GraphDef,
+    HookDef,
     InterruptArgs,
     LLMDef,
     NodeDef,
@@ -207,3 +211,25 @@ def test_call_llm_args_response_format_default_none():
         prompt='"hello"',
     )
     assert args.response_format is None
+
+
+def test_hook_def_with_import_path():
+    hook = HookDef(import_path="my_module.MyHook")
+    assert hook.import_path == "my_module.MyHook"
+    assert hook.url is None
+
+
+def test_hook_def_with_url():
+    hook = HookDef(url="http://localhost:8080/hooks")
+    assert hook.url == "http://localhost:8080/hooks"
+    assert hook.import_path is None
+
+
+def test_hook_def_requires_one_source():
+    with pytest.raises(ValidationError, match="requires either"):
+        HookDef()
+
+
+def test_hook_def_rejects_both_sources():
+    with pytest.raises(ValidationError, match="cannot have both"):
+        HookDef(import_path="my_module.MyHook", url="http://localhost:8080/hooks")
