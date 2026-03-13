@@ -1,0 +1,5 @@
+- When users create declarative agents, they sometimes also have to create hooks so that they can customize the behavior
+- There are many hooks that sherma as a framework allows
+- Some hooks return data objects and some hooks return complex objects which are not serializable
+- Figure out which hooks can be implemented over JSON-RPC where a server implements these hooks
+- When a Remote Hook Executor is registered, the framework automatically uses JSON-RPC to connect to that server and get the response to that hook

@@ -462,7 +462,22 @@ hooks:
   - import_path: my_package.hooks.GuardrailHook
 ```
 
-Hooks from the constructor and YAML are both registered. Constructor hooks run first.
+### Declarative (via YAML, remote)
+
+```yaml
+hooks:
+  - url: http://localhost:8000/hooks
+```
+
+You can mix local and remote hooks in the same config:
+
+```yaml
+hooks:
+  - import_path: my_package.hooks.LoggingHook
+  - url: http://localhost:8000/hooks
+```
+
+Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc) for details.
 
 ## Example: Logging Hook
 
@@ -512,6 +527,252 @@ class PromptGuardrailHook(BaseHookExecutor):
     async def before_llm_call(self, ctx: BeforeLLMCallContext) -> BeforeLLMCallContext | None:
         ctx.system_prompt += self.GUARDRAIL
         return ctx  # Return modified context
+```
+
+## Remote Hooks (JSON-RPC)
+
+Remote hooks let you implement hook logic in a separate service -- in any language or framework -- and connect it to sherma over HTTP using the [JSON-RPC 2.0](https://www.jsonrpc.org/specification) protocol.
+
+This is useful when:
+
+- You want to share hook logic across multiple agents or teams
+- Your hook logic is in a different language (Node.js, Go, Java, etc.)
+- You want to deploy and scale hooks independently from the agent
+
+### How it works
+
+When a remote hook is registered, sherma serializes each hook context to JSON and sends it as a JSON-RPC method call to your server. The method name is the hook name (e.g., `before_llm_call`). Your server processes the request and returns a (possibly modified) context.
+
+```
+Agent                        Hook Server
+  |                              |
+  |-- POST JSON-RPC ----------->|
+  |   method: "before_llm_call" |
+  |   params: { ... context }   |
+  |                              |
+  |<--- JSON-RPC result --------|
+  |   result: { ... modified }  |
+  |   (or result: null)         |
+```
+
+### Registering a remote hook
+
+#### In YAML
+
+```yaml
+hooks:
+  - url: http://localhost:8000/hooks
+```
+
+#### In Python
+
+```python
+from sherma import DeclarativeAgent, RemoteHookExecutor
+
+agent = DeclarativeAgent(
+    id="my-agent",
+    version="1.0.0",
+    yaml_path="agent.yaml",
+    hooks=[RemoteHookExecutor(url="http://localhost:8000/hooks")],
+)
+```
+
+You can mix local and remote hooks. They run in registration order just like local hooks.
+
+```yaml
+hooks:
+  - import_path: my_package.hooks.LoggingHook
+  - url: http://localhost:8000/hooks
+```
+
+### HookHandler
+
+sherma provides a `HookHandler` base class -- the remote equivalent of `BaseHookExecutor`. Subclass it and override only the hooks you need. Each method receives a plain `dict` and returns a modified dict (or `None` to pass through):
+
+```python
+from sherma.hooks.handler import HookHandler
+
+class MyHooks(HookHandler):
+    async def before_llm_call(self, params):
+        params["system_prompt"] += "\n\nBe concise and accurate."
+        return params
+
+    async def node_enter(self, params):
+        print(f">>> Entering node '{params['node_name']}'")
+        return None  # Observation only, no modification
+```
+
+`HookHandler` mirrors the `BaseHookExecutor` interface but works with JSON-serializable dicts instead of Python dataclasses. The `on_chat_model_create` hook is intentionally absent since it cannot work over JSON-RPC.
+
+### HookFastAPIApplication / HookStarletteApplication
+
+Pass your handler to an application builder to get a ready-to-run ASGI server. This is the same pattern as A2A's `A2AFastAPIApplication` / `A2AStarletteApplication`:
+
+**FastAPI:**
+
+```python
+from sherma.hooks.apps import HookFastAPIApplication
+from sherma.hooks.handler import HookHandler
+
+class MyHooks(HookHandler):
+    async def before_llm_call(self, params):
+        params["system_prompt"] += "\n\nBe concise."
+        return params
+
+    async def before_graph_invoke(self, params):
+        params["config"]["recursion_limit"] = 50
+        return params
+
+app = HookFastAPIApplication(handler=MyHooks()).build()
+```
+
+```bash
+pip install fastapi uvicorn
+uvicorn hook_server:app --port 8000
+```
+
+**Starlette:**
+
+```python
+from sherma.hooks.apps import HookStarletteApplication
+from sherma.hooks.handler import HookHandler
+
+class MyHooks(HookHandler):
+    async def before_llm_call(self, params):
+        params["system_prompt"] += "\n\nBe concise."
+        return params
+
+app = HookStarletteApplication(handler=MyHooks()).build()
+```
+
+```bash
+pip install starlette uvicorn
+uvicorn hook_server:app --port 8000
+```
+
+Then point your agent at it:
+
+```yaml
+hooks:
+  - url: http://localhost:8000/hooks
+```
+
+### Adding hooks to an existing app
+
+If you already have a FastAPI or Starlette application, use `add_routes_to_app` instead of `build`:
+
+```python
+from fastapi import FastAPI
+from sherma.hooks.apps import HookFastAPIApplication
+
+existing_app = FastAPI()
+HookFastAPIApplication(handler=MyHooks()).add_routes_to_app(
+    existing_app, rpc_url="/hooks"
+)
+```
+
+```python
+from starlette.applications import Starlette
+from sherma.hooks.apps import HookStarletteApplication
+
+existing_app = Starlette()
+HookStarletteApplication(handler=MyHooks()).add_routes_to_app(
+    existing_app, rpc_url="/hooks"
+)
+```
+
+### JSON-RPC protocol details
+
+Each hook call is a standard JSON-RPC 2.0 request:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "before_llm_call",
+    "params": {
+        "node_name": "agent",
+        "system_prompt": "You are a helpful assistant.",
+        "messages": [...],
+        "tools": [...],
+        "state": {"messages": [...]}
+    },
+    "id": 1
+}
+```
+
+Your server should return one of:
+
+**Modified context** -- sherma applies the changes:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "node_name": "agent",
+        "system_prompt": "You are a helpful assistant.\n\nBe concise.",
+        "state": {"messages": [...]}
+    },
+    "id": 1
+}
+```
+
+**Null result** -- pass through unchanged (equivalent to returning `None` in a local hook):
+
+```json
+{
+    "jsonrpc": "2.0",
+    "result": null,
+    "id": 1
+}
+```
+
+**Error** -- sherma logs a warning and passes through (the agent is never blocked by a failing hook server):
+
+```json
+{
+    "jsonrpc": "2.0",
+    "error": {"code": -32000, "message": "something went wrong"},
+    "id": 1
+}
+```
+
+### What the server receives and can modify
+
+Not all fields from the hook context are sent over JSON-RPC. Some fields are Python-only objects that cannot be serialized.
+
+| Field | Sent to server | Modifiable | Notes |
+| --- | --- | --- | --- |
+| `node_name`, `node_type`, `agent_id`, `thread_id`, `skill_id`, `version`, `content`, `tools_loaded` | Yes | Yes | Primitive fields |
+| `system_prompt`, `input_value` | Yes | Yes | String fields |
+| `state`, `config`, `input`, `result`, `kwargs` | Yes | Yes | Dict fields -- the main way to influence behavior |
+| `messages`, `response`, `tools`, `tool_calls` | Yes (read-only) | No | Serialized for observation but kept from original on response |
+| `node_context` | No | No | Internal framework object |
+| `agent` | No | No | Python agent instance |
+| `chat_model` | No | No | Python model instance |
+| `error` | Yes (as `{"type": "...", "message": "..."}`) | No | Serialized for observation, original kept |
+
+### Unsupported hooks
+
+The `on_chat_model_create` hook is **not called** for remote hooks because it requires returning a Python object (a chat model instance or factory callable). It silently becomes a no-op.
+
+All other 16 hooks work over JSON-RPC.
+
+### Error handling
+
+Remote hooks are designed to be resilient. If the hook server is unreachable, times out, or returns an error, sherma:
+
+1. Logs a warning
+2. Passes through the original context unchanged
+3. Continues normal agent execution
+
+The agent is **never blocked** by a failing hook server.
+
+### Timeout
+
+The default timeout is 30 seconds. You can configure it:
+
+```python
+RemoteHookExecutor(url="http://localhost:8000/hooks", timeout=10.0)
 ```
 
 ## HookManager

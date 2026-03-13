@@ -689,7 +689,14 @@ def populate_hooks(
 ) -> None:
     """Import and register hook executors declared in the YAML config."""
     for hook_def in config.hooks:
+        if hook_def.url:
+            from sherma.hooks.remote import RemoteHookExecutor
+
+            hook_manager.register(RemoteHookExecutor(url=hook_def.url))
+            continue
+
         import_path = hook_def.import_path
+        assert import_path is not None  # guaranteed by HookDef validator
         module_path, _, attr_name = import_path.rpartition(".")
         if not module_path:
             raise DeclarativeConfigError(

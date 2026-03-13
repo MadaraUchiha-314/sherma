@@ -7,10 +7,13 @@ from pathlib import Path
 import pytest
 
 from sherma.exceptions import DeclarativeConfigError
+from sherma.hooks.manager import HookManager
+from sherma.hooks.remote import RemoteHookExecutor
 from sherma.langgraph.declarative.loader import (
     RegistryBundle,
     import_tool,
     load_declarative_config,
+    populate_hooks,
     populate_registries,
     validate_config,
 )
@@ -1131,3 +1134,69 @@ async def test_no_hook_manager_default_behavior():
         await populate_registries(config, registries)
 
     assert registries.chat_models["gpt-4"] is mock_chat
+
+
+# ---------------------------------------------------------------------------
+# populate_hooks with remote URL tests
+# ---------------------------------------------------------------------------
+
+
+def test_populate_hooks_with_url():
+    """populate_hooks creates a RemoteHookExecutor for url-based hooks."""
+    yaml_content = """\
+hooks:
+  - url: "http://localhost:8080/hooks"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    hook_manager = HookManager()
+    populate_hooks(config, hook_manager)
+
+    assert len(hook_manager._executors) == 1
+    assert isinstance(hook_manager._executors[0], RemoteHookExecutor)
+    assert hook_manager._executors[0]._url == "http://localhost:8080/hooks"
+
+
+def test_populate_hooks_mixed():
+    """populate_hooks handles a mix of url and import_path hooks."""
+    yaml_content = """\
+hooks:
+  - url: "http://localhost:8080/hooks"
+  - import_path: "sherma.hooks.executor.BaseHookExecutor"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    hook_manager = HookManager()
+    populate_hooks(config, hook_manager)
+
+    assert len(hook_manager._executors) == 2
+    assert isinstance(hook_manager._executors[0], RemoteHookExecutor)
+    from sherma.hooks.executor import BaseHookExecutor
+
+    assert isinstance(hook_manager._executors[1], BaseHookExecutor)
