@@ -130,7 +130,11 @@ agents:
           args:
             llm:
               id: test-llm
-            prompt: 'prompts["sys"]["instructions"]'
+            prompt:
+              - role: system
+                content: 'prompts["sys"]["instructions"]'
+              - role: messages
+                content: 'messages'
       edges: []
 """
     mock_model = AsyncMock()

@@ -42,7 +42,11 @@ class TestInjectToolNodesExplicitTools:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool""",
             """\
@@ -91,7 +95,11 @@ class TestInjectToolNodesRegistryTools:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_registry: true""",
             """\
 edges:
@@ -116,7 +124,11 @@ class TestInjectToolNodesLoadedSkills:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_loaded_skills: true""",
             """\
 edges:
@@ -141,7 +153,11 @@ class TestBackwardCompat:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool
         - name: my_tools
@@ -174,7 +190,11 @@ edges:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool
         - name: other
@@ -208,7 +228,11 @@ class TestNoTools:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'""",
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'""",
             """\
 edges:
         - source: agent
@@ -246,14 +270,22 @@ agents:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: tool-a
         - name: second
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"world"'
+            prompt:
+              - role: system
+                content: '"world"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: tool-b
       edges:
@@ -293,7 +325,11 @@ class TestNameCollision:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool
         - name: agent_tools
@@ -324,7 +360,11 @@ class TestNoOutgoingEdge:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool""",
         )
@@ -348,7 +388,11 @@ class TestEdgeTargetPreserved:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool
         - name: next_step
@@ -389,7 +433,11 @@ class TestOriginalConfigUnmodified:
           type: call_llm
           args:
             llm: { id: gpt-4 }
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool""",
             """\

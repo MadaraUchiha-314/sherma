@@ -198,8 +198,33 @@ def build_call_llm_node(
                         current_tools.append(tool)
                         existing_names.add(tool.name)
 
-            prompt_text = cel.evaluate(args.prompt, state)
-            messages = state.get("messages", [])
+            # Build messages from array prompt
+            role_map = {
+                "system": SystemMessage,
+                "human": HumanMessage,
+                "ai": AIMessage,
+            }
+            all_messages: list[Any] = []
+            system_parts: list[str] = []
+            for item in args.prompt:
+                if item.role == "messages":
+                    # Use raw state value for simple keys to preserve
+                    # LangChain message objects; fall back to CEL eval.
+                    if item.content in state and isinstance(state[item.content], list):
+                        all_messages.extend(state[item.content])
+                    else:
+                        all_messages.extend(cel.evaluate(item.content, state))
+                else:
+                    evaluated = cel.evaluate(item.content, state)
+                    msg = role_map[item.role](content=str(evaluated))
+                    all_messages.append(msg)
+                    if item.role == "system":
+                        system_parts.append(str(evaluated))
+
+            system_prompt = "\n".join(system_parts)
+            non_system_messages = [
+                m for m in all_messages if not isinstance(m, SystemMessage)
+            ]
 
             # before_llm_call
             if hooks:
@@ -210,15 +235,20 @@ def build_call_llm_node(
                     BeforeLLMCallContext(
                         node_context=_ctx,
                         node_name=_ctx.node_def.name,
-                        messages=messages,
-                        system_prompt=str(prompt_text),
+                        messages=non_system_messages,
+                        system_prompt=system_prompt,
                         tools=current_tools,
                         state=state,
                     ),
                 )
-                messages = before_ctx.messages
-                prompt_text = before_ctx.system_prompt
+                # Rebuild all_messages from hook output
+                hook_system = before_ctx.system_prompt
+                hook_messages = before_ctx.messages
                 current_tools = before_ctx.tools
+                all_messages = []
+                if hook_system:
+                    all_messages.append(SystemMessage(content=hook_system))
+                all_messages.extend(hook_messages)
 
             model: Any = chat_model
             if current_tools:
@@ -232,16 +262,15 @@ def build_call_llm_node(
                 }
                 model = model.with_structured_output(json_schema)
 
-            system_msg = SystemMessage(content=str(prompt_text))
             logger.info(
                 "[%s] Invoking LLM (%d tools) with %d messages,"
                 " system prompt: %.100s...",
                 _ctx.node_def.name,
                 len(current_tools),
-                len(messages),
-                str(prompt_text),
+                len(all_messages),
+                system_prompt,
             )
-            response = await model.ainvoke([system_msg, *messages])
+            response = await model.ainvoke(all_messages)
 
             if args.response_format and isinstance(response, dict):
                 import json

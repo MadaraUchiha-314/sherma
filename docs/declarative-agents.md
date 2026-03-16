@@ -180,13 +180,59 @@ Calls an LLM with a prompt and optional tool bindings.
     llm:
       id: openai-gpt-4o-mini
       version: "1.0.0"
-    prompt: 'prompts["my-prompt"]["instructions"]'  # CEL expression
+    prompt:
+      - role: system
+        content: 'prompts["my-prompt"]["instructions"]'
+      - role: messages
+        content: 'messages'
     tools:                          # Optional: bind specific tools
       - id: get_weather
         version: "1.0.0"
     # use_tools_from_registry: true       # Or: bind ALL registered tools
     # use_tools_from_loaded_skills: true   # Or: bind tools from loaded skills
     # use_sub_agents_as_tools: true        # Or: bind sub-agents as tools
+```
+
+#### Prompt Format
+
+The `prompt` field is an array of message items. Each item has a `role` and a `content` (a CEL expression):
+
+| Role | Behavior |
+| --- | --- |
+| `system` | CEL evaluates to a string, wrapped as a `SystemMessage` |
+| `human` | CEL evaluates to a string, wrapped as a `HumanMessage` |
+| `ai` | CEL evaluates to a string, wrapped as an `AIMessage` |
+| `messages` | CEL evaluates to a list of messages, **spliced in place** preserving their original roles |
+
+The `messages` role is how you inject conversation history into the prompt. State messages are **never** auto-injected -- you must explicitly include them with `role: messages`. This gives you full control over where conversation history appears relative to system instructions and other messages.
+
+```yaml
+# Typical pattern: system prompt, then conversation history
+prompt:
+  - role: system
+    content: 'prompts["my-prompt"]["instructions"]'
+  - role: messages
+    content: 'messages'
+
+# Advanced: inject history in the middle, add a trailing instruction
+prompt:
+  - role: system
+    content: 'prompts["sys"]["instructions"]'
+  - role: messages
+    content: 'messages'
+  - role: human
+    content: '"Now summarize the above conversation"'
+
+# Few-shot examples via explicit roles
+prompt:
+  - role: system
+    content: '"You classify sentiment as positive or negative."'
+  - role: human
+    content: '"I love this product!"'
+  - role: ai
+    content: '"positive"'
+  - role: messages
+    content: 'messages'
 ```
 
 **Tool binding modes:**
@@ -493,7 +539,11 @@ agents:
           type: call_llm
           args:
             llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
-            prompt: 'prompts["discover-skills"]["instructions"]'
+            prompt:
+              - role: system
+                content: 'prompts["discover-skills"]["instructions"]'
+              - role: messages
+                content: 'messages'
             tools:
               - id: list_skills
               - id: load_skill_md
@@ -502,14 +552,22 @@ agents:
           type: call_llm
           args:
             llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
-            prompt: 'prompts["plan-and-execute"]["instructions"]'
+            prompt:
+              - role: system
+                content: 'prompts["plan-and-execute"]["instructions"]'
+              - role: messages
+                content: 'messages'
             use_tools_from_loaded_skills: true
 
         - name: reflect
           type: call_llm
           args:
             llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
-            prompt: 'prompts["reflect"]["instructions"]'
+            prompt:
+              - role: system
+                content: 'prompts["reflect"]["instructions"]'
+              - role: messages
+                content: 'messages'
 
       edges:
         - source: discover_skills
