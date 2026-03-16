@@ -1,0 +1,4 @@
+- come up with a strategy for integration tests for this repo
+- all the examples of this repo should be ported as integration tests
+- LLM calls should be mocked ??
+- Search on the web for best practices on integration testing of LLM based agents
