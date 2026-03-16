@@ -36,11 +36,18 @@ class ResponseFormatDef(BaseModel):
     schema_: dict[str, Any] = Field(alias="schema")
 
 
+class PromptMessageDef(BaseModel):
+    """A single message in an array prompt."""
+
+    role: Literal["system", "human", "ai", "messages"]
+    content: str  # CEL expression
+
+
 class CallLLMArgs(BaseModel):
     """Arguments for a call_llm node."""
 
     llm: RegistryRef
-    prompt: str
+    prompt: list[PromptMessageDef]
     tools: list[RegistryRef] | None = None
     use_tools_from_registry: bool = False
     use_tools_from_loaded_skills: bool = False

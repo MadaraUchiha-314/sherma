@@ -78,7 +78,11 @@ agents:
             llm:
               id: gpt-4
               version: "1.0.0"
-            prompt: 'prompts["sys"].instructions'
+            prompt:
+              - role: system
+                content: 'prompts["sys"].instructions'
+              - role: messages
+                content: 'messages'
             tools:
               - id: get_weather
                 version: "1.0.0"
@@ -201,7 +205,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -231,7 +239,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             tools:
               - id: some-tool
       edges: []
@@ -445,7 +457,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_registry: true
         - name: tools
           type: tool_node
@@ -496,7 +512,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_loaded_skills: true
         - name: tools
           type: tool_node
@@ -535,7 +555,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_registry: true
             tools:
               - id: some-tool
@@ -570,7 +594,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_loaded_skills: true
             tools:
               - id: some-tool
@@ -605,7 +633,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_registry: true
             use_tools_from_loaded_skills: true
         - name: tools
@@ -640,7 +672,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             response_format:
               name: UserInfo
               schema:
@@ -682,7 +718,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             response_format:
               name: UserInfo
               schema:
@@ -723,7 +763,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             response_format:
               name: UserInfo
               schema:
@@ -760,7 +804,11 @@ agents:
           args:
             llm:
               id: gpt-4
-            prompt: '"hello"'
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
             use_tools_from_registry: true
       edges: []
 """

@@ -43,7 +43,11 @@ agents:
             llm:
               id: openai-gpt-4o-mini
               version: "1.0.0"
-            prompt: 'prompts["supervisor-prompt"]["instructions"]'
+            prompt:
+              - role: system
+                content: 'prompts["supervisor-prompt"]["instructions"]'
+              - role: messages
+                content: 'messages'
             use_sub_agents_as_tools: true
 
       edges:

@@ -18,6 +18,7 @@ from sherma.langgraph.declarative.schema import (
     LLMDef,
     NodeDef,
     PromptDef,
+    PromptMessageDef,
     RegistryRef,
     SetStateArgs,
     StateDef,
@@ -43,12 +44,16 @@ def test_state_field_def():
 def test_call_llm_args():
     args = CallLLMArgs(
         llm=RegistryRef(id="gpt-4"),
-        prompt='prompts["sys"].instructions',
+        prompt=[
+            PromptMessageDef(role="system", content='prompts["sys"].instructions'),
+        ],
         tools=[RegistryRef(id="get_weather", version="1.0.0")],
     )
     assert args.llm.id == "gpt-4"
     assert args.tools is not None
     assert len(args.tools) == 1
+    assert len(args.prompt) == 1
+    assert args.prompt[0].role == "system"
 
 
 def test_tool_node_args():
@@ -72,7 +77,7 @@ def test_node_def():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"hello"',
+            prompt=[PromptMessageDef(role="system", content='"hello"')],
         ),
     )
     assert node.name == "agent"
@@ -183,12 +188,43 @@ def test_response_format_def():
     assert rf.schema_["type"] == "object"
 
 
+def test_prompt_message_def():
+    msg = PromptMessageDef(role="system", content='"You are helpful"')
+    assert msg.role == "system"
+    assert msg.content == '"You are helpful"'
+
+
+def test_prompt_message_def_messages_role():
+    msg = PromptMessageDef(role="messages", content="state.messages")
+    assert msg.role == "messages"
+
+
+def test_prompt_message_def_invalid_role():
+    with pytest.raises(ValidationError):
+        PromptMessageDef(role="invalid", content='"test"')
+
+
+def test_call_llm_args_array_prompt():
+    args = CallLLMArgs(
+        llm=RegistryRef(id="gpt-4"),
+        prompt=[
+            PromptMessageDef(role="system", content='"You are helpful"'),
+            PromptMessageDef(role="messages", content="state.messages"),
+            PromptMessageDef(role="human", content='"Summarize"'),
+        ],
+    )
+    assert len(args.prompt) == 3
+    assert args.prompt[0].role == "system"
+    assert args.prompt[1].role == "messages"
+    assert args.prompt[2].role == "human"
+
+
 def test_call_llm_args_with_response_format():
     from sherma.langgraph.declarative.schema import ResponseFormatDef
 
     args = CallLLMArgs(
         llm=RegistryRef(id="gpt-4"),
-        prompt='"Extract info"',
+        prompt=[PromptMessageDef(role="system", content='"Extract info"')],
         response_format=ResponseFormatDef(
             name="UserInfo",
             **{
@@ -208,7 +244,7 @@ def test_call_llm_args_with_response_format():
 def test_call_llm_args_response_format_default_none():
     args = CallLLMArgs(
         llm=RegistryRef(id="gpt-4"),
-        prompt='"hello"',
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
     )
     assert args.response_format is None
 

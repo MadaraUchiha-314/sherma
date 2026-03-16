@@ -48,7 +48,11 @@ agents:
             llm:
               id: openai-gpt-4o-mini
               version: "1.0.0"
-            prompt: 'prompts["weather-system-prompt"]["instructions"]'
+            prompt:
+              - role: system
+                content: 'prompts["weather-system-prompt"]["instructions"]'
+              - role: messages
+                content: 'messages'
             tools:
               - id: get_weather
                 version: "1.0.0"

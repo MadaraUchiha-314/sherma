@@ -33,6 +33,7 @@ from sherma.langgraph.declarative.schema import (
     DeclarativeConfig,
     InterruptArgs,
     NodeDef,
+    PromptMessageDef,
     RegistryRef,
     SetStateArgs,
     ToolNodeArgs,
@@ -54,7 +55,10 @@ async def test_build_call_llm_node():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
         ),
     )
     chat_model = AsyncMock()
@@ -84,7 +88,10 @@ async def test_build_call_llm_node_with_tools():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             tools=[RegistryRef(id="my-tool", version="1.0.0")],
         ),
     )
@@ -310,7 +317,10 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             use_tools_from_loaded_skills=True,
         ),
     )
@@ -365,7 +375,10 @@ async def test_build_call_llm_node_loaded_skills_plus_explicit_tools():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             use_tools_from_loaded_skills=True,
             tools=[RegistryRef(id="explicit-tool", version="1.0.0")],
         ),
@@ -429,7 +442,10 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills_empty():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             use_tools_from_loaded_skills=True,
         ),
     )
@@ -468,7 +484,10 @@ async def test_build_call_llm_node_use_tools_from_registry():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             use_tools_from_registry=True,
         ),
     )
@@ -812,7 +831,10 @@ async def test_call_llm_fires_hooks():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
         ),
     )
     chat_model = AsyncMock()
@@ -846,7 +868,10 @@ async def test_before_llm_call_hook_modifies_prompt():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"Original prompt"',
+            prompt=[
+                PromptMessageDef(role="system", content='"Original prompt"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
         ),
     )
     chat_model = AsyncMock()
@@ -897,7 +922,10 @@ async def test_build_call_llm_node_with_response_format():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"Extract user info"',
+            prompt=[
+                PromptMessageDef(role="system", content='"Extract user info"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             response_format=ResponseFormatDef(
                 name="UserInfo",
                 description="User information",
@@ -946,7 +974,10 @@ async def test_build_call_llm_node_response_format_aimessage_passthrough():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"Extract"',
+            prompt=[
+                PromptMessageDef(role="system", content='"Extract"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
             response_format=ResponseFormatDef(
                 name="Info",
                 **{"schema": {"type": "object", "properties": {}}},
@@ -978,7 +1009,10 @@ async def test_no_hooks_when_manager_is_none():
         type="call_llm",
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
-            prompt='"You are helpful"',
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
         ),
     )
     chat_model = AsyncMock()
@@ -988,3 +1022,108 @@ async def test_no_hooks_when_manager_is_none():
     fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
     result = await fn({"messages": []})
     assert result["messages"][0].content == "Hello!"
+
+
+# --- Array prompt tests ---
+
+
+@pytest.mark.asyncio
+async def test_array_prompt_with_splice():
+    """Array prompt with role=messages splices messages preserving roles."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="human", content='"Summarize the above"'),
+            ],
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Summary"))
+    cel = CelEngine()
+
+    existing_messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content="Hi there!"),
+    ]
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    await fn({"messages": existing_messages})
+
+    call_args = chat_model.ainvoke.call_args[0][0]
+    assert len(call_args) == 4
+    assert isinstance(call_args[0], SystemMessage)
+    assert call_args[0].content == "You are helpful"
+    assert isinstance(call_args[1], HumanMessage)
+    assert call_args[1].content == "Hello"
+    assert isinstance(call_args[2], AIMessage)
+    assert call_args[2].content == "Hi there!"
+    assert isinstance(call_args[3], HumanMessage)
+    assert call_args[3].content == "Summarize the above"
+
+
+@pytest.mark.asyncio
+async def test_array_prompt_no_auto_messages():
+    """Without role=messages, state messages are NOT injected."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"System only"'),
+            ],
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="ok"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    await fn({"messages": [HumanMessage(content="user msg")]})
+
+    call_args = chat_model.ainvoke.call_args[0][0]
+    # Only the system message, no auto-injected user messages
+    assert len(call_args) == 1
+    assert isinstance(call_args[0], SystemMessage)
+    assert call_args[0].content == "System only"
+
+
+@pytest.mark.asyncio
+async def test_array_prompt_mixed_roles():
+    """Array prompt with system, human, and ai roles."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"Be concise"'),
+                PromptMessageDef(role="human", content='"What is 2+2?"'),
+                PromptMessageDef(role="ai", content='"4"'),
+                PromptMessageDef(role="human", content='"And 3+3?"'),
+            ],
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="6"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    await fn({"messages": []})
+
+    call_args = chat_model.ainvoke.call_args[0][0]
+    assert len(call_args) == 4
+    assert isinstance(call_args[0], SystemMessage)
+    assert isinstance(call_args[1], HumanMessage)
+    assert isinstance(call_args[2], AIMessage)
+    assert isinstance(call_args[3], HumanMessage)
