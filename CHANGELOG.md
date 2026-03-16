@@ -1,3 +1,9 @@
+## v0.11.1 (2026-03-16)
+
+### Fix
+
+- add fine grained control for prompts (#18)
+
 ## v0.11.0 (2026-03-13)
 
 ### Feat
