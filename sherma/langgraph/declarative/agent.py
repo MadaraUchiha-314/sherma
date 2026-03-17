@@ -276,7 +276,13 @@ class DeclarativeAgent(LangGraphAgent):
 
         if node_def.type == "call_llm":
             args: CallLLMArgs = node_def.args  # type: ignore[assignment]
-            llm_id = args.llm.id
+            llm_ref = args.llm or config.default_llm
+            if llm_ref is None:
+                raise GraphConstructionError(
+                    f"Node '{node_def.name}' has no 'llm' and no "
+                    f"'default_llm' is configured."
+                )
+            llm_id = llm_ref.id
             if llm_id not in self._registries.chat_models:
                 raise GraphConstructionError(
                     f"Chat model '{llm_id}' not found. "

@@ -366,6 +366,228 @@ async def test_declarative_agent_with_config_object():
     assert result["result"] == "from_config"
 
 
+DEFAULT_LLM_YAML = """\
+default_llm:
+  id: test-llm
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+    instructions: "Be helpful"
+
+llms:
+  - id: test-llm
+    version: "1.0.0"
+    provider: openai
+    model_name: test
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'prompts["sys"]["instructions"]'
+              - role: messages
+                content: 'messages'
+      edges: []
+"""
+
+DEFAULT_LLM_OVERRIDE_YAML = """\
+default_llm:
+  id: default-llm
+
+llms:
+  - id: default-llm
+    version: "1.0.0"
+    provider: openai
+    model_name: default
+  - id: override-llm
+    version: "1.0.0"
+    provider: openai
+    model_name: override
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: override-llm
+            prompt:
+              - role: messages
+                content: 'messages'
+      edges: []
+"""
+
+NO_LLM_YAML = """\
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - role: messages
+                content: 'messages'
+      edges: []
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_default_llm():
+    """call_llm node falls back to default_llm when llm is omitted."""
+    mock_model = AsyncMock()
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
+
+    registries = RegistryBundle(chat_models={"test-llm": mock_model})
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=DEFAULT_LLM_YAML,
+    )
+    agent._registries = registries
+
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"messages": []}, config)
+
+    assert len(result["messages"]) > 0
+    mock_model.ainvoke.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_step_llm_overrides_default():
+    """Step-level llm takes precedence over default_llm."""
+    mock_override = AsyncMock()
+    mock_override.ainvoke = AsyncMock(return_value=AIMessage(content="Override!"))
+    mock_default = AsyncMock()
+    mock_default.ainvoke = AsyncMock(return_value=AIMessage(content="Default!"))
+
+    registries = RegistryBundle(
+        chat_models={
+            "override-llm": mock_override,
+            "default-llm": mock_default,
+        }
+    )
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=DEFAULT_LLM_OVERRIDE_YAML,
+    )
+    agent._registries = registries
+
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t1"}}
+    await graph.ainvoke({"messages": []}, config)
+
+    # Override model should have been called, not the default
+    mock_override.ainvoke.assert_called_once()
+    mock_default.ainvoke.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_no_llm_raises():
+    """Missing both step-level llm and default_llm raises GraphConstructionError."""
+    from sherma.exceptions import GraphConstructionError
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=NO_LLM_YAML,
+    )
+
+    with pytest.raises(GraphConstructionError, match="no 'llm'"):
+        await agent.get_graph()
+
+
+MULTI_NODE_DEFAULT_LLM_YAML = """\
+default_llm:
+  id: shared-llm
+
+llms:
+  - id: shared-llm
+    version: "1.0.0"
+    provider: openai
+    model_name: shared
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: node_a
+      nodes:
+        - name: node_a
+          type: call_llm
+          args:
+            prompt:
+              - role: messages
+                content: 'messages'
+        - name: node_b
+          type: call_llm
+          args:
+            prompt:
+              - role: messages
+                content: 'messages'
+      edges:
+        - source: node_a
+          target: node_b
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_default_llm_multiple_nodes():
+    """Multiple call_llm nodes all inherit default_llm."""
+    mock_model = AsyncMock()
+    mock_model.ainvoke = AsyncMock(return_value=AIMessage(content="Reply"))
+
+    registries = RegistryBundle(chat_models={"shared-llm": mock_model})
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=MULTI_NODE_DEFAULT_LLM_YAML,
+    )
+    agent._registries = registries
+
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t1"}}
+    await graph.ainvoke({"messages": []}, config)
+
+    # Both nodes should have called the same shared model
+    assert mock_model.ainvoke.call_count == 2
+
+
 CHECKPOINTER_YAML = """\
 checkpointer:
   type: memory

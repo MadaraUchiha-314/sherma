@@ -46,7 +46,7 @@ class PromptMessageDef(BaseModel):
 class CallLLMArgs(BaseModel):
     """Arguments for a call_llm node."""
 
-    llm: RegistryRef
+    llm: RegistryRef | None = None
     prompt: list[PromptMessageDef]
     tools: list[RegistryRef] | None = None
     use_tools_from_registry: bool = False
@@ -255,4 +255,5 @@ class DeclarativeConfig(BaseModel):
     skills: list[SkillDef] = Field(default_factory=list)
     hooks: list[HookDef] = Field(default_factory=list)
     sub_agents: list[SubAgentDef] = Field(default_factory=list)
+    default_llm: RegistryRef | None = None
     checkpointer: CheckpointerDef | None = None
