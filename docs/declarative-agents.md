@@ -14,6 +14,7 @@ skills:       # Skill card references
 sub_agents:   # Sub-agent declarations (for multi-agent orchestration)
 hooks:        # Hook executor imports
 checkpointer: # Checkpointer configuration (for state persistence)
+default_llm:  # Default LLM for call_llm nodes (optional)
 agents:       # Agent graph definitions
 ```
 
@@ -130,6 +131,44 @@ agent = DeclarativeAgent(
 
 When a checkpointer is active, all graph invocations require a `thread_id` in the config to identify the conversation thread. The `send_message` method handles this automatically using `context_id`, `task_id`, or a generated UUID.
 
+### Default LLM
+
+When multiple `call_llm` nodes use the same LLM, you can set a top-level `default_llm` instead of repeating the `llm` field on every node:
+
+```yaml
+default_llm:
+  id: openai-gpt-4o-mini
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+agents:
+  my-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            # No llm field -- inherits from default_llm
+            prompt:
+              - role: system
+                content: '"You are helpful."'
+              - role: messages
+                content: 'messages'
+      edges: []
+```
+
+A step-level `llm` always takes precedence over `default_llm`. If neither is set, graph construction raises an error.
+
 ## Agent Definition
 
 Each agent is defined under the `agents` key:
@@ -171,13 +210,13 @@ State fields are available in all CEL expressions.
 
 ### `call_llm`
 
-Calls an LLM with a prompt and optional tool bindings.
+Calls an LLM with a prompt and optional tool bindings. The `llm` field can be omitted when a top-level `default_llm` is configured (see [Default LLM](#default-llm)).
 
 ```yaml
 - name: agent
   type: call_llm
   args:
-    llm:
+    llm:                            # Optional when default_llm is set
       id: openai-gpt-4o-mini
       version: "1.0.0"
     prompt:
@@ -489,7 +528,7 @@ sub_agents:
 
 ## Complete Example
 
-A skill-aware agent that discovers skills, executes tasks, and reflects on results:
+A skill-aware agent that discovers skills, executes tasks, and reflects on results. Note the use of `default_llm` to avoid repeating the LLM reference on every node:
 
 ```yaml
 prompts:
@@ -518,6 +557,9 @@ llms:
     provider: openai
     model_name: gpt-4o-mini
 
+default_llm:
+  id: openai-gpt-4o-mini
+
 skills:
   - id: weather
     version: "1.0.0"
@@ -538,7 +580,6 @@ agents:
         - name: discover_skills
           type: call_llm
           args:
-            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
             prompt:
               - role: system
                 content: 'prompts["discover-skills"]["instructions"]'
@@ -551,7 +592,6 @@ agents:
         - name: execute
           type: call_llm
           args:
-            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
             prompt:
               - role: system
                 content: 'prompts["plan-and-execute"]["instructions"]'
@@ -562,7 +602,6 @@ agents:
         - name: reflect
           type: call_llm
           args:
-            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
             prompt:
               - role: system
                 content: 'prompts["reflect"]["instructions"]'

@@ -184,6 +184,48 @@ def test_validate_config_agent_not_found():
         validate_config(config, "nonexistent-agent")
 
 
+def test_load_default_llm_from_yaml():
+    """default_llm parses correctly from YAML."""
+    yaml_content = """\
+default_llm:
+  id: gpt-4
+
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+agents:
+  my-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    assert config.default_llm is not None
+    assert config.default_llm.id == "gpt-4"
+
+
+def test_load_default_llm_absent():
+    """default_llm is None when not specified in YAML."""
+    config = load_declarative_config(yaml_content=MINIMAL_YAML)
+    assert config.default_llm is None
+
+
 def test_validate_call_llm_without_messages():
     yaml_content = """\
 llms:

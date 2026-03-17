@@ -249,6 +249,30 @@ def test_call_llm_args_response_format_default_none():
     assert args.response_format is None
 
 
+def test_call_llm_args_without_llm():
+    """CallLLMArgs.llm defaults to None when omitted."""
+    args = CallLLMArgs(
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
+    )
+    assert args.llm is None
+
+
+def test_declarative_config_default_llm():
+    """DeclarativeConfig accepts a top-level default_llm."""
+    config = DeclarativeConfig(
+        default_llm=RegistryRef(id="gpt-4"),
+        llms=[LLMDef(id="gpt-4", model_name="gpt-4")],
+    )
+    assert config.default_llm is not None
+    assert config.default_llm.id == "gpt-4"
+
+
+def test_declarative_config_default_llm_none_by_default():
+    """default_llm is None when not specified."""
+    config = DeclarativeConfig()
+    assert config.default_llm is None
+
+
 def test_hook_def_with_import_path():
     hook = HookDef(import_path="my_module.MyHook")
     assert hook.import_path == "my_module.MyHook"

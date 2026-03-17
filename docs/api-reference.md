@@ -366,8 +366,11 @@ class DeclarativeConfig(BaseModel):
     skills: list[SkillDef] = []
     hooks: list[HookDef] = []
     sub_agents: list[SubAgentDef] = []
+    default_llm: RegistryRef | None = None
     checkpointer: CheckpointerDef | None = None
 ```
+
+`default_llm` is an optional `RegistryRef` that `call_llm` nodes inherit when they omit the step-level `llm` field. A step-level `llm` always takes precedence.
 
 ### `HookDef`
 
