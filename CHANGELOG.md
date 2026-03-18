@@ -1,3 +1,9 @@
+## v0.11.3 (2026-03-18)
+
+### Fix
+
+- adding specific sub-agents selection (#21)
+
 ## v0.11.2 (2026-03-17)
 
 ### Fix
