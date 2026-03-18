@@ -7,6 +7,7 @@ Declarative agents let you define an entire LangGraph agent in a single YAML fil
 A declarative agent YAML has these top-level sections:
 
 ```yaml
+manifest_version: 1   # Required: schema version (currently 1)
 prompts:      # Prompt definitions
 llms:         # LLM declarations
 tools:        # Tool imports
@@ -16,6 +17,16 @@ hooks:        # Hook executor imports
 checkpointer: # Checkpointer configuration (for state persistence)
 default_llm:  # Default LLM for call_llm nodes (optional)
 agents:       # Agent graph definitions
+```
+
+### Manifest Version
+
+Every declarative agent YAML **must** include a `manifest_version` field as a top-level integer. This tracks the version of the declarative agent schema that the YAML uses, allowing a single `DeclarativeAgent` runtime to handle `agent.yaml` files with varying manifest versions simultaneously.
+
+The current manifest version is **1**. Increment it when breaking changes are made to the schema.
+
+```yaml
+manifest_version: 1
 ```
 
 All entity registrations and the graph definition live in one file, giving you a complete snapshot of the agent.
@@ -136,6 +147,8 @@ When a checkpointer is active, all graph invocations require a `thread_id` in th
 When multiple `call_llm` nodes use the same LLM, you can set a top-level `default_llm` instead of repeating the `llm` field on every node:
 
 ```yaml
+manifest_version: 1
+
 default_llm:
   id: openai-gpt-4o-mini
 
@@ -537,6 +550,8 @@ sub_agents:
 A skill-aware agent that discovers skills, executes tasks, and reflects on results. Note the use of `default_llm` to avoid repeating the LLM reference on every node:
 
 ```yaml
+manifest_version: 1
+
 prompts:
   - id: discover-skills
     version: "1.0.0"
