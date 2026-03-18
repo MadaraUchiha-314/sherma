@@ -14,7 +14,14 @@ jobs:
 
       - run: uv python install
 
-      - run: uv sync
+      - run: uv sync --extra streamlit
+
+      - name: Check requirements.txt is up to date
+        run: |
+          uv export --no-hashes --no-dev --extra streamlit --no-emit-project --no-annotate > requirements.txt.tmp
+          echo "." >> requirements.txt.tmp
+          diff requirements.txt requirements.txt.tmp || { echo "requirements.txt is out of date. Run 'uv export' and commit."; exit 1; }
+          rm requirements.txt.tmp
 
       - name: Lint
         run: uv run ruff check .
