@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RegistryRef(BaseModel):
@@ -51,8 +51,26 @@ class CallLLMArgs(BaseModel):
     tools: list[RegistryRef] | None = None
     use_tools_from_registry: bool = False
     use_tools_from_loaded_skills: bool = False
-    use_sub_agents_as_tools: bool = False
+    use_sub_agents_as_tools: Literal[False, "all"] | list[RegistryRef] = False
     response_format: ResponseFormatDef | None = None
+
+    @field_validator("use_sub_agents_as_tools", mode="before")
+    @classmethod
+    def _normalize_use_sub_agents_as_tools(
+        cls, v: Any
+    ) -> Literal[False, "all"] | list[RegistryRef]:
+        if v is True:
+            return "all"
+        if v is False:
+            return False
+        if v == "all":
+            return "all"
+        if isinstance(v, list):
+            return v  # Pydantic validates as list[RegistryRef]
+        raise ValueError(
+            f"use_sub_agents_as_tools must be true, false, 'all', or a list "
+            f"of RegistryRef objects, got {v!r}"
+        )
 
 
 class ToolNodeArgs(BaseModel):

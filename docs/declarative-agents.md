@@ -229,7 +229,10 @@ Calls an LLM with a prompt and optional tool bindings. The `llm` field can be om
         version: "1.0.0"
     # use_tools_from_registry: true       # Or: bind ALL registered tools
     # use_tools_from_loaded_skills: true   # Or: bind tools from loaded skills
-    # use_sub_agents_as_tools: true        # Or: bind sub-agents as tools
+    # use_sub_agents_as_tools: true        # Or: bind all sub-agents as tools
+    # use_sub_agents_as_tools:              # Or: bind specific sub-agents
+    #   - id: weather-agent
+    #     version: "1.0.0"
 ```
 
 #### Prompt Format
@@ -281,7 +284,10 @@ prompt:
 | `tools` (explicit list) | Bind the listed tools (can be combined with any flag below) |
 | `use_tools_from_registry: true` | Bind all tools in the registry |
 | `use_tools_from_loaded_skills: true` | Bind only tools loaded via skill discovery |
-| `use_sub_agents_as_tools: true` | Bind sub-agents declared in `sub_agents` as tools |
+| `use_sub_agents_as_tools: true` / `all` | Bind **all** sub-agents declared in `sub_agents` as tools |
+| `use_sub_agents_as_tools: [list]` | Bind **specific** sub-agents by `id`/`version` |
+
+`use_sub_agents_as_tools` accepts three forms: `true` (or `all`) to bind all declared sub-agents, a list of `RegistryRef` objects (`id` + `version`) to bind a specific subset, or `false` (default) to disable. Each ref's `id` must match a declared `sub_agents` entry.
 
 The dynamic flags (`use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools`) are mutually exclusive with each other. However, an explicit `tools` list can be combined with any single dynamic flag -- the tools are merged additively and deduplicated by name.
 

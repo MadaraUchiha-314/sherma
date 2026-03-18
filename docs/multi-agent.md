@@ -6,7 +6,7 @@ sherma supports multi-agent systems where a supervisor agent delegates work to s
 
 1. You declare sub-agents in the YAML config under `sub_agents`
 2. Each sub-agent is registered in the agent registry and wrapped as a LangGraph tool
-3. A `call_llm` node with `use_sub_agents_as_tools: true` binds these tools to the LLM
+3. A `call_llm` node with `use_sub_agents_as_tools` binds these tools to the LLM (use `true`/`all` for all sub-agents, or a list to select specific ones)
 4. The LLM invokes sub-agents through tool calls; sherma handles the A2A message plumbing
 5. Tool nodes and conditional edges are auto-injected, just like regular tools
 
@@ -65,7 +65,7 @@ This is useful when you register agents programmatically before building the sup
 
 ## Supervisor YAML
 
-A supervisor agent uses `use_sub_agents_as_tools: true` on its `call_llm` node:
+A supervisor agent uses `use_sub_agents_as_tools` on its `call_llm` node. Use `true` (or `all`) to bind all declared sub-agents, or provide a list of specific `id`/`version` refs:
 
 ```yaml
 prompts:
@@ -112,6 +112,18 @@ agents:
 ```
 
 The `tool_node` and conditional edges are auto-injected, so you only need to define the `call_llm` node.
+
+### Selecting specific sub-agents
+
+Instead of binding all sub-agents, you can select a subset by providing a list of `id`/`version` refs:
+
+```yaml
+use_sub_agents_as_tools:
+  - id: weather-agent
+    version: "1.0.0"
+```
+
+This is useful when you have many sub-agents declared but a particular node should only access some of them.
 
 ## Agent Input Schemas
 

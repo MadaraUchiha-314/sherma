@@ -1127,3 +1127,147 @@ async def test_array_prompt_mixed_roles():
     assert isinstance(call_args[1], HumanMessage)
     assert isinstance(call_args[2], AIMessage)
     assert isinstance(call_args[3], HumanMessage)
+
+
+# --- use_sub_agents_as_tools tests ---
+
+
+@pytest.mark.asyncio
+async def test_build_call_llm_node_sub_agents_all():
+    """use_sub_agents_as_tools='all' resolves all sub-agent tools from context."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
+            use_sub_agents_as_tools="all",
+        ),
+    )
+
+    bound_model = AsyncMock()
+    bound_model.ainvoke = AsyncMock(return_value=AIMessage(content="Using sub-agents"))
+    chat_model = MagicMock()
+    chat_model.bind_tools = MagicMock(return_value=bound_model)
+
+    registry = ToolRegistry()
+    for name in ["weather-agent", "search-agent"]:
+        real_tool = StructuredTool.from_function(
+            func=lambda x: x, name=name, description=name
+        )
+        await registry.add(
+            RegistryEntry(
+                id=name,
+                version="1.0.0",
+                instance=Tool(id=name, version="1.0.0", function=real_tool),
+            )
+        )
+
+    cel = CelEngine()
+    ctx = _make_ctx(node_def)
+    ctx.extra["sub_agent_tool_ids"] = ["weather-agent", "search-agent"]
+    fn = build_call_llm_node(ctx, chat_model, cel, tool_registry=registry)
+
+    result = await fn({"messages": []})
+
+    chat_model.bind_tools.assert_called_once()
+    bound_tools = chat_model.bind_tools.call_args[0][0]
+    assert len(bound_tools) == 2
+    assert {t.name for t in bound_tools} == {"weather-agent", "search-agent"}
+    assert result["messages"][0].content == "Using sub-agents"
+
+
+@pytest.mark.asyncio
+async def test_build_call_llm_node_sub_agents_list():
+    """use_sub_agents_as_tools=[RegistryRef] resolves only specific sub-agents."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
+            use_sub_agents_as_tools=[
+                RegistryRef(id="weather-agent", version="1.0.0"),
+            ],
+        ),
+    )
+
+    bound_model = AsyncMock()
+    bound_model.ainvoke = AsyncMock(return_value=AIMessage(content="Subset"))
+    chat_model = MagicMock()
+    chat_model.bind_tools = MagicMock(return_value=bound_model)
+
+    registry = ToolRegistry()
+    for name in ["weather-agent", "search-agent"]:
+        real_tool = StructuredTool.from_function(
+            func=lambda x: x, name=name, description=name
+        )
+        await registry.add(
+            RegistryEntry(
+                id=name,
+                version="1.0.0",
+                instance=Tool(id=name, version="1.0.0", function=real_tool),
+            )
+        )
+
+    cel = CelEngine()
+    ctx = _make_ctx(node_def)
+    ctx.extra["sub_agent_tool_ids"] = ["weather-agent", "search-agent"]
+    fn = build_call_llm_node(ctx, chat_model, cel, tool_registry=registry)
+
+    result = await fn({"messages": []})
+
+    chat_model.bind_tools.assert_called_once()
+    bound_tools = chat_model.bind_tools.call_args[0][0]
+    assert len(bound_tools) == 1
+    assert bound_tools[0].name == "weather-agent"
+    assert result["messages"][0].content == "Subset"
+
+
+@pytest.mark.asyncio
+async def test_build_call_llm_node_sub_agents_false():
+    """use_sub_agents_as_tools=False doesn't bind any sub-agent tools."""
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="messages"),
+            ],
+            use_sub_agents_as_tools=False,
+        ),
+    )
+
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="No tools"))
+
+    cel = CelEngine()
+    ctx = _make_ctx(node_def)
+    ctx.extra["sub_agent_tool_ids"] = ["weather-agent"]
+    fn = build_call_llm_node(ctx, chat_model, cel)
+
+    result = await fn({"messages": []})
+
+    assert result["messages"][0].content == "No tools"
+    # bind_tools should NOT have been called since it's an AsyncMock (no bind_tools)
+    chat_model.ainvoke.assert_called_once()

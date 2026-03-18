@@ -1290,3 +1290,200 @@ agents:
     from sherma.hooks.executor import BaseHookExecutor
 
     assert isinstance(hook_manager._executors[1], BaseHookExecutor)
+
+
+# ---------------------------------------------------------------------------
+# use_sub_agents_as_tools validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_validate_use_sub_agents_as_tools_all():
+    """use_sub_agents_as_tools: true (parsed as 'all') with sub_agents is valid."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    url: "http://localhost:8080"
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: llm
+      nodes:
+        - name: llm
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
+            use_sub_agents_as_tools: true
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    from sherma.langgraph.declarative.schema import CallLLMArgs
+
+    llm_node = config.agents["agent"].graph.nodes[0]
+    assert isinstance(llm_node.args, CallLLMArgs)
+    assert llm_node.args.use_sub_agents_as_tools == "all"
+    validate_config(config, "agent")  # should not raise
+
+
+def test_validate_use_sub_agents_as_tools_explicit_all():
+    """use_sub_agents_as_tools: all (string) with sub_agents is valid."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    url: "http://localhost:8080"
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: llm
+      nodes:
+        - name: llm
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
+            use_sub_agents_as_tools: all
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    from sherma.langgraph.declarative.schema import CallLLMArgs
+
+    llm_node = config.agents["agent"].graph.nodes[0]
+    assert isinstance(llm_node.args, CallLLMArgs)
+    assert llm_node.args.use_sub_agents_as_tools == "all"
+    validate_config(config, "agent")  # should not raise
+
+
+def test_validate_use_sub_agents_as_tools_list():
+    """use_sub_agents_as_tools with list of refs is valid when IDs exist."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    url: "http://localhost:8080"
+  - id: search-agent
+    version: "1.0.0"
+    url: "http://localhost:8081"
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: llm
+      nodes:
+        - name: llm
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
+            use_sub_agents_as_tools:
+              - id: weather-agent
+                version: "1.0.0"
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    from sherma.langgraph.declarative.schema import CallLLMArgs
+
+    llm_node = config.agents["agent"].graph.nodes[0]
+    assert isinstance(llm_node.args, CallLLMArgs)
+    assert isinstance(llm_node.args.use_sub_agents_as_tools, list)
+    assert len(llm_node.args.use_sub_agents_as_tools) == 1
+    validate_config(config, "agent")  # should not raise
+
+
+def test_validate_use_sub_agents_as_tools_list_unknown_id():
+    """use_sub_agents_as_tools with unknown sub-agent ID raises error."""
+    yaml_content = """\
+llms:
+  - id: gpt-4
+    version: "1.0.0"
+    model_name: gpt-4
+
+sub_agents:
+  - id: weather-agent
+    version: "1.0.0"
+    url: "http://localhost:8080"
+
+agents:
+  agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: llm
+      nodes:
+        - name: llm
+          type: call_llm
+          args:
+            llm:
+              id: gpt-4
+            prompt:
+              - role: system
+                content: '"hello"'
+              - role: messages
+                content: 'messages'
+            use_sub_agents_as_tools:
+              - id: nonexistent-agent
+                version: "1.0.0"
+        - name: tools
+          type: tool_node
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    with pytest.raises(DeclarativeConfigError, match="nonexistent-agent"):
+        validate_config(config, "agent")
