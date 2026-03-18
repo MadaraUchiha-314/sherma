@@ -359,6 +359,7 @@ Top-level YAML schema model.
 
 ```python
 class DeclarativeConfig(BaseModel):
+    manifest_version: int             # Required: schema version (currently 1)
     agents: dict[str, AgentDef] = {}
     llms: list[LLMDef] = []
     tools: list[ToolDef] = []
@@ -369,6 +370,8 @@ class DeclarativeConfig(BaseModel):
     default_llm: RegistryRef | None = None
     checkpointer: CheckpointerDef | None = None
 ```
+
+`manifest_version` is a required integer that tracks which version of the declarative agent schema the config uses. The current version is **1**. This enables the runtime to handle configs with different schema versions.
 
 `default_llm` is an optional `RegistryRef` that `call_llm` nodes inherit when they omit the step-level `llm` field. A step-level `llm` always takes precedence.
 

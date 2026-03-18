@@ -12,6 +12,8 @@ from sherma.langgraph.declarative.transform import inject_tool_nodes
 
 def _base_yaml(nodes_yaml: str, edges_yaml: str = "edges: []") -> str:
     return f"""\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -251,6 +253,8 @@ class TestMultipleCallLLM:
 
     def test_multiple_injections(self):
         yaml = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"

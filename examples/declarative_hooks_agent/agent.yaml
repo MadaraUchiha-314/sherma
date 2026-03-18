@@ -10,6 +10,8 @@
 #   - import_path: examples.hooks.LoggingHook
 #   - import_path: examples.hooks.PromptGuardrailHook
 
+manifest_version: 1
+
 prompts:
   - id: weather-system-prompt
     version: "1.0.0"

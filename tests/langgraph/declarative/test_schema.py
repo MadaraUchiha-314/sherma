@@ -119,6 +119,7 @@ def test_graph_def():
 
 def test_declarative_config():
     config = DeclarativeConfig(
+        manifest_version=1,
         llms=[LLMDef(id="gpt-4", version="1.0.0", model_name="gpt-4")],
         prompts=[PromptDef(id="sys", version="1.0.0", instructions="hello")],
         tools=[ToolDef(id="tool1", version="1.0.0")],
@@ -127,10 +128,12 @@ def test_declarative_config():
     assert len(config.prompts) == 1
     assert len(config.tools) == 1
     assert config.agents == {}
+    assert config.manifest_version == 1
 
 
 def test_declarative_config_with_agent():
     config = DeclarativeConfig(
+        manifest_version=1,
         agents={
             "my-agent": AgentDef(
                 state=StateDef(
@@ -148,7 +151,7 @@ def test_declarative_config_with_agent():
                     edges=[],
                 ),
             )
-        }
+        },
     )
     assert "my-agent" in config.agents
     assert config.agents["my-agent"].graph.entry_point == "start"
@@ -260,6 +263,7 @@ def test_call_llm_args_without_llm():
 def test_declarative_config_default_llm():
     """DeclarativeConfig accepts a top-level default_llm."""
     config = DeclarativeConfig(
+        manifest_version=1,
         default_llm=RegistryRef(id="gpt-4"),
         llms=[LLMDef(id="gpt-4", model_name="gpt-4")],
     )
@@ -269,8 +273,20 @@ def test_declarative_config_default_llm():
 
 def test_declarative_config_default_llm_none_by_default():
     """default_llm is None when not specified."""
-    config = DeclarativeConfig()
+    config = DeclarativeConfig(manifest_version=1)
     assert config.default_llm is None
+
+
+def test_declarative_config_manifest_version_required():
+    """manifest_version is required and cannot be omitted."""
+    with pytest.raises(ValidationError):
+        DeclarativeConfig()
+
+
+def test_declarative_config_manifest_version_must_be_int():
+    """manifest_version must be an integer."""
+    with pytest.raises(ValidationError):
+        DeclarativeConfig(manifest_version="one")
 
 
 def test_hook_def_with_import_path():

@@ -14,6 +14,8 @@ from sherma.langgraph.declarative.loader import RegistryBundle
 from tests.integration.conftest import FakeChatModel, collect_events, make_a2a_message
 
 WEATHER_AGENT_YAML = """\
+manifest_version: 1
+
 prompts:
   - id: weather-system-prompt
     version: "1.0.0"

@@ -3,6 +3,8 @@
 # Tools are imported from Python, LLMs are created automatically.
 # The tool_node and conditional edges are auto-injected.
 
+manifest_version: 1
+
 prompts:
   - id: weather-system-prompt
     version: "1.0.0"

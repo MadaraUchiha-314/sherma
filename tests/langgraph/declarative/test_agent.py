@@ -23,6 +23,8 @@ from sherma.langgraph.declarative.schema import (
 )
 
 SET_STATE_YAML = """\
+manifest_version: 1
+
 agents:
   test-agent:
     state:
@@ -45,6 +47,8 @@ agents:
 """
 
 DATA_TRANSFORM_YAML = """\
+manifest_version: 1
+
 agents:
   test-agent:
     state:
@@ -104,6 +108,8 @@ async def test_declarative_agent_caches_graph():
 @pytest.mark.asyncio
 async def test_declarative_agent_call_llm():
     yaml_content = """\
+manifest_version: 1
+
 prompts:
   - id: sys
     version: "1.0.0"
@@ -161,6 +167,8 @@ agents:
 @pytest.mark.asyncio
 async def test_declarative_agent_conditional_edges():
     yaml_content = """\
+manifest_version: 1
+
 agents:
   test-agent:
     state:
@@ -216,6 +224,8 @@ agents:
 async def test_declarative_agent_single_agent_auto_match():
     """When config has one agent, it's auto-selected regardless of id."""
     yaml_content = """\
+manifest_version: 1
+
 agents:
   only-agent:
     state:
@@ -280,6 +290,8 @@ def test_state_class_no_injection_without_skills():
 
 
 INTERRUPT_YAML = """\
+manifest_version: 1
+
 agents:
   test-agent:
     state:
@@ -334,6 +346,7 @@ async def test_declarative_agent_interrupt_node():
 async def test_declarative_agent_with_config_object():
     """DeclarativeAgent accepts a pre-built DeclarativeConfig."""
     config = DeclarativeConfig(
+        manifest_version=1,
         agents={
             "test-agent": AgentDef(
                 state=StateDef(
@@ -367,6 +380,8 @@ async def test_declarative_agent_with_config_object():
 
 
 DEFAULT_LLM_YAML = """\
+manifest_version: 1
+
 default_llm:
   id: test-llm
 
@@ -403,6 +418,8 @@ agents:
 """
 
 DEFAULT_LLM_OVERRIDE_YAML = """\
+manifest_version: 1
+
 default_llm:
   id: default-llm
 
@@ -438,6 +455,8 @@ agents:
 """
 
 NO_LLM_YAML = """\
+manifest_version: 1
+
 agents:
   test-agent:
     state:
@@ -528,6 +547,8 @@ async def test_declarative_agent_no_llm_raises():
 
 
 MULTI_NODE_DEFAULT_LLM_YAML = """\
+manifest_version: 1
+
 default_llm:
   id: shared-llm
 
@@ -589,6 +610,8 @@ async def test_declarative_agent_default_llm_multiple_nodes():
 
 
 CHECKPOINTER_YAML = """\
+manifest_version: 1
+
 checkpointer:
   type: memory
 

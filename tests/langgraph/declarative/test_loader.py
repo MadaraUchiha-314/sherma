@@ -19,6 +19,8 @@ from sherma.langgraph.declarative.loader import (
 )
 
 MINIMAL_YAML = """\
+manifest_version: 1
+
 prompts:
   - id: sys
     version: "1.0.0"
@@ -48,6 +50,8 @@ agents:
 """
 
 CALL_LLM_YAML = """\
+manifest_version: 1
+
 prompts:
   - id: sys
     version: "1.0.0"
@@ -132,6 +136,33 @@ def test_load_non_mapping_yaml():
         load_declarative_config(yaml_content="- just a list")
 
 
+def test_load_missing_manifest_version():
+    """YAML without manifest_version raises a validation error."""
+    yaml_content = """\
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    with pytest.raises(DeclarativeConfigError, match="manifest_version"):
+        load_declarative_config(yaml_content=yaml_content)
+
+
+def test_load_manifest_version_parsed():
+    """manifest_version is correctly parsed from YAML."""
+    config = load_declarative_config(yaml_content=MINIMAL_YAML)
+    assert config.manifest_version == 1
+
+
 def test_load_call_llm_config():
     config = load_declarative_config(yaml_content=CALL_LLM_YAML)
     agent = config.agents["weather-agent"]
@@ -187,6 +218,8 @@ def test_validate_config_agent_not_found():
 def test_load_default_llm_from_yaml():
     """default_llm parses correctly from YAML."""
     yaml_content = """\
+manifest_version: 1
+
 default_llm:
   id: gpt-4
 
@@ -228,6 +261,8 @@ def test_load_default_llm_absent():
 
 def test_validate_call_llm_without_messages():
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -261,6 +296,8 @@ agents:
 
 def test_validate_call_llm_tools_without_tool_node():
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -322,6 +359,8 @@ def test_llm_provider_default():
 
 def test_tool_import_path_parsed():
     yaml_content = """\
+manifest_version: 1
+
 tools:
   - id: my-tool
     version: "1.0.0"
@@ -349,6 +388,8 @@ agents:
 async def test_populate_auto_imports_tools():
     """Tools with import_path are auto-imported during populate."""
     yaml_content = """\
+manifest_version: 1
+
 tools:
   - id: get_weather
     version: "1.0.0"
@@ -391,6 +432,8 @@ async def test_populate_skill_cards_local(tmp_path):
     card_file.write_text(json.dumps(card_data))
 
     yaml_content = f"""\
+manifest_version: 1
+
 skills:
   - id: test-skill
     version: "1.0.0"
@@ -426,6 +469,8 @@ async def test_populate_skill_cards_remote():
     from unittest.mock import AsyncMock, MagicMock, patch
 
     yaml_content = """\
+manifest_version: 1
+
 skills:
   - id: remote-skill
     version: "1.0.0"
@@ -479,6 +524,8 @@ agents:
 def test_load_use_tools_from_registry_config():
     """YAML with use_tools_from_registry: true parses correctly."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -534,6 +581,8 @@ agents:
 def test_load_use_tools_from_loaded_skills_config():
     """YAML with use_tools_from_loaded_skills: true parses correctly."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -577,6 +626,8 @@ agents:
 def test_validate_registry_tools_with_explicit_tools():
     """use_tools_from_registry + explicit tools on call_llm is allowed."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -616,6 +667,8 @@ agents:
 def test_validate_loaded_skills_with_explicit_tools():
     """use_tools_from_loaded_skills + explicit tools on call_llm is allowed."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -655,6 +708,8 @@ agents:
 def test_validate_both_registry_and_loaded_skills():
     """use_tools_from_registry + use_tools_from_loaded_skills is an error."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -694,6 +749,8 @@ agents:
 def test_validate_response_format_with_tools_raises():
     """response_format + tools on call_llm is an error."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -740,6 +797,8 @@ agents:
 def test_validate_response_format_with_registry_tools_raises():
     """response_format + use_tools_from_registry on call_llm is an error."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -785,6 +844,8 @@ agents:
 def test_validate_response_format_without_tools_ok():
     """response_format alone on call_llm is valid."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -826,6 +887,8 @@ agents:
 def test_validate_tools_without_tool_node():
     """call_llm with tool options requires a tool_node in the graph."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -874,6 +937,8 @@ async def test_base_path_resolves_relative_skill_card_path(tmp_path):
     card_file.write_text(json.dumps(card_data))
 
     yaml_content = """\
+manifest_version: 1
+
 skills:
   - id: test-skill
     version: "1.0.0"
@@ -909,6 +974,8 @@ async def test_base_path_resolves_relative_sub_agent_yaml_path(tmp_path):
 
     sub_yaml = tmp_path / "sub.yaml"
     sub_yaml.write_text("""\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -933,6 +1000,8 @@ agents:
 """)
 
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -972,6 +1041,8 @@ agents:
 async def test_relative_skill_card_path_without_base_path_raises():
     """Relative skill_card_path without base_path raises DeclarativeConfigError."""
     yaml_content = """\
+manifest_version: 1
+
 skills:
   - id: test-skill
     version: "1.0.0"
@@ -1001,6 +1072,8 @@ agents:
 async def test_relative_sub_agent_yaml_path_without_base_path_raises():
     """Relative sub-agent yaml_path without base_path raises DeclarativeConfigError."""
     yaml_content = """\
+manifest_version: 1
+
 sub_agents:
   - id: sub-agent
     version: "1.0.0"
@@ -1041,6 +1114,8 @@ async def test_absolute_skill_card_path_ignores_base_path(tmp_path):
     card_file.write_text(json.dumps(card_data))
 
     yaml_content = f"""\
+manifest_version: 1
+
 skills:
   - id: abs-skill
     version: "1.0.0"
@@ -1072,6 +1147,8 @@ agents:
 
 def test_skill_def_with_skill_card_path():
     yaml_content = """\
+manifest_version: 1
+
 skills:
   - id: my-skill
     version: "1.0.0"
@@ -1119,6 +1196,8 @@ async def test_populate_registries_propagates_tenant_id():
 # ---------------------------------------------------------------------------
 
 HOOK_YAML = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -1234,6 +1313,8 @@ async def test_no_hook_manager_default_behavior():
 def test_populate_hooks_with_url():
     """populate_hooks creates a RemoteHookExecutor for url-based hooks."""
     yaml_content = """\
+manifest_version: 1
+
 hooks:
   - url: "http://localhost:8080/hooks"
 
@@ -1263,6 +1344,8 @@ agents:
 def test_populate_hooks_mixed():
     """populate_hooks handles a mix of url and import_path hooks."""
     yaml_content = """\
+manifest_version: 1
+
 hooks:
   - url: "http://localhost:8080/hooks"
   - import_path: "sherma.hooks.executor.BaseHookExecutor"
@@ -1300,6 +1383,8 @@ agents:
 def test_validate_use_sub_agents_as_tools_all():
     """use_sub_agents_as_tools: true (parsed as 'all') with sub_agents is valid."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -1347,6 +1432,8 @@ agents:
 def test_validate_use_sub_agents_as_tools_explicit_all():
     """use_sub_agents_as_tools: all (string) with sub_agents is valid."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -1394,6 +1481,8 @@ agents:
 def test_validate_use_sub_agents_as_tools_list():
     """use_sub_agents_as_tools with list of refs is valid when IDs exist."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
@@ -1447,6 +1536,8 @@ agents:
 def test_validate_use_sub_agents_as_tools_list_unknown_id():
     """use_sub_agents_as_tools with unknown sub-agent ID raises error."""
     yaml_content = """\
+manifest_version: 1
+
 llms:
   - id: gpt-4
     version: "1.0.0"
