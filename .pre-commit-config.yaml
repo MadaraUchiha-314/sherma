@@ -27,3 +27,10 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: sync-requirements
+        name: sync requirements.txt
+        entry: bash -c 'uv export --no-hashes --no-dev --extra streamlit --no-emit-project --no-annotate > requirements.txt.tmp && echo "." >> requirements.txt.tmp && if ! diff -q requirements.txt requirements.txt.tmp > /dev/null 2>&1; then mv requirements.txt.tmp requirements.txt && echo "requirements.txt was out of date and has been updated. Please stage and re-commit." && exit 1; else rm requirements.txt.tmp && exit 0; fi'
+        language: system
+        always_run: true
+        pass_filenames: false
