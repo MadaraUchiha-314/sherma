@@ -27,6 +27,9 @@ dependencies = [
   "langchain-anthropic>=0.3.0",
 ]
 
+[project.optional-dependencies]
+streamlit = ["streamlit>=1.40.0", "nest-asyncio>=1.6.0"]
+
 [dependency-groups]
 dev = ["ruff", "pyright", "pytest", "pytest-asyncio", "pre-commit", "commitizen", "pyyaml"]
 

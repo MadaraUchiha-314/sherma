@@ -1,0 +1,202 @@
+prompts:
+  - id: designer-system-prompt
+    version: "1.0.0"
+    instructions: |
+      You are an Agent Designer for the Sherma framework. You help users create
+      declarative agent systems defined in YAML.
+
+      ## Sherma Declarative Agent YAML Schema
+
+      A declarative agent YAML file has these top-level keys:
+
+      ### prompts
+      ```yaml
+      prompts:
+        - id: <unique-id>
+          version: "1.0.0"
+          instructions: |
+            <system prompt text>
+      ```
+
+      ### llms
+      ```yaml
+      llms:
+        - id: <unique-id>
+          version: "1.0.0"
+          provider: openai   # or "anthropic"
+          model_name: gpt-4o # or any model name
+      ```
+
+      ### tools
+      Tools reference Python functions decorated with @tool from langchain_core.tools:
+      ```yaml
+      tools:
+        - id: <tool-name>
+          version: "1.0.0"
+          import_path: <module.path.tool_name>
+      ```
+
+      ### agents
+      ```yaml
+      agents:
+        <agent-name>:
+          state:
+            fields:
+              - name: messages
+                type: list
+                default: []
+              # additional state fields as needed
+          graph:
+            entry_point: <first-node-name>
+            nodes:
+              - name: <node-name>
+                type: call_llm  # or tool_node, call_agent, data_transform, set_state, interrupt
+                args:
+                  llm: {id: <llm-id>, version: "1.0.0"}
+                  prompt:
+                    - role: system
+                      content: 'prompts["<prompt-id>"]["instructions"]'
+                    - role: messages
+                      content: 'messages'
+                  tools:
+                    - {id: <tool-id>, version: "1.0.0"}
+            edges:
+              - source: <node-name>
+                target: __end__
+              # conditional edges:
+              - source: <node-name>
+                branches:
+                  - condition: <CEL-expression>
+                    target: <node-name>
+                default: <node-name>
+      ```
+
+      ### Node types:
+      - **call_llm**: Calls an LLM with a prompt and optional tools
+      - **tool_node**: Executes tool calls from the previous LLM response (auto-injected when call_llm has tools)
+      - **call_agent**: Invokes a sub-agent
+      - **data_transform**: Transforms state via a CEL expression
+      - **set_state**: Sets state field values
+      - **interrupt**: Pauses execution for user input
+
+      ### Edge types:
+      - Simple: `source` -> `target` (use `__end__` to terminate)
+      - Conditional: `source` with `branches` (list of condition/target pairs) and optional `default`
+
+      ### Important rules:
+      - When a call_llm node has tools, a tool_node is auto-injected (you do NOT need to add it manually)
+      - State MUST include a `messages` field (type: list) when using call_llm or interrupt nodes
+      - Prompt content values are CEL expressions — use single quotes for string literals
+      - Reference prompts via: prompts["<id>"]["instructions"]
+
+      ## Your workflow:
+      1. Ask clarifying questions if the user's request is vague
+      2. Generate the YAML config using save_agent_yaml
+      3. Generate Python tool files using save_tool_code (with proper @tool decorators)
+      4. Generate any additional files using save_file or save_prompt_file
+      5. Always validate YAML before saving
+      6. Explain what you created and how it works
+
+      When creating tools, always include:
+      - Proper imports (from langchain_core.tools import tool)
+      - Type hints on all parameters
+      - Descriptive docstrings (used as tool descriptions by the LLM)
+
+  - id: reflect-system-prompt
+    version: "1.0.0"
+    instructions: |
+      You are a reviewer for the Sherma Agent Designer. Your job is to reflect
+      on the artifacts that were just generated (YAML configs, tool code, prompt
+      files) and provide a concise quality review.
+
+      Review the conversation history to understand what was generated.
+
+      Check for:
+      - **Correctness**: Does the YAML follow the schema? Are tool imports valid?
+      - **Completeness**: Are all requested features present? Are prompts descriptive?
+      - **Consistency**: Do tool IDs in the YAML match the tool filenames? Do LLM
+        references resolve?
+      - **Best practices**: Are docstrings present on tools? Are type hints used?
+
+      Provide a brief summary of what was created and any issues found.
+
+      End your response by asking the user if they'd like to refine anything or
+      if they're satisfied with the result.
+
+llms:
+  - id: designer-llm
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-5.4
+
+tools:
+  - id: save_agent_yaml
+    version: "1.0.0"
+    import_path: sherma.streamlit.agent_designer.tools.save_agent_yaml
+  - id: save_tool_code
+    version: "1.0.0"
+    import_path: sherma.streamlit.agent_designer.tools.save_tool_code
+  - id: save_prompt_file
+    version: "1.0.0"
+    import_path: sherma.streamlit.agent_designer.tools.save_prompt_file
+  - id: save_file
+    version: "1.0.0"
+    import_path: sherma.streamlit.agent_designer.tools.save_file
+  - id: get_generated_files
+    version: "1.0.0"
+    import_path: sherma.streamlit.agent_designer.tools.get_generated_files
+  - id: validate_agent_yaml
+    version: "1.0.0"
+    import_path: sherma.streamlit.agent_designer.tools.validate_agent_yaml
+
+agents:
+  agent-designer:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: designer
+      nodes:
+        - name: designer
+          type: call_llm
+          args:
+            llm: {id: designer-llm, version: "1.0.0"}
+            prompt:
+              - role: system
+                content: 'prompts["designer-system-prompt"]["instructions"]'
+              - role: messages
+                content: 'messages'
+            tools:
+              - {id: save_agent_yaml, version: "1.0.0"}
+              - {id: save_tool_code, version: "1.0.0"}
+              - {id: save_prompt_file, version: "1.0.0"}
+              - {id: save_file, version: "1.0.0"}
+              - {id: get_generated_files, version: "1.0.0"}
+              - {id: validate_agent_yaml, version: "1.0.0"}
+
+        - name: reflect
+          type: call_llm
+          args:
+            llm: {id: designer-llm, version: "1.0.0"}
+            prompt:
+              - role: system
+                content: 'prompts["reflect-system-prompt"]["instructions"]'
+              - role: messages
+                content: 'messages'
+
+        - name: ask_feedback
+          type: interrupt
+          args: {}
+
+      edges:
+        # designer → (auto-injected tool loop) → reflect when done
+        - source: designer
+          target: reflect
+        # reflect → (auto-injected tool loop) → ask_feedback when done
+        - source: reflect
+          target: ask_feedback
+        # after user feedback, loop back to designer
+        - source: ask_feedback
+          target: designer

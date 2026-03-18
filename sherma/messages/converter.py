@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import uuid
 
-from a2a.types import DataPart, Message, Part, Role, TextPart
+from a2a.types import (
+    DataPart,
+    FilePart,
+    FileWithBytes,
+    FileWithUri,
+    Message,
+    Part,
+    Role,
+    TextPart,
+)
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -14,11 +23,42 @@ from langchain_core.messages import (
 _METADATA_KEY = "a2a_metadata"
 
 
+def _file_part_to_content_block(
+    file_part: FilePart,
+) -> dict[str, object]:
+    """Convert an A2A FilePart to a LangChain image_url content block.
+
+    Uses the ``image_url`` format with a ``data:`` URI which is
+    understood by both ChatOpenAI and ChatAnthropic via LangChain.
+    Non-image file types fall back to a generic representation.
+    """
+    f = file_part.file
+    mime = getattr(f, "mime_type", None) or "application/octet-stream"
+
+    if isinstance(f, FileWithBytes) and mime.startswith("image/"):
+        data_uri = f"data:{mime};base64,{f.bytes}"
+        return {
+            "type": "image_url",
+            "image_url": {"url": data_uri},
+        }
+
+    if isinstance(f, FileWithUri) and mime.startswith("image/"):
+        return {
+            "type": "image_url",
+            "image_url": {"url": f.uri},
+        }
+
+    # Non-image files: preserve as generic block
+    return {"type": file_part.kind, "raw": file_part.model_dump()}
+
+
 def _a2a_part_to_content_block(part: Part) -> dict[str, object] | str:
     """Convert a single A2A Part to a LangGraph content block."""
     root = part.root
     if root.kind == "text":
         return root.text
+    if root.kind == "file":
+        return _file_part_to_content_block(root)  # type: ignore[arg-type]
     if root.kind == "data":
         block: dict[str, object] = {"type": "data", "data": root.data}
         if root.metadata is not None:
