@@ -44,7 +44,7 @@ def _make_ctx(
     node_def: NodeDef, hook_manager: HookManager | None = None
 ) -> NodeContext:
     """Create a minimal NodeContext for testing."""
-    config = DeclarativeConfig()
+    config = DeclarativeConfig(manifest_version=1)
     return NodeContext(config=config, node_def=node_def, hook_manager=hook_manager)
 
 
@@ -204,7 +204,7 @@ def test_node_context_has_config():
         type="set_state",
         args=SetStateArgs(values={"x": '"hi"'}),
     )
-    config = DeclarativeConfig()
+    config = DeclarativeConfig(manifest_version=1)
     ctx = NodeContext(config=config, node_def=node_def)
     assert ctx.config is config
     assert ctx.node_def is node_def
@@ -704,7 +704,7 @@ async def test_node_receives_config_via_partial():
         type="set_state",
         args=SetStateArgs(values={"x": '"hi"'}),
     )
-    config = DeclarativeConfig()
+    config = DeclarativeConfig(manifest_version=1)
     ctx = NodeContext(config=config, node_def=node_def)
     cel = CelEngine()
 

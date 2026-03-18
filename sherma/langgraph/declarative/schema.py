@@ -266,6 +266,7 @@ class CheckpointerDef(BaseModel):
 class DeclarativeConfig(BaseModel):
     """Top-level declarative configuration parsed from YAML."""
 
+    manifest_version: int
     agents: dict[str, AgentDef] = Field(default_factory=dict)
     llms: list[LLMDef] = Field(default_factory=list)
     tools: list[ToolDef] = Field(default_factory=list)

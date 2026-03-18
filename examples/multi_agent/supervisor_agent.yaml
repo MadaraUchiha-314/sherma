@@ -3,6 +3,8 @@
 # This supervisor agent delegates to sub-agents wrapped as tools.
 # The LLM decides when to call the weather-agent based on the user's request.
 
+manifest_version: 1
+
 prompts:
   - id: supervisor-prompt
     version: "1.0.0"

@@ -25,6 +25,8 @@ SKILL_CARD_PATH = (
 )
 
 SKILL_AGENT_YAML = """\
+manifest_version: 1
+
 prompts:
   - id: discover-skills
     version: "1.0.0"

@@ -3,6 +3,8 @@
 # Follows the skill agent loop: discover skills → execute → reflect → respond.
 # Tool nodes and conditional edges for tool calls are auto-injected.
 
+manifest_version: 1
+
 prompts:
   - id: discover-skills
     version: "1.0.0"

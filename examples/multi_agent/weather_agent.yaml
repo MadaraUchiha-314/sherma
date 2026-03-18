@@ -1,6 +1,8 @@
 # Sub-agent: Weather Agent
 # A simple agent that looks up weather for a city.
 
+manifest_version: 1
+
 prompts:
   - id: weather-prompt
     version: "1.0.0"

@@ -14,6 +14,8 @@ from tests.integration.conftest import FakeChatModel, collect_events, make_a2a_m
 
 # Inline the weather sub-agent YAML (uses fake tool)
 WEATHER_AGENT_YAML = """\
+manifest_version: 1
+
 prompts:
   - id: weather-prompt
     version: "1.0.0"
@@ -74,6 +76,8 @@ async def test_supervisor_delegates_to_sub_agent(tmp_path, monkeypatch):
 
     # Build supervisor YAML referencing the sub-agent
     supervisor_yaml = f"""\
+manifest_version: 1
+
 prompts:
   - id: supervisor-prompt
     version: "1.0.0"

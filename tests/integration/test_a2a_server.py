@@ -19,6 +19,8 @@ from sherma.langgraph.declarative.loader import RegistryBundle
 from tests.integration.conftest import FakeChatModel, make_a2a_message
 
 SIMPLE_AGENT_YAML = """\
+manifest_version: 1
+
 prompts:
   - id: sys
     version: "1.0.0"
