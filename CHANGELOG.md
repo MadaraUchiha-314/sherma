@@ -1,3 +1,9 @@
+## v0.12.1 (2026-03-18)
+
+### Fix
+
+- move streamlit to different folder (#24)
+
 ## v0.12.0 (2026-03-18)
 
 ### Feat
