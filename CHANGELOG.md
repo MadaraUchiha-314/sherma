@@ -1,3 +1,9 @@
+## v0.13.0 (2026-03-18)
+
+### Feat
+
+- add manifest_version field to declarative agent schema (#26)
+
 ## v0.12.1 (2026-03-18)
 
 ### Fix
