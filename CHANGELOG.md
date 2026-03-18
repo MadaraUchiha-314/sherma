@@ -1,3 +1,13 @@
+## v0.12.0 (2026-03-18)
+
+### Feat
+
+- add streamlit agent designer (#22)
+
+### Fix
+
+- getting streamlit to work (#23)
+
 ## v0.11.3 (2026-03-18)
 
 ### Fix
