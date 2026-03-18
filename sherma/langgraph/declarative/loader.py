@@ -648,7 +648,7 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                 [
                     llm_args.use_tools_from_registry,
                     llm_args.use_tools_from_loaded_skills,
-                    llm_args.use_sub_agents_as_tools,
+                    bool(llm_args.use_sub_agents_as_tools),
                 ]
             )
             if exclusive_flags > 1:
@@ -662,6 +662,15 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                     f"call_llm node '{node.name}' uses 'use_sub_agents_as_tools' "
                     f"but no sub_agents are declared in the config"
                 )
+            if isinstance(llm_args.use_sub_agents_as_tools, list):
+                sub_agent_ids = {sa.id for sa in config.sub_agents}
+                for ref in llm_args.use_sub_agents_as_tools:
+                    if ref.id not in sub_agent_ids:
+                        raise DeclarativeConfigError(
+                            f"call_llm node '{node.name}' references sub-agent "
+                            f"'{ref.id}' in 'use_sub_agents_as_tools' but it is "
+                            f"not declared in config.sub_agents"
+                        )
 
     # Validate that call_llm nodes with tool options have a tool_node
     has_tool_binding = any(

@@ -293,3 +293,60 @@ def test_hook_def_requires_one_source():
 def test_hook_def_rejects_both_sources():
     with pytest.raises(ValidationError, match="cannot have both"):
         HookDef(import_path="my_module.MyHook", url="http://localhost:8080/hooks")
+
+
+# --- use_sub_agents_as_tools type normalization ---
+
+
+def test_use_sub_agents_as_tools_true_becomes_all():
+    """YAML `true` is normalized to `"all"`."""
+    args = CallLLMArgs(
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
+        use_sub_agents_as_tools=True,
+    )
+    assert args.use_sub_agents_as_tools == "all"
+
+
+def test_use_sub_agents_as_tools_false_stays_false():
+    args = CallLLMArgs(
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
+        use_sub_agents_as_tools=False,
+    )
+    assert args.use_sub_agents_as_tools is False
+
+
+def test_use_sub_agents_as_tools_all_string():
+    args = CallLLMArgs(
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
+        use_sub_agents_as_tools="all",
+    )
+    assert args.use_sub_agents_as_tools == "all"
+
+
+def test_use_sub_agents_as_tools_list_of_refs():
+    args = CallLLMArgs(
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
+        use_sub_agents_as_tools=[
+            {"id": "weather-agent", "version": "1.0.0"},
+            {"id": "search-agent", "version": "1.0.0"},
+        ],
+    )
+    assert isinstance(args.use_sub_agents_as_tools, list)
+    assert len(args.use_sub_agents_as_tools) == 2
+    assert args.use_sub_agents_as_tools[0].id == "weather-agent"
+    assert args.use_sub_agents_as_tools[1].id == "search-agent"
+
+
+def test_use_sub_agents_as_tools_invalid_value():
+    with pytest.raises(ValidationError):
+        CallLLMArgs(
+            prompt=[PromptMessageDef(role="system", content='"hello"')],
+            use_sub_agents_as_tools="invalid",
+        )
+
+
+def test_use_sub_agents_as_tools_default_is_false():
+    args = CallLLMArgs(
+        prompt=[PromptMessageDef(role="system", content='"hello"')],
+    )
+    assert args.use_sub_agents_as_tools is False

@@ -180,11 +180,19 @@ def build_call_llm_node(
             elif args.use_tools_from_registry and tool_registry is not None:
                 current_tools = await _resolve_all_registry_tools(tool_registry)
             elif args.use_sub_agents_as_tools and tool_registry is not None:
-                sub_agent_tool_ids: list[str] = _ctx.extra.get("sub_agent_tool_ids", [])
-                if sub_agent_tool_ids:
-                    refs = [RegistryRef(id=tid) for tid in sub_agent_tool_ids]
+                if args.use_sub_agents_as_tools == "all":
+                    sub_agent_tool_ids: list[str] = _ctx.extra.get(
+                        "sub_agent_tool_ids", []
+                    )
+                    if sub_agent_tool_ids:
+                        refs = [RegistryRef(id=tid) for tid in sub_agent_tool_ids]
+                        current_tools = await resolve_tools_for_node_async(
+                            refs, tool_registry
+                        )
+                else:
+                    # list[RegistryRef] — resolve specific sub-agents
                     current_tools = await resolve_tools_for_node_async(
-                        refs, tool_registry
+                        args.use_sub_agents_as_tools, tool_registry
                     )
 
             # Merge explicit tools (additive with any dynamic flag)

@@ -198,7 +198,7 @@ See [Declarative Agents](declarative-agents.md) for the full YAML reference.
 
 ### Agent-as-Tool
 
-Any agent can be wrapped as a LangGraph tool using `agent_to_langgraph_tool()`. This is the foundation for multi-agent orchestration -- a supervisor agent's LLM can invoke sub-agents through standard tool calling. Declarative agents support this natively via the `sub_agents` config and `use_sub_agents_as_tools` flag.
+Any agent can be wrapped as a LangGraph tool using `agent_to_langgraph_tool()`. This is the foundation for multi-agent orchestration -- a supervisor agent's LLM can invoke sub-agents through standard tool calling. Declarative agents support this natively via the `sub_agents` config and `use_sub_agents_as_tools` option (set to `true`/`all` for all sub-agents, or a list of `id`/`version` refs for a specific subset).
 
 See [Multi-Agent](multi-agent.md) for the full guide.
 
