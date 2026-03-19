@@ -22,10 +22,24 @@ from sherma.logging import get_logger
 
 _BARE_VERSION_RE = re.compile(r"^\d+(\.\d+)*$")
 
+# Patterns that match simple ``state.key`` or ``state["key"]`` CEL expressions
+# so we can short-circuit CEL evaluation and preserve LangChain message objects.
+_STATE_DOT_RE = re.compile(r"^state\.(\w+)$")
+_STATE_BRACKET_RE = re.compile(r'^state\["(\w+)"\]$')
+
 INTERNAL_STATE_KEY = "__sherma__"
 """Top-level state key for all sherma-managed internal data."""
 
 logger = get_logger(__name__)
+
+
+def _extract_state_key(expr: str) -> str | None:
+    """Extract the state field name from ``state.key`` or ``state["key"]``.
+
+    Returns the key string if *expr* is a simple state access, else ``None``.
+    """
+    m = _STATE_DOT_RE.match(expr) or _STATE_BRACKET_RE.match(expr)
+    return m.group(1) if m else None
 
 
 def _get_internal(state: dict[str, Any]) -> dict[str, Any]:
@@ -216,10 +230,16 @@ def build_call_llm_node(
             system_parts: list[str] = []
             for item in args.prompt:
                 if item.role == "messages":
-                    # Use raw state value for simple keys to preserve
-                    # LangChain message objects; fall back to CEL eval.
-                    if item.content in state and isinstance(state[item.content], list):
-                        all_messages.extend(state[item.content])
+                    # Use raw state value for simple state.key expressions
+                    # to preserve LangChain message objects; fall back to
+                    # CEL eval for complex expressions.
+                    raw_key = _extract_state_key(item.content)
+                    if (
+                        raw_key is not None
+                        and raw_key in state
+                        and isinstance(state[raw_key], list)
+                    ):
+                        all_messages.extend(state[raw_key])
                     else:
                         all_messages.extend(cel.evaluate(item.content, state))
                 else:

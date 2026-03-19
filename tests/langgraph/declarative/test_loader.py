@@ -86,7 +86,7 @@ agents:
               - role: system
                 content: 'prompts["sys"].instructions'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: get_weather
                 version: "1.0.0"
@@ -96,7 +96,7 @@ agents:
       edges:
         - source: agent
           branches:
-            - condition: 'size(messages) > 0'
+            - condition: 'size(state.messages) > 0'
               target: tools
           default: __end__
         - source: tools
@@ -245,7 +245,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -286,7 +286,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -322,7 +322,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool
       edges: []
@@ -550,7 +550,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_registry: true
         - name: tools
           type: tool_node
@@ -607,7 +607,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_loaded_skills: true
         - name: tools
           type: tool_node
@@ -652,7 +652,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_registry: true
             tools:
               - id: some-tool
@@ -693,7 +693,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_loaded_skills: true
             tools:
               - id: some-tool
@@ -734,7 +734,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_registry: true
             use_tools_from_loaded_skills: true
         - name: tools
@@ -775,7 +775,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             response_format:
               name: UserInfo
               schema:
@@ -823,7 +823,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             response_format:
               name: UserInfo
               schema:
@@ -870,7 +870,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             response_format:
               name: UserInfo
               schema:
@@ -913,7 +913,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_registry: true
       edges: []
 """
@@ -1414,7 +1414,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_sub_agents_as_tools: true
         - name: tools
           type: tool_node
@@ -1463,7 +1463,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_sub_agents_as_tools: all
         - name: tools
           type: tool_node
@@ -1515,7 +1515,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_sub_agents_as_tools:
               - id: weather-agent
                 version: "1.0.0"
@@ -1567,7 +1567,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_sub_agents_as_tools:
               - id: nonexistent-agent
                 version: "1.0.0"

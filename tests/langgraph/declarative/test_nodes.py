@@ -57,7 +57,7 @@ async def test_build_call_llm_node():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
         ),
     )
@@ -90,7 +90,7 @@ async def test_build_call_llm_node_with_tools():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             tools=[RegistryRef(id="my-tool", version="1.0.0")],
         ),
@@ -186,7 +186,7 @@ async def test_build_set_state_node():
     node_def = NodeDef(
         name="setter",
         type="set_state",
-        args=SetStateArgs(values={"count": "x + 1", "label": '"done"'}),
+        args=SetStateArgs(values={"count": "state.x + 1", "label": '"done"'}),
     )
     cel = CelEngine()
     fn = build_set_state_node(_make_ctx(node_def), cel)
@@ -319,7 +319,7 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_loaded_skills=True,
         ),
@@ -377,7 +377,7 @@ async def test_build_call_llm_node_loaded_skills_plus_explicit_tools():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_loaded_skills=True,
             tools=[RegistryRef(id="explicit-tool", version="1.0.0")],
@@ -444,7 +444,7 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills_empty():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_loaded_skills=True,
         ),
@@ -486,7 +486,7 @@ async def test_build_call_llm_node_use_tools_from_registry():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_registry=True,
         ),
@@ -833,7 +833,7 @@ async def test_call_llm_fires_hooks():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
         ),
     )
@@ -870,7 +870,7 @@ async def test_before_llm_call_hook_modifies_prompt():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"Original prompt"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
         ),
     )
@@ -924,7 +924,7 @@ async def test_build_call_llm_node_with_response_format():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"Extract user info"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             response_format=ResponseFormatDef(
                 name="UserInfo",
@@ -976,7 +976,7 @@ async def test_build_call_llm_node_response_format_aimessage_passthrough():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"Extract"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             response_format=ResponseFormatDef(
                 name="Info",
@@ -1011,7 +1011,7 @@ async def test_no_hooks_when_manager_is_none():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
         ),
     )
@@ -1039,7 +1039,7 @@ async def test_array_prompt_with_splice():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
                 PromptMessageDef(role="human", content='"Summarize the above"'),
             ],
         ),
@@ -1148,7 +1148,7 @@ async def test_build_call_llm_node_sub_agents_all():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_sub_agents_as_tools="all",
         ),
@@ -1202,7 +1202,7 @@ async def test_build_call_llm_node_sub_agents_list():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_sub_agents_as_tools=[
                 RegistryRef(id="weather-agent", version="1.0.0"),
@@ -1252,7 +1252,7 @@ async def test_build_call_llm_node_sub_agents_false():
             llm=RegistryRef(id="gpt-4"),
             prompt=[
                 PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="messages"),
+                PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_sub_agents_as_tools=False,
         ),
