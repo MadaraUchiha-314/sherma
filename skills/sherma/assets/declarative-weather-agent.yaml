@@ -1,0 +1,90 @@
+# Declarative Weather Agent
+# Same weather agent as weather_agent, defined entirely in YAML.
+# Tools are imported from Python, LLMs are created automatically.
+# The tool_node and conditional edges are auto-injected.
+
+prompts:
+  - id: weather-system-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful weather assistant.
+      Use the get_weather tool to look up current weather
+      for any city the user asks about.
+      Provide a concise, friendly response.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+tools:
+  - id: get_weather
+    version: "1.0.0"
+    import_path: examples.tools.get_weather
+
+agents:
+  weather-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        - name: query_count
+          type: int
+          default: 0
+        - name: last_status
+          type: str
+          default: ""
+
+    graph:
+      entry_point: init
+
+      nodes:
+        # set_state: initialize tracking fields before the agent runs
+        - name: init
+          type: set_state
+          args:
+            values:
+              query_count: "0"
+              last_status: '"ready"'
+
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt:
+              - role: system
+                content: 'prompts["weather-system-prompt"]["instructions"]'
+              - role: messages
+                content: 'messages'
+            tools:
+              - id: get_weather
+                version: "1.0.0"
+
+        # data_transform: increment query count after each LLM response
+        - name: update_stats
+          type: data_transform
+          args:
+            expression: '{"query_count": query_count + 1, "last_status": "done"}'
+
+        # interrupt: pause and wait for user input.
+        # The last AIMessage from the agent node is sent as the response.
+        - name: ask_next_place
+          type: interrupt
+          args: {}
+
+      edges:
+        - source: init
+          target: agent
+
+        - source: agent
+          target: update_stats
+
+        - source: update_stats
+          target: ask_next_place
+
+        - source: ask_next_place
+          target: agent

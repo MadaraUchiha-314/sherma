@@ -1,0 +1,24 @@
+{
+    "id": "sherma",
+    "version": "1.0.0",
+    "name": "Sherma Agent Builder",
+    "description": "Build LLM-powered agents with sherma — declarative YAML or programmatic Python, with multi-agent orchestration, skills, hooks, and A2A integration.",
+    "base_uri": ".",
+    "files": [
+        "SKILL.md",
+        "references/declarative-agents.md",
+        "references/concepts.md",
+        "references/multi-agent.md",
+        "references/skills.md",
+        "references/hooks.md",
+        "references/a2a-integration.md",
+        "references/api-reference.md",
+        "references/getting-started.md",
+        "assets/declarative-weather-agent.yaml",
+        "assets/programmatic-weather-agent.py",
+        "assets/multi-agent-supervisor.yaml",
+        "assets/skill-agent.yaml"
+    ],
+    "mcps": {},
+    "local_tools": {}
+}

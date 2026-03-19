@@ -7,6 +7,11 @@
 - Plans follow the same naming convention as tasks: `<number>-<kebab-case-description>.md` (e.g., `tasks/plans/0-setup-python-repo.md` is the plan for `tasks/0-setup-python-repo.md`).
 - After the plan is saved, exit plan mode and implement the plan.
 
+## Documenting Iterations
+
+- All iterations of a task done through chat (feedback, course corrections, design changes) must be documented in the task file under a "Chat Iterations" section.
+- All changes to plans (revised decisions, new approaches, dropped ideas) must be documented in the corresponding plan file under a "Plan Revisions" section.
+
 ## Tech Stack
 
 - **Language:** Python 3.13
