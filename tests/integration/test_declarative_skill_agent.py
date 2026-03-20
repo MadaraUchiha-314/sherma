@@ -140,7 +140,8 @@ agents:
         - source: reflect
           branches:
             - condition: >-
-                state.messages[size(state.messages) - 1]["content"].contains("TASK_COMPLETE")
+                state.messages[size(state.messages)
+                - 1]["content"].contains("TASK_COMPLETE")
               target: __end__
           default: summarize
 
