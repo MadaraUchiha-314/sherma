@@ -56,7 +56,7 @@ agents:
               - role: system
                 content: 'prompts["weather-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: get_weather
                 version: "1.0.0"
@@ -117,7 +117,7 @@ agents:
               - role: system
                 content: 'prompts["supervisor-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_sub_agents_as_tools: true
 
       edges:
