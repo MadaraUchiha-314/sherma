@@ -88,7 +88,7 @@ agents:
               - role: system
                 content: 'prompts["discover-skills"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: list_skills
               - id: load_skill_md
@@ -103,7 +103,7 @@ agents:
               - role: system
                 content: 'prompts["plan-and-execute"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_loaded_skills: true
 
         - name: reflect
@@ -116,7 +116,7 @@ agents:
               - role: system
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
 
         - name: summarize
           type: call_llm
@@ -128,7 +128,7 @@ agents:
               - role: system
                 content: 'prompts["summarize"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
 
       edges:
         - source: discover_skills
@@ -140,7 +140,8 @@ agents:
         - source: reflect
           branches:
             - condition: >-
-                messages[size(messages) - 1]["content"].contains("TASK_COMPLETE")
+                state.messages[size(state.messages)
+                - 1]["content"].contains("TASK_COMPLETE")
               target: __end__
           default: summarize
 

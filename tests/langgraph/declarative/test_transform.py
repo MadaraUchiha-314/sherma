@@ -48,7 +48,7 @@ class TestInjectToolNodesExplicitTools:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool""",
             """\
@@ -101,7 +101,7 @@ class TestInjectToolNodesRegistryTools:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_registry: true""",
             """\
 edges:
@@ -130,7 +130,7 @@ class TestInjectToolNodesLoadedSkills:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_loaded_skills: true""",
             """\
 edges:
@@ -159,7 +159,7 @@ class TestBackwardCompat:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool
         - name: my_tools
@@ -196,7 +196,7 @@ edges:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool
         - name: other
@@ -208,7 +208,7 @@ edges:
 edges:
         - source: agent
           branches:
-            - condition: 'size(messages) > 5'
+            - condition: 'size(state.messages) > 5'
               target: other
           default: __end__""",
         )
@@ -234,7 +234,7 @@ class TestNoTools:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'""",
+                content: 'state.messages'""",
             """\
 edges:
         - source: agent
@@ -278,7 +278,7 @@ agents:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: tool-a
         - name: second
@@ -289,7 +289,7 @@ agents:
               - role: system
                 content: '"world"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: tool-b
       edges:
@@ -333,7 +333,7 @@ class TestNameCollision:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool
         - name: agent_tools
@@ -368,7 +368,7 @@ class TestNoOutgoingEdge:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool""",
         )
@@ -396,7 +396,7 @@ class TestEdgeTargetPreserved:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool
         - name: next_step
@@ -441,7 +441,7 @@ class TestOriginalConfigUnmodified:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: some-tool""",
             """\

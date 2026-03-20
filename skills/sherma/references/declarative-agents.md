@@ -1,12 +1,13 @@
 # Declarative Agents
 
-Declarative agents let you define an entire LangGraph agent in a single YAML file -- the graph topology, prompts, LLMs, tools, skills, and routing logic. Dynamic behavior is expressed with [CEL (Common Expression Language)](https://cel.dev/) expressions evaluated against the agent's state at runtime.
+Declarative agents let you define an entire LangGraph agent in a single YAML file -- the graph topology, prompts, LLMs, tools, skills, and routing logic. Dynamic behavior is expressed with [CEL (Common Expression Language)](https://cel.dev/) expressions evaluated at runtime. State fields are accessed via the `state` prefix (e.g., `state.messages`, `state["counter"]`).
 
 ## YAML Structure
 
 A declarative agent YAML has these top-level sections:
 
 ```yaml
+manifest_version: 1   # Required: schema version (currently 1)
 prompts:      # Prompt definitions
 llms:         # LLM declarations
 tools:        # Tool imports
@@ -16,6 +17,16 @@ hooks:        # Hook executor imports
 checkpointer: # Checkpointer configuration (for state persistence)
 default_llm:  # Default LLM for call_llm nodes (optional)
 agents:       # Agent graph definitions
+```
+
+### Manifest Version
+
+Every declarative agent YAML **must** include a `manifest_version` field as a top-level integer. This tracks the version of the declarative agent schema that the YAML uses, allowing a single `DeclarativeAgent` runtime to handle `agent.yaml` files with varying manifest versions simultaneously.
+
+The current manifest version is **1**. Increment it when breaking changes are made to the schema.
+
+```yaml
+manifest_version: 1
 ```
 
 All entity registrations and the graph definition live in one file, giving you a complete snapshot of the agent.
@@ -136,6 +147,8 @@ When a checkpointer is active, all graph invocations require a `thread_id` in th
 When multiple `call_llm` nodes use the same LLM, you can set a top-level `default_llm` instead of repeating the `llm` field on every node:
 
 ```yaml
+manifest_version: 1
+
 default_llm:
   id: openai-gpt-4o-mini
 
@@ -163,7 +176,7 @@ agents:
               - role: system
                 content: '"You are helpful."'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 ```
 
@@ -204,7 +217,7 @@ The `state` section defines the agent's state shape. Supported types: `str`, `in
 
 If a field named `messages` is present (type `list`), sherma uses LangGraph's `MessagesState` as the base class, which provides the standard message accumulation behavior.
 
-State fields are available in all CEL expressions.
+State fields are accessed in CEL expressions via the `state` prefix: `state.messages`, `state["counter"]`, etc.
 
 ## Node Types
 
@@ -223,7 +236,7 @@ Calls an LLM with a prompt and optional tool bindings. The `llm` field can be om
       - role: system
         content: 'prompts["my-prompt"]["instructions"]'
       - role: messages
-        content: 'messages'
+        content: 'state.messages'
     tools:                          # Optional: bind specific tools
       - id: get_weather
         version: "1.0.0"
@@ -254,14 +267,14 @@ prompt:
   - role: system
     content: 'prompts["my-prompt"]["instructions"]'
   - role: messages
-    content: 'messages'
+    content: 'state.messages'
 
 # Advanced: inject history in the middle, add a trailing instruction
 prompt:
   - role: system
     content: 'prompts["sys"]["instructions"]'
   - role: messages
-    content: 'messages'
+    content: 'state.messages'
   - role: human
     content: '"Now summarize the above conversation"'
 
@@ -274,7 +287,7 @@ prompt:
   - role: ai
     content: '"positive"'
   - role: messages
-    content: 'messages'
+    content: 'state.messages'
 ```
 
 **Tool binding modes:**
@@ -319,7 +332,7 @@ Invokes another registered agent:
     agent:
       id: sub-agent
       version: "1.0.0"
-    input: 'messages[size(messages) - 1]'  # CEL expression for input
+    input: 'state.messages[size(state.messages) - 1]'  # CEL expression for input
 ```
 
 The agent can be local or remote. The input is evaluated as a CEL expression against state, sent as an A2A message, and the response is added to `messages`.
@@ -332,7 +345,7 @@ Transforms state using a CEL expression that returns a dict:
 - name: update_stats
   type: data_transform
   args:
-    expression: '{"query_count": query_count + 1, "status": "done"}'
+    expression: '{"query_count": state.query_count + 1, "status": "done"}'
 ```
 
 The returned dict is merged into the state. Only include the keys you want to update.
@@ -406,9 +419,9 @@ Use CEL expressions for dynamic routing:
 edges:
   - source: reflect
     branches:
-      - condition: 'messages[size(messages) - 1].contains("TASK_COMPLETE")'
+      - condition: 'state.messages[size(state.messages) - 1].contains("TASK_COMPLETE")'
         target: __end__
-      - condition: 'retry_count < 3'
+      - condition: 'state.retry_count < 3'
         target: retry
     default: summarize    # Fallback if no branch matches
 ```
@@ -419,9 +432,11 @@ Branches are evaluated in order. The first matching condition determines the tar
 
 [CEL](https://cel.dev/) is used throughout the YAML for dynamic behavior. Expressions have access to:
 
-- **State variables**: All fields in the state schema (`messages`, `counter`, etc.)
+- **State variables**: Accessed via `state.field` or `state["field"]` (e.g., `state.messages`, `state["counter"]`)
 - **Prompts**: `prompts["prompt-id"]["instructions"]`
 - **LLMs**: `llms["llm-id"]["model_name"]`
+
+State fields are always accessed through the `state` prefix. Extra variables like `prompts` and `llms` remain at the top level.
 
 CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing), map construction, comparisons, and boolean logic.
 
@@ -431,15 +446,15 @@ CEL can also handle Pydantic models, dataclasses, and any object with `__dict__`
 
 ```yaml
 # Access last message content
-'messages[size(messages) - 1]'
+'state.messages[size(state.messages) - 1]'
 
 # Build a dict for state transformation
-'{"count": count + 1, "status": "done"}'
+'{"count": state.count + 1, "status": "done"}'
 
 # Conditional check
-'messages[size(messages) - 1].contains("COMPLETE")'
+'state.messages[size(state.messages) - 1].contains("COMPLETE")'
 
-# Reference a registered prompt
+# Reference a registered prompt (top-level, no state prefix)
 'prompts["my-prompt"]["instructions"]'
 
 # String literal (note inner quotes)
@@ -537,6 +552,8 @@ sub_agents:
 A skill-aware agent that discovers skills, executes tasks, and reflects on results. Note the use of `default_llm` to avoid repeating the LLM reference on every node:
 
 ```yaml
+manifest_version: 1
+
 prompts:
   - id: discover-skills
     version: "1.0.0"
@@ -590,7 +607,7 @@ agents:
               - role: system
                 content: 'prompts["discover-skills"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: list_skills
               - id: load_skill_md
@@ -602,7 +619,7 @@ agents:
               - role: system
                 content: 'prompts["plan-and-execute"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_loaded_skills: true
 
         - name: reflect
@@ -612,7 +629,7 @@ agents:
               - role: system
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
 
       edges:
         - source: discover_skills
@@ -623,7 +640,7 @@ agents:
 
         - source: reflect
           branches:
-            - condition: 'messages[size(messages) - 1].contains("TASK_COMPLETE")'
+            - condition: 'state.messages[size(state.messages) - 1].contains("TASK_COMPLETE")'
               target: __end__
           default: execute
 ```

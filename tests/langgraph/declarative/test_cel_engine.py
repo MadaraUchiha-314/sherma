@@ -16,37 +16,37 @@ def test_evaluate_simple_string():
 
 def test_evaluate_arithmetic():
     cel = CelEngine()
-    result = cel.evaluate("x + y", {"x": 10, "y": 20})
+    result = cel.evaluate("state.x + state.y", {"x": 10, "y": 20})
     assert result == 30
 
 
 def test_evaluate_string_concat():
     cel = CelEngine()
-    result = cel.evaluate('name + " world"', {"name": "hello"})
+    result = cel.evaluate('state.name + " world"', {"name": "hello"})
     assert result == "hello world"
 
 
 def test_evaluate_list_access():
     cel = CelEngine()
-    result = cel.evaluate("items[0]", {"items": ["first", "second"]})
+    result = cel.evaluate("state.items[0]", {"items": ["first", "second"]})
     assert result == "first"
 
 
 def test_evaluate_map_access():
     cel = CelEngine()
-    result = cel.evaluate('data["key"]', {"data": {"key": "value"}})
+    result = cel.evaluate('state.data["key"]', {"data": {"key": "value"}})
     assert result == "value"
 
 
 def test_evaluate_bool_true():
     cel = CelEngine()
-    result = cel.evaluate_bool("x > 5", {"x": 10})
+    result = cel.evaluate_bool("state.x > 5", {"x": 10})
     assert result is True
 
 
 def test_evaluate_bool_false():
     cel = CelEngine()
-    result = cel.evaluate_bool("x > 5", {"x": 3})
+    result = cel.evaluate_bool("state.x > 5", {"x": 3})
     assert result is False
 
 
@@ -66,7 +66,7 @@ def test_evaluate_with_extra_vars():
 def test_evaluate_nested_map():
     cel = CelEngine()
     result = cel.evaluate(
-        'config["nested"]["value"]',
+        'state.config["nested"]["value"]',
         {"config": {"nested": {"value": "deep"}}},
     )
     assert result == "deep"
@@ -74,13 +74,13 @@ def test_evaluate_nested_map():
 
 def test_evaluate_size():
     cel = CelEngine()
-    result = cel.evaluate_bool("size(items) > 0", {"items": ["a"]})
+    result = cel.evaluate_bool("size(state.items) > 0", {"items": ["a"]})
     assert result is True
 
 
 def test_evaluate_size_empty():
     cel = CelEngine()
-    result = cel.evaluate_bool("size(items) == 0", {"items": []})
+    result = cel.evaluate_bool("size(state.items) == 0", {"items": []})
     assert result is True
 
 
@@ -108,7 +108,7 @@ def test_evaluate_message_content_field():
 
     cel = CelEngine()
     messages = [AIMessage(content="TASK_COMPLETE: done")]
-    result = cel.evaluate('messages[0]["content"]', {"messages": messages})
+    result = cel.evaluate('state.messages[0]["content"]', {"messages": messages})
     assert result == "TASK_COMPLETE: done"
 
 
@@ -117,7 +117,7 @@ def test_evaluate_message_type_field():
     from langchain_core.messages import HumanMessage
 
     cel = CelEngine()
-    result = cel.evaluate('msg["type"]', {"msg": HumanMessage(content="hi")})
+    result = cel.evaluate('state.msg["type"]', {"msg": HumanMessage(content="hi")})
     assert result == "human"
 
 
@@ -128,7 +128,8 @@ def test_evaluate_message_content_contains():
     cel = CelEngine()
     messages = [AIMessage(content="TASK_COMPLETE: all done")]
     result = cel.evaluate_bool(
-        'messages[0]["content"].contains("TASK_COMPLETE")', {"messages": messages}
+        'state.messages[0]["content"].contains("TASK_COMPLETE")',
+        {"messages": messages},
     )
     assert result is True
 
@@ -139,7 +140,7 @@ def test_evaluate_message_tool_calls():
 
     cel = CelEngine()
     msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "foo", "args": {}}])
-    result = cel.evaluate('size(msg["tool_calls"])', {"msg": msg})
+    result = cel.evaluate('size(state.msg["tool_calls"])', {"msg": msg})
     assert result == 1
 
 
@@ -149,7 +150,7 @@ def test_evaluate_message_no_tool_calls_key():
 
     cel = CelEngine()
     result = cel.evaluate_bool(
-        "!has(msg.tool_calls)", {"msg": HumanMessage(content="hi")}
+        "!has(state.msg.tool_calls)", {"msg": HumanMessage(content="hi")}
     )
     assert result is True
 
@@ -160,7 +161,7 @@ def test_evaluate_ai_message_empty_tool_calls():
 
     cel = CelEngine()
     result = cel.evaluate(
-        'size(msg["tool_calls"])', {"msg": AIMessage(content="hello")}
+        'size(state.msg["tool_calls"])', {"msg": AIMessage(content="hello")}
     )
     assert result == 0
 
@@ -175,7 +176,7 @@ def test_evaluate_dataclass_as_map():
         y: int
 
     cel = CelEngine()
-    result = cel.evaluate('p["x"] + p["y"]', {"p": Point(x=3, y=7)})
+    result = cel.evaluate('state.p["x"] + state.p["y"]', {"p": Point(x=3, y=7)})
     assert result == 10
 
 
@@ -188,5 +189,12 @@ def test_evaluate_plain_object_as_map():
             self.enabled = True
 
     cel = CelEngine()
-    result = cel.evaluate('cfg["name"]', {"cfg": Config()})
+    result = cel.evaluate('state.cfg["name"]', {"cfg": Config()})
     assert result == "test"
+
+
+def test_evaluate_state_bracket_access():
+    """State fields can be accessed via state["key"] syntax."""
+    cel = CelEngine()
+    result = cel.evaluate('state["x"] + state["y"]', {"x": 10, "y": 20})
+    assert result == 30

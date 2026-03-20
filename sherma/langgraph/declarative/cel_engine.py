@@ -92,10 +92,14 @@ class CelEngine:
         self._extra_vars = extra_vars or {}
 
     def _build_activation(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Build a CEL activation from state and extra variables."""
+        """Build a CEL activation from state and extra variables.
+
+        State fields are nested under a ``state`` key so that CEL
+        expressions access them via ``state.field`` or ``state["field"]``.
+        Extra variables (prompts, llms, …) remain at the top level.
+        """
         activation: dict[str, Any] = {}
-        for key, value in state.items():
-            activation[key] = _python_to_cel(value)
+        activation["state"] = _python_to_cel(state)
         for key, value in self._extra_vars.items():
             activation[key] = _python_to_cel(value)
         return activation

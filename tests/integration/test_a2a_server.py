@@ -52,7 +52,7 @@ agents:
               - role: system
                 content: 'prompts["sys"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges:
         - source: agent
           target: __end__

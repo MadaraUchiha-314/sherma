@@ -62,7 +62,7 @@ agents:
         - name: transform
           type: data_transform
           args:
-            expression: '{"count": count + 1}'
+            expression: '{"count": state.count + 1}'
       edges: []
 """
 
@@ -140,7 +140,7 @@ agents:
               - role: system
                 content: 'prompts["sys"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 """
     mock_model = AsyncMock()
@@ -200,7 +200,7 @@ agents:
       edges:
         - source: check
           branches:
-            - condition: "x > 10"
+            - condition: "state.x > 10"
               target: high
           default: low
 """
@@ -413,7 +413,7 @@ agents:
               - role: system
                 content: 'prompts["sys"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 """
 
@@ -450,7 +450,7 @@ agents:
               id: override-llm
             prompt:
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 """
 
@@ -472,7 +472,7 @@ agents:
           args:
             prompt:
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges: []
 """
 
@@ -573,13 +573,13 @@ agents:
           args:
             prompt:
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
         - name: node_b
           type: call_llm
           args:
             prompt:
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
       edges:
         - source: node_a
           target: node_b

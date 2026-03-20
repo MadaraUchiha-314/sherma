@@ -78,9 +78,9 @@ edges:
 edges:
   - source: reflect
     branches:
-      - condition: 'messages[size(messages) - 1]["content"].contains("DONE")'
+      - condition: 'state.messages[size(state.messages) - 1]["content"].contains("DONE")'
         target: __end__
-      - condition: 'retry_count < 3'
+      - condition: 'state.retry_count < 3'
         target: retry
     default: fallback_node  # If no branch matches
 ```
@@ -92,7 +92,7 @@ prompt:
   - role: system              # CEL → string → SystemMessage
     content: 'prompts["my-prompt"]["instructions"]'
   - role: messages            # CEL → list → spliced in place (preserves original roles)
-    content: 'messages'
+    content: 'state.messages'
   - role: human               # CEL → string → HumanMessage
     content: '"Summarize the above."'
 ```
@@ -186,7 +186,7 @@ agents:
               - role: system
                 content: 'prompts["system-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
 
       edges:
         - source: agent
@@ -234,7 +234,7 @@ agents:
               - role: system
                 content: 'prompts["system-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: my_tool
                 version: "1.0.0"
@@ -285,7 +285,7 @@ agents:
               - role: system
                 content: 'prompts["supervisor-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_sub_agents_as_tools: true
 
       edges:
@@ -347,7 +347,7 @@ agents:
               - role: system
                 content: 'prompts["discover-skills"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: list_skills
               - id: load_skill_md
@@ -360,7 +360,7 @@ agents:
               - role: system
                 content: 'prompts["plan-and-execute"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             use_tools_from_loaded_skills: true
 
         - name: reflect
@@ -371,7 +371,7 @@ agents:
               - role: system
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
 
       edges:
         - source: discover_skills
@@ -380,7 +380,7 @@ agents:
           target: reflect
         - source: reflect
           branches:
-            - condition: 'messages[size(messages) - 1]["content"].contains("TASK_COMPLETE")'
+            - condition: 'state.messages[size(state.messages) - 1]["content"].contains("TASK_COMPLETE")'
               target: __end__
           default: execute
 ```
@@ -425,7 +425,7 @@ agents:
               - role: system
                 content: 'prompts["system-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
 
       edges:
         - source: agent
@@ -525,10 +525,10 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 ```yaml
 # Access last message content
-'messages[size(messages) - 1]'
+'state.messages[size(state.messages) - 1]'
 
 # Access last message's content field (for AIMessage objects)
-'messages[size(messages) - 1]["content"]'
+'state.messages[size(state.messages) - 1]["content"]'
 
 # String literal (MUST use inner quotes)
 '"hello world"'
@@ -537,26 +537,27 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 '42'
 
 # Build a dict for data_transform
-'{"count": count + 1, "status": "done"}'
+'{"count": state.count + 1, "status": "done"}'
 
 # Conditional check
-'messages[size(messages) - 1]["content"].contains("COMPLETE")'
+'state.messages[size(state.messages) - 1]["content"].contains("COMPLETE")'
 
-# Reference a registered prompt
+# Reference a registered prompt (top-level, no state prefix)
 'prompts["my-prompt"]["instructions"]'
 
 # String concatenation
-'"Hello, " + user_name'
+'"Hello, " + state.user_name'
 
 # List size
-'size(messages)'
+'size(state.messages)'
 
 # Boolean check
-'retry_count < 3 && status != "failed"'
+'state.retry_count < 3 && state.status != "failed"'
 ```
 
 ### Gotchas
 
+- **State access requires `state.` prefix**: Use `state.messages`, `state["counter"]` — not bare `messages` or `counter`. Extra vars like `prompts` and `llms` are top-level.
 - **String literals need inner quotes**: `'"hello"'` not `'hello'`. Without inner quotes, CEL treats it as a variable name.
 - **`size()` not `len()`**: CEL uses `size()` for list/string length.
 - **Map syntax**: `{"key": value}` — keys must be strings in double quotes.

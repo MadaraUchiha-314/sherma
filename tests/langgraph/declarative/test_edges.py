@@ -13,8 +13,8 @@ def test_conditional_router_first_match():
     edge = EdgeDef(
         source="agent",
         branches=[
-            BranchDef(condition="x > 10", target="high"),
-            BranchDef(condition="x > 5", target="medium"),
+            BranchDef(condition="state.x > 10", target="high"),
+            BranchDef(condition="state.x > 5", target="medium"),
         ],
         default="low",
     )
@@ -29,8 +29,8 @@ def test_conditional_router_second_match():
     edge = EdgeDef(
         source="agent",
         branches=[
-            BranchDef(condition="x > 10", target="high"),
-            BranchDef(condition="x > 5", target="medium"),
+            BranchDef(condition="state.x > 10", target="high"),
+            BranchDef(condition="state.x > 5", target="medium"),
         ],
         default="low",
     )
@@ -45,7 +45,7 @@ def test_conditional_router_default():
     edge = EdgeDef(
         source="agent",
         branches=[
-            BranchDef(condition="x > 10", target="high"),
+            BranchDef(condition="state.x > 10", target="high"),
         ],
         default="low",
     )
@@ -60,7 +60,7 @@ def test_conditional_router_default_end():
     edge = EdgeDef(
         source="agent",
         branches=[
-            BranchDef(condition="x > 10", target="high"),
+            BranchDef(condition="state.x > 10", target="high"),
         ],
         default="__end__",
     )

@@ -64,7 +64,7 @@ agents:
               - role: system
                 content: 'prompts["weather-system-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: get_weather
                 version: "1.0.0"

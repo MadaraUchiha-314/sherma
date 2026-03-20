@@ -69,7 +69,7 @@ agents:
               - role: system
                 content: 'prompts["weather-system-prompt"]["instructions"]'
               - role: messages
-                content: 'messages'
+                content: 'state.messages'
             tools:
               - id: get_weather
                 version: "1.0.0"
@@ -77,7 +77,7 @@ agents:
         - name: update_stats
           type: data_transform
           args:
-            expression: '{"query_count": query_count + 1, "last_status": "done"}'
+            expression: '{"query_count": state.query_count + 1, "last_status": "done"}'
 
         - name: ask_next_place
           type: interrupt
