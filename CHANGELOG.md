@@ -1,3 +1,9 @@
+## v0.13.2 (2026-03-23)
+
+### Fix
+
+- add explicit extensions field to skill cards (#31)
+
 ## v0.13.1 (2026-03-22)
 
 ### Fix
