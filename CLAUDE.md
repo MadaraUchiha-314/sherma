@@ -12,6 +12,12 @@
 - All iterations of a task done through chat (feedback, course corrections, design changes) must be documented in the task file under a "Chat Iterations" section.
 - All changes to plans (revised decisions, new approaches, dropped ideas) must be documented in the corresponding plan file under a "Plan Revisions" section.
 
+## Pull Requests
+
+- PR titles must use conventional commit format (e.g., `feat: add weather skill`, `fix: correct JSON parsing`, `ci: update devcontainer`).
+- When follow-up commits are pushed to a branch that already has an open PR, the PR description must be updated to reflect the latest state of the changes.
+- Use `gh pr edit` to update the PR title and body after pushing additional commits.
+
 ## Docs and Skills
 
 - Documentation (`docs/`) and the skill (`skills/sherma/`) must be updated together. Any task that changes agent behavior, YAML schema, API surface, hooks, or any user-facing feature must include updates to both `docs/` and `skills/sherma/references/` (which are copies of docs) as part of task completion.

@@ -8,6 +8,7 @@ from sherma.entities import (
     Prompt,
     Skill,
     SkillCard,
+    SkillExtension,
     SkillFrontMatter,
     Tool,
 )
@@ -97,6 +98,7 @@ __all__ = [
     "ShermaError",
     "Skill",
     "SkillCard",
+    "SkillExtension",
     "SkillFrontMatter",
     "SkillRegistry",
     "TenantRegistryManager",

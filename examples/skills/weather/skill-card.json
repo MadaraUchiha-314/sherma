@@ -16,5 +16,11 @@
             "version": "1.0.0",
             "import_path": "examples.tools.get_weather"
         }
-    }
+    },
+    "extensions": [
+        {
+            "uri": "urn:skill:tools:local",
+            "description": "Python tool references loaded via import_path"
+        }
+    ]
 }
