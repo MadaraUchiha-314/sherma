@@ -73,7 +73,19 @@ class SkillCard(EntityBase):
     files: list[str] = []
     mcps: dict[str, MCPServerDef] = {}
     local_tools: dict[str, LocalToolDef] = {}
-    extensions: dict[str, Any] = {}
+    extensions: list[SkillExtension] = []
+```
+
+### `SkillExtension`
+
+Modeled after the [A2A AgentExtension](https://a2a-protocol.org/latest/specification/#444-agentextension).
+
+```python
+class SkillExtension(BaseModel):
+    uri: str
+    description: str | None = None
+    required: bool = False
+    params: dict[str, Any] | None = None
 ```
 
 ### `MCPServerDef`

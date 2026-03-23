@@ -36,9 +36,12 @@ A **skill card** (`skill-card.json`) is the discovery manifest for a skill, anal
             "import_path": "my_tools.get_weather"
         }
     },
-    "extensions": {
-        "local_tools": true
-    }
+    "extensions": [
+        {
+            "uri": "urn:skill:local_tools",
+            "description": "Python tool references loaded via import_path"
+        }
+    ]
 }
 ```
 
@@ -50,7 +53,7 @@ A **skill card** (`skill-card.json`) is the discovery manifest for a skill, anal
 | `files` | List of files accessible under `base_uri` |
 | `mcps` | MCP server definitions for remote tool execution |
 | `local_tools` | Python tool references loaded via `import_path` |
-| `extensions` | Declares which skill extensions this card uses (e.g. `local_tools`, `mcps`) |
+| `extensions` | Array of extension declarations (see [A2A AgentExtension](https://a2a-protocol.org/latest/specification/#444-agentextension)). Each entry has a `uri` (required), `description`, `required`, and `params` |
 
 ## SKILL.md
 
