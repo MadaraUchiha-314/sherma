@@ -19,7 +19,7 @@
     },
     "extensions": [
         {
-            "uri": "urn:skill:local_tools",
+            "uri": "urn:skill:tools:local",
             "description": "Python tool references loaded via import_path"
         }
     ]

@@ -52,11 +52,11 @@ def test_skill_card_full():
         },
         extensions=[
             SkillExtension(
-                uri="urn:skill:local_tools",
+                uri="urn:skill:tools:local",
                 description="Python tool references",
             ),
             SkillExtension(
-                uri="urn:skill:mcps",
+                uri="urn:skill:tools:mcp",
                 description="MCP server definitions",
                 required=True,
                 params={"transport": "streamable-http"},
@@ -69,7 +69,7 @@ def test_skill_card_full():
     assert "my-tool" in card.local_tools
     assert card.local_tools["my-tool"].import_path == "my_module.tools.my_tool"
     assert len(card.extensions) == 2
-    assert card.extensions[0].uri == "urn:skill:local_tools"
+    assert card.extensions[0].uri == "urn:skill:tools:local"
     assert card.extensions[1].required is True
     assert card.extensions[1].params == {"transport": "streamable-http"}
 
@@ -106,8 +106,8 @@ def test_local_tool_def_missing_required():
 
 
 def test_skill_extension_minimal():
-    ext = SkillExtension(uri="urn:skill:local_tools")
-    assert ext.uri == "urn:skill:local_tools"
+    ext = SkillExtension(uri="urn:skill:tools:local")
+    assert ext.uri == "urn:skill:tools:local"
     assert ext.description is None
     assert ext.required is False
     assert ext.params is None
@@ -115,12 +115,12 @@ def test_skill_extension_minimal():
 
 def test_skill_extension_full():
     ext = SkillExtension(
-        uri="urn:skill:mcps",
+        uri="urn:skill:tools:mcp",
         description="MCP server definitions",
         required=True,
         params={"transport": "streamable-http"},
     )
-    assert ext.uri == "urn:skill:mcps"
+    assert ext.uri == "urn:skill:tools:mcp"
     assert ext.description == "MCP server definitions"
     assert ext.required is True
     assert ext.params == {"transport": "streamable-http"}

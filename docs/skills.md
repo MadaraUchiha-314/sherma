@@ -38,7 +38,7 @@ A **skill card** (`skill-card.json`) is the discovery manifest for a skill, anal
     },
     "extensions": [
         {
-            "uri": "urn:skill:local_tools",
+            "uri": "urn:skill:tools:local",
             "description": "Python tool references loaded via import_path"
         }
     ]
