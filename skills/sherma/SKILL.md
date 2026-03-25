@@ -555,6 +555,34 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 'state.retry_count < 3 && state.status != "failed"'
 ```
 
+### Custom functions
+
+```yaml
+# JSON: parse structured data from strings
+'json(state.response)["status"]'                              # parse JSON, access field
+'json(state.messages[0]["content"])["action"]'                 # parse message content as JSON
+'jsonValid(state.data)'                                        # check if string is valid JSON
+'jsonValid(state.data) && json(state.data)["ok"] == true'      # guard + parse
+
+# Safe access: fallback on errors
+'default(json(state.response)["action"], "continue")'          # fallback if parse/key fails
+'default(state.missing_field, 0)'                              # fallback for missing state
+
+# String extensions (cel-go compatible)
+'state.tags.split(",")'                                        # split → list
+'"  hello  ".trim()'                                           # strip whitespace
+'"HELLO".lowerAscii()'                                         # lowercase
+'"hello".upperAscii()'                                         # uppercase
+'"hello world".replace("world", "CEL")'                        # replace substrings
+'"hello".indexOf("ll")'                                        # find index (or -1)
+'["a", "b", "c"].join(", ")'                                   # join list → string
+'"hello world".substring(0, 5)'                                # extract substring
+
+# Combining functions
+'json(state.data.trim())["name"].lowerAscii()'                 # trim → parse → lowercase
+'state.tags.split(",").join(" | ")'                            # split → rejoin
+```
+
 ### Gotchas
 
 - **State access requires `state.` prefix**: Use `state.messages`, `state["counter"]` — not bare `messages` or `counter`. Extra vars like `prompts` and `llms` are top-level.
@@ -563,6 +591,7 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 - **Map syntax**: `{"key": value}` — keys must be strings in double quotes.
 - **No f-strings**: Use `+` for concatenation: `'"Count: " + string(count)'`
 - **YAML quoting**: Always single-quote the outer CEL expression to avoid YAML parsing issues.
+- **`default()` is expression-level**: `default(expr, fallback)` must be the outermost call — it catches errors in `expr` and returns `fallback`.
 
 ## Common Gotchas
 

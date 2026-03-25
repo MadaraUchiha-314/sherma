@@ -442,6 +442,75 @@ CEL supports standard operations: arithmetic, string manipulation, list operatio
 
 CEL can also handle Pydantic models, dataclasses, and any object with `__dict__` -- these are automatically converted to CEL maps, so you can access their fields with standard map syntax (e.g., `obj.field` or `obj["field"]`).
 
+### Custom Functions
+
+In addition to standard CEL built-ins, sherma provides custom functions inspired by [agentgateway's CEL extensions](https://agentgateway.dev/docs/standalone/latest/reference/cel/).
+
+#### JSON Functions
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `json(string)` | Parse a JSON string into a CEL map or list | `json(state.content)["status"]` |
+| `jsonValid(string)` | Check whether a string is valid JSON | `jsonValid(state.data)` |
+
+```yaml
+# Parse JSON from message content and access a field
+'json(state.messages[size(state.messages) - 1]["content"])["action"]'
+
+# Guard: only route if content is valid JSON with the right field
+'jsonValid(state.response) && json(state.response)["status"] == "complete"'
+
+# Parse a JSON array
+'json(state.items_json)[0]'
+```
+
+#### Safe Access
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `default(expr, fallback)` | Return *fallback* if *expr* errors | `default(json(state.data)["key"], "none")` |
+
+`default()` catches evaluation errors in the first argument (missing keys, invalid JSON, etc.) and returns the fallback value instead. This is especially useful with `json()` for resilient routing:
+
+```yaml
+# Extract action from JSON response, fall back to "continue"
+'default(json(state.response)["action"], "continue")'
+
+# Safe nested access
+'default(json(state.body)["result"]["confidence"], 0.0)'
+
+# Safe state access
+'default(state.retry_count, 0)'
+```
+
+#### String Extensions
+
+Aligned with the [cel-go strings extension](https://pkg.go.dev/github.com/google/cel-go/ext#Strings):
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `split(string, separator)` | Split string into a list | `"a,b,c".split(",")` |
+| `trim(string)` | Strip leading/trailing whitespace | `state.input.trim()` |
+| `lowerAscii(string)` | Convert to lowercase | `state.name.lowerAscii()` |
+| `upperAscii(string)` | Convert to uppercase | `state.name.upperAscii()` |
+| `replace(string, old, new)` | Replace all occurrences | `state.text.replace("old", "new")` |
+| `indexOf(string, substr)` | Index of first occurrence (-1 if not found) | `state.text.indexOf("needle")` |
+| `join(list, separator)` | Join list elements into a string | `state.items.join(", ")` |
+| `substring(string, start, end)` | Extract substring (start inclusive, end exclusive) | `state.text.substring(0, 10)` |
+
+```yaml
+# Split tags and rejoin with different separator
+'state.tags.split(",").join(" | ")'
+
+# Trim and lowercase for normalization
+'state.input.trim().lowerAscii()'
+
+# Combine JSON parsing with string functions
+'json(state.data.trim())["name"].lowerAscii()'
+```
+
+All custom functions can be called both as functions (`json(x)`) and as methods (`x.json()`).
+
 ### Examples
 
 ```yaml
