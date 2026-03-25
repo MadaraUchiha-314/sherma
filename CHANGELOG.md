@@ -1,3 +1,9 @@
+## v0.14.0 (2026-03-25)
+
+### Feat
+
+- add custom CEL functions for JSON parsing, safe access, and string manipulation (#35)
+
 ## v0.13.3 (2026-03-25)
 
 ### Fix

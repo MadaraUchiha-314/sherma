@@ -52,7 +52,7 @@ markers = ["integration: marks tests as integration tests"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.13.3"
+version = "0.14.0"
 tag_format = "v$version"
 version_files = ["sherma/__init__.py:__version__"]
 update_changelog_on_bump = true
