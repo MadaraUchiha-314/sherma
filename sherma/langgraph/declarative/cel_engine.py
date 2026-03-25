@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import celpy
 from celpy import celtypes
 
 from sherma.exceptions import CelEvaluationError
+from sherma.langgraph.declarative.cel_functions import CUSTOM_FUNCTIONS
 
 # Concrete CEL types for isinstance checks
 _CEL_CONCRETE_TYPES = (
@@ -22,6 +24,9 @@ _CEL_CONCRETE_TYPES = (
     celtypes.TimestampType,
     celtypes.DurationType,
 )
+
+# Pattern to detect top-level ``default(expr, fallback)`` calls.
+_DEFAULT_RE = re.compile(r"^default\(", re.ASCII)
 
 
 def _object_to_dict(value: Any) -> dict[str, Any] | None:
@@ -84,6 +89,42 @@ def _cel_to_python(value: Any) -> Any:
     return value
 
 
+def _split_default_args(expression: str) -> tuple[str, str]:
+    """Split a ``default(expr, fallback)`` call into its two argument strings.
+
+    Handles nested parentheses, brackets, braces, and quoted strings so that
+    commas inside sub-expressions are not treated as the argument separator.
+    """
+    # Strip the leading ``default(`` and trailing ``)``
+    inner = expression[len("default(") : -1]
+
+    depth = 0
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if ch == "\\" and (in_single or in_double):
+            i += 2  # skip escaped character
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif not in_single and not in_double:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                return inner[:i].strip(), inner[i + 1 :].strip()
+        i += 1
+
+    raise CelEvaluationError(
+        f"CEL parse error for '{expression}': default() requires exactly two arguments"
+    )
+
+
 class CelEngine:
     """Wraps cel-python to evaluate CEL expressions against agent state."""
 
@@ -104,14 +145,23 @@ class CelEngine:
             activation[key] = _python_to_cel(value)
         return activation
 
+    def _evaluate_raw(self, expression: str, state: dict[str, Any]) -> Any:
+        """Compile, run, and return the raw CEL result (no Python conversion)."""
+        ast = self._env.compile(expression)
+        prog = self._env.program(ast, functions=CUSTOM_FUNCTIONS)
+        activation = self._build_activation(state)
+        return prog.evaluate(activation)
+
     def evaluate(self, expression: str, state: dict[str, Any]) -> Any:
-        """Evaluate a CEL expression against state and return a Python value."""
+        """Evaluate a CEL expression against state and return a Python value.
+
+        Supports a special ``default(expr, fallback)`` wrapper that returns
+        *fallback* when *expr* raises an evaluation error.
+        """
         try:
-            ast = self._env.compile(expression)
-            prog = self._env.program(ast)
-            activation = self._build_activation(state)
-            result = prog.evaluate(activation)
-            return _cel_to_python(result)
+            if _DEFAULT_RE.match(expression):
+                return self._evaluate_default(expression, state)
+            return _cel_to_python(self._evaluate_raw(expression, state))
         except celpy.CELEvalError as exc:  # type: ignore[attr-defined]
             raise CelEvaluationError(
                 f"CEL evaluation failed for '{expression}': {exc}"
@@ -120,6 +170,18 @@ class CelEngine:
             raise CelEvaluationError(
                 f"CEL parse error for '{expression}': {exc}"
             ) from exc
+
+    def _evaluate_default(self, expression: str, state: dict[str, Any]) -> Any:
+        """Handle ``default(expr, fallback)`` by trying *expr* first."""
+        expr_str, fallback_str = _split_default_args(expression)
+        try:
+            return _cel_to_python(self._evaluate_raw(expr_str, state))
+        except (
+            celpy.CELEvalError,  # type: ignore[attr-defined]
+            celpy.CELParseError,  # type: ignore[attr-defined]
+            CelEvaluationError,
+        ):
+            return _cel_to_python(self._evaluate_raw(fallback_str, state))
 
     def evaluate_bool(self, expression: str, state: dict[str, Any]) -> bool:
         """Evaluate a CEL expression that must return a boolean."""
