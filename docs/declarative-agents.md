@@ -367,37 +367,25 @@ Each value is a CEL expression. String literals must be double-quoted inside the
 
 ### `interrupt`
 
-Pauses graph execution to request human input:
+Pauses graph execution to request human input. The `value` argument is a **required** CEL expression that is evaluated against the current state to produce the interrupt value:
 
 ```yaml
 - name: ask_user
   type: interrupt
-  args: {}
+  args:
+    value: '"What is your name?"'
 ```
 
-The interrupt value sent to the A2A client is always the **last `AIMessage`** from the graph state — not the CEL `value` expression. This is a hard contract: every `interrupt` node must be preceded by a `call_llm` node that produces an `AIMessage`. If no `AIMessage` exists in state when the interrupt fires, a `RuntimeError` is raised.
+The CEL expression can reference state, enabling structured metadata:
 
-This design ensures the user always sees the agent's actual reply (e.g., a question, a summary, a status update) rather than a raw interrupt string.
+```yaml
+- name: ask_approval
+  type: interrupt
+  args:
+    value: '{"type": "approval", "draft": state.messages[size(state.messages) - 1].content, "actions": ["approve", "reject"]}'
+```
 
 When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
-
-#### Interrupt contract for tool-level interrupts
-
-The same contract applies to tools that call `interrupt()` directly (e.g., a `request_user_input` tool). The interrupt value **must** be an `AIMessage`:
-
-```python
-from langchain_core.messages import AIMessage
-from langchain_core.tools import tool
-from langgraph.types import interrupt
-
-@tool
-def request_user_input(question: str) -> str:
-    """Ask the user for more information."""
-    response = interrupt(AIMessage(content=question))
-    return str(response)
-```
-
-This ensures `send_message` can always convert interrupt values to A2A messages without inspecting the graph's message history.
 
 ## Edges
 

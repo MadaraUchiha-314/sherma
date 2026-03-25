@@ -188,7 +188,8 @@ agents:
 
         - name: ask_feedback
           type: interrupt
-          args: {}
+          args:
+            value: 'state.messages[size(state.messages) - 1].content'
 
       edges:
         # designer → (auto-injected tool loop) → reflect when done

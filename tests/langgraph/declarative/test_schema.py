@@ -157,12 +157,12 @@ def test_declarative_config_with_agent():
     assert config.agents["my-agent"].graph.entry_point == "start"
 
 
-def test_interrupt_args_default():
-    args = InterruptArgs()
-    assert args.value is None
+def test_interrupt_args_requires_value():
+    with pytest.raises(ValidationError):
+        InterruptArgs()
 
 
-def test_interrupt_args_with_legacy_value():
+def test_interrupt_args_with_value():
     args = InterruptArgs(value='"What is your name?"')
     assert args.value == '"What is your name?"'
 
@@ -171,7 +171,7 @@ def test_node_def_interrupt():
     node = NodeDef(
         name="ask",
         type="interrupt",
-        args=InterruptArgs(),
+        args=InterruptArgs(value='"What is your name?"'),
     )
     assert node.name == "ask"
     assert node.type == "interrupt"

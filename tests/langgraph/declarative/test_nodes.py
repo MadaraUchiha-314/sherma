@@ -720,78 +720,85 @@ async def test_node_receives_config_via_partial():
 
 
 @pytest.mark.asyncio
-async def test_build_interrupt_node():
-    """interrupt node uses last AIMessage as value, wraps resume as HumanMessage."""
+async def test_build_interrupt_node_evaluates_cel_value():
+    """interrupt node always evaluates the CEL args.value expression."""
     from unittest.mock import patch
 
-    from langchain_core.messages import AIMessage, HumanMessage
+    from langchain_core.messages import HumanMessage
 
     node_def = NodeDef(
         name="ask",
         type="interrupt",
-        args=InterruptArgs(),
+        args=InterruptArgs(value='"What is your name?"'),
     )
     cel = CelEngine()
     fn = build_interrupt_node(_make_ctx(node_def), cel)
 
-    ai_msg = AIMessage(content="What is your name?")
     with patch(
         "sherma.langgraph.declarative.nodes.interrupt",
         return_value="Alice",
     ) as mock_interrupt:
-        result = await fn({"messages": [ai_msg]})
+        result = await fn({"messages": []})
 
-    mock_interrupt.assert_called_once_with(ai_msg)
+    mock_interrupt.assert_called_once_with("What is your name?")
     assert len(result["messages"]) == 1
     assert isinstance(result["messages"][0], HumanMessage)
     assert result["messages"][0].content == "Alice"
 
 
 @pytest.mark.asyncio
-async def test_build_interrupt_node_uses_last_ai_message():
-    """interrupt node picks the last AIMessage even when other messages follow."""
+async def test_build_interrupt_node_cel_uses_state():
+    """interrupt node CEL expression can reference state values."""
     from unittest.mock import patch
 
     from langchain_core.messages import AIMessage, HumanMessage
 
     node_def = NodeDef(
-        name="ask_age",
+        name="ask_confirm",
         type="interrupt",
-        args=InterruptArgs(),
+        args=InterruptArgs(value="state.messages[size(state.messages) - 1].content"),
     )
     cel = CelEngine()
     fn = build_interrupt_node(_make_ctx(node_def), cel)
 
-    first_ai = AIMessage(content="First response")
-    human = HumanMessage(content="user reply")
-    last_ai = AIMessage(content="How old are you?")
+    ai_msg = AIMessage(content="Please confirm")
     with patch(
         "sherma.langgraph.declarative.nodes.interrupt",
-        return_value="25",
+        return_value="yes",
     ) as mock_interrupt:
-        result = await fn({"messages": [first_ai, human, last_ai]})
+        result = await fn({"messages": [ai_msg]})
 
-    mock_interrupt.assert_called_once_with(last_ai)
+    mock_interrupt.assert_called_once_with("Please confirm")
     assert isinstance(result["messages"][0], HumanMessage)
-    assert result["messages"][0].content == "25"
+    assert result["messages"][0].content == "yes"
 
 
 @pytest.mark.asyncio
-async def test_build_interrupt_node_falls_back_to_none_without_ai_message():
-    """interrupt node uses None value when no AIMessage and no args.value."""
+async def test_build_interrupt_node_cel_structured_metadata():
+    """interrupt node can pass structured metadata via CEL map literal."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import HumanMessage
+
+    cel_expr = '{"type": "approval", "actions": ["approve", "reject"]}'
     node_def = NodeDef(
-        name="ask",
+        name="ask_approval",
         type="interrupt",
-        args=InterruptArgs(),
+        args=InterruptArgs(value=cel_expr),
     )
     cel = CelEngine()
     fn = build_interrupt_node(_make_ctx(node_def), cel)
 
-    # Without a runnable context, interrupt() raises a different error.
-    # The key assertion is that _find_last_ai_message no longer raises
-    # RuntimeError about a preceding AIMessage.
-    with pytest.raises(RuntimeError, match="runnable context"):
-        await fn({"messages": []})
+    with patch(
+        "sherma.langgraph.declarative.nodes.interrupt",
+        return_value="approve",
+    ) as mock_interrupt:
+        result = await fn({"messages": []})
+
+    expected = {"type": "approval", "actions": ["approve", "reject"]}
+    mock_interrupt.assert_called_once_with(expected)
+    assert isinstance(result["messages"][0], HumanMessage)
+    assert result["messages"][0].content == "approve"
 
 
 # --- Hook integration tests ---

@@ -109,12 +109,11 @@ class SetStateArgs(BaseModel):
 class InterruptArgs(BaseModel):
     """Arguments for an interrupt node.
 
-    The interrupt value is the last ``AIMessage`` from state when
-    available.  Falls back to the ``value`` CEL expression when no
-    AIMessage is present.
+    The interrupt value is always the result of evaluating the ``value``
+    CEL expression against the current state.
     """
 
-    value: str | None = None
+    value: str
 
 
 class NodeDef(BaseModel):
@@ -137,6 +136,29 @@ class NodeDef(BaseModel):
         | SetStateArgs
         | InterruptArgs
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_args_type(cls, data: Any) -> Any:
+        """Parse args using the correct model based on node type."""
+        if not isinstance(data, dict):
+            return data
+        node_type = data.get("type")
+        raw_args = data.get("args")
+        if node_type is None or raw_args is None or not isinstance(raw_args, dict):
+            return data
+        type_map: dict[str, type[BaseModel]] = {
+            "call_llm": CallLLMArgs,
+            "tool_node": ToolNodeArgs,
+            "call_agent": CallAgentArgs,
+            "data_transform": DataTransformArgs,
+            "set_state": SetStateArgs,
+            "interrupt": InterruptArgs,
+        }
+        args_cls = type_map.get(node_type)
+        if args_cls is not None:
+            data = {**data, "args": args_cls(**raw_args)}
+        return data
 
 
 class BranchDef(BaseModel):
