@@ -73,10 +73,11 @@ agents:
             expression: '{"query_count": state.query_count + 1, "last_status": "done"}'
 
         # interrupt: pause and wait for user input.
-        # The last AIMessage from the agent node is sent as the response.
+        # Pass the last message content as the interrupt value.
         - name: ask_next_place
           type: interrupt
-          args: {}
+          args:
+            value: 'state.messages[size(state.messages) - 1].content'
 
       edges:
         - source: init

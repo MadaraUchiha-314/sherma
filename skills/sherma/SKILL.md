@@ -64,7 +64,7 @@ agents:        # Agent graph definitions
 | `call_agent` | Invoke another registered agent | `agent` (id+version), `input` (CEL expression) |
 | `data_transform` | Transform state via CEL → dict | `expression` (CEL returning a dict) |
 | `set_state` | Set individual state variables | `values` (map of field → CEL expression) |
-| `interrupt` | Pause for human input | `args: {}` |
+| `interrupt` | Pause for human input | `value` (required CEL expression) |
 
 ### Edge types
 
@@ -578,7 +578,7 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 6. **`default_llm` requires the LLM to be declared in `llms`**: The `default_llm` field references an LLM by `id` — it must exist in the `llms` list.
 
-7. **Interrupt contract**: Every `interrupt` node must be preceded by a `call_llm` that produces an `AIMessage`. Tool-level `interrupt()` calls must pass an `AIMessage` as the value.
+7. **Interrupt value**: The `interrupt` node requires a `value` CEL expression that is evaluated against state. Use a string literal (e.g., `'"question"'`) or reference state (e.g., `state.messages[size(state.messages) - 1].content`).
 
 8. **`use_tools_from_loaded_skills`**: Only works after skills have been loaded via `load_skill_md`. Put the discovery node before the execution node.
 
