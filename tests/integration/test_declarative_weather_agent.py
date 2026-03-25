@@ -81,7 +81,8 @@ agents:
 
         - name: ask_next_place
           type: interrupt
-          args: {}
+          args:
+            value: 'state.messages[size(state.messages) - 1].content'
 
       edges:
         - source: init
