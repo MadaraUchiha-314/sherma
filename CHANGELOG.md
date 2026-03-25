@@ -1,3 +1,9 @@
+## v0.13.3 (2026-03-25)
+
+### Fix
+
+- always evaluate CEL expression for interrupt node value (#34)
+
 ## v0.13.2 (2026-03-23)
 
 ### Fix
