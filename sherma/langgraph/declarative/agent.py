@@ -40,7 +40,10 @@ from sherma.langgraph.declarative.schema import (
     DeclarativeConfig,
     NodeDef,
 )
-from sherma.langgraph.declarative.transform import inject_tool_nodes
+from sherma.langgraph.declarative.transform import (
+    inject_fallback_edges,
+    inject_tool_nodes,
+)
 from sherma.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,6 +59,14 @@ _TYPE_MAP: dict[str, type] = {
 }
 
 
+def _needs_internal_state(agent_def: Any, *, has_skills: bool) -> bool:
+    """Return ``True`` if the agent needs the ``__sherma__`` internal state key."""
+    if has_skills:
+        return True
+    # Any node with on_error.fallback uses __sherma__ to store error info
+    return any(n.on_error and n.on_error.fallback for n in agent_def.graph.nodes)
+
+
 def _build_state_class(
     agent_def: Any,
     *,
@@ -63,11 +74,12 @@ def _build_state_class(
 ) -> type:
     """Build a dynamic TypedDict state class from the state schema.
 
-    When *has_skills* is ``True`` the internal ``__sherma__`` field is
-    auto-injected so that nodes can track managed state (e.g. loaded
-    skill tools) at runtime.
+    The internal ``__sherma__`` field is auto-injected when the agent
+    needs managed internal state (skills, error fallback routing, etc.).
     """
     from typing import TypedDict
+
+    inject_internal = _needs_internal_state(agent_def, has_skills=has_skills)
 
     fields = agent_def.state.fields
     field_names = {f.name for f in fields}
@@ -82,7 +94,7 @@ def _build_state_class(
             py_type = _TYPE_MAP.get(field_def.type, str)
             extra_annotations[field_def.name] = py_type
 
-        if has_skills:
+        if inject_internal:
             extra_annotations[INTERNAL_STATE_KEY] = dict
 
         if not extra_annotations:
@@ -98,7 +110,7 @@ def _build_state_class(
         py_type = _TYPE_MAP.get(field_def.type, str)
         td_fields[field_def.name] = py_type
 
-    if has_skills:
+    if inject_internal:
         td_fields[INTERNAL_STATE_KEY] = dict
 
     return TypedDict("DynamicState", td_fields)  # type: ignore[call-overload]
@@ -144,6 +156,8 @@ class DeclarativeAgent(LangGraphAgent):
 
         # Auto-inject tool_nodes for call_llm nodes with tools
         config = inject_tool_nodes(config)
+        # Auto-inject fallback edges for nodes with on_error.fallback
+        config = inject_fallback_edges(config)
 
         # Find the agent definition (use self.id to match)
         agent_name = self._find_agent_name(config)

@@ -14,6 +14,9 @@ from sherma.langgraph.declarative.schema import (
     ToolNodeArgs,
 )
 
+# Built-in condition key recognized by the edge router for fallback routing.
+HAS_ERROR_FALLBACK = "has_error_fallback"
+
 
 def _has_tools(args: CallLLMArgs) -> bool:
     """Return True if the call_llm node has any tool binding."""
@@ -120,6 +123,78 @@ def inject_tool_nodes(config: DeclarativeConfig) -> DeclarativeConfig:
             graph.nodes.extend(new_nodes)
             graph.edges = [
                 e for idx, e in enumerate(graph.edges) if idx not in edges_to_remove
+            ] + new_edges
+
+    return config
+
+
+def inject_fallback_edges(config: DeclarativeConfig) -> DeclarativeConfig:
+    """Auto-inject conditional edges for nodes with ``on_error.fallback``.
+
+    For each node that declares ``on_error.fallback``, this transform
+    replaces its outgoing simple edge with a conditional edge:
+
+    * ``has_error_fallback`` → fallback node
+    * default → original target
+
+    If the node already has a conditional edge, the fallback branch is
+    prepended to the existing branches so it takes priority.
+    """
+    config = copy.deepcopy(config)
+
+    for _agent_name, agent_def in config.agents.items():
+        graph = agent_def.graph
+        node_names = {n.name for n in graph.nodes}
+
+        edges_to_remove: set[int] = set()
+        new_edges: list[EdgeDef] = []
+
+        # Collect nodes that have on_error.fallback
+        fallback_nodes: dict[str, str] = {}  # node_name → fallback target
+        for node_def in graph.nodes:
+            if node_def.on_error and node_def.on_error.fallback:
+                fallback_target = node_def.on_error.fallback
+                if fallback_target not in node_names:
+                    raise DeclarativeConfigError(
+                        f"on_error.fallback target '{fallback_target}' "
+                        f"for node '{node_def.name}' does not exist"
+                    )
+                fallback_nodes[node_def.name] = fallback_target
+
+        if not fallback_nodes:
+            continue
+
+        for idx, edge in enumerate(graph.edges):
+            if edge.source not in fallback_nodes:
+                continue
+
+            fallback_target = fallback_nodes[edge.source]
+            fallback_branch = BranchDef(
+                condition=HAS_ERROR_FALLBACK,
+                target=fallback_target,
+            )
+
+            if edge.branches is not None:
+                # Existing conditional edge — prepend fallback branch
+                edge.branches.insert(0, fallback_branch)
+            else:
+                # Simple edge — replace with conditional
+                edges_to_remove.add(idx)
+                new_edges.append(
+                    EdgeDef(
+                        source=edge.source,
+                        branches=[fallback_branch],
+                        default=edge.target or "__end__",
+                    )
+                )
+
+            # Remove from fallback_nodes so we don't process twice
+            del fallback_nodes[edge.source]
+
+        # Apply modifications
+        if edges_to_remove or new_edges:
+            graph.edges = [
+                e for i, e in enumerate(graph.edges) if i not in edges_to_remove
             ] + new_edges
 
     return config

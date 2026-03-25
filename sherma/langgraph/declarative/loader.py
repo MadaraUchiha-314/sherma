@@ -95,7 +95,10 @@ def _parse_node_args(node_data: dict[str, Any]) -> dict[str, Any]:
     """Parse node args based on node type, converting dicts to proper models."""
     node_type = node_data.get("type")
     args = node_data.get("args", {})
-    return {"name": node_data["name"], "type": node_type, "args": args}
+    result = {"name": node_data["name"], "type": node_type, "args": args}
+    if "on_error" in node_data:
+        result["on_error"] = node_data["on_error"]
+    return result
 
 
 def _parse_config(data: dict[str, Any]) -> DeclarativeConfig:
@@ -690,6 +693,56 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
             raise DeclarativeConfigError(
                 "A call_llm node with tools requires a tool_node in the graph"
             )
+
+    # Validate on_error configuration per node type
+    _RETRY_ALLOWED = {"call_llm"}
+    _FALLBACK_ALLOWED = {"call_llm", "tool_node", "call_agent"}
+
+    for node in graph.nodes:
+        on_error = node.on_error
+        if on_error is None:
+            continue
+
+        # on_error not allowed on pure/interrupt nodes
+        if node.type not in _FALLBACK_ALLOWED:
+            raise DeclarativeConfigError(
+                f"on_error is not supported on '{node.type}' node '{node.name}'. "
+                f"Only call_llm, tool_node, and call_agent nodes support on_error."
+            )
+
+        # retry only on call_llm
+        if on_error.retry and node.type not in _RETRY_ALLOWED:
+            raise DeclarativeConfigError(
+                f"on_error.retry is only supported on call_llm nodes, "
+                f"but node '{node.name}' is of type '{node.type}'."
+            )
+
+        # Validate retry policy values
+        if on_error.retry:
+            retry = on_error.retry
+            if retry.max_attempts < 1:
+                raise DeclarativeConfigError(
+                    f"on_error.retry.max_attempts must be >= 1 "
+                    f"for node '{node.name}', got {retry.max_attempts}."
+                )
+            if retry.delay < 0:
+                raise DeclarativeConfigError(
+                    f"on_error.retry.delay must be >= 0 "
+                    f"for node '{node.name}', got {retry.delay}."
+                )
+            if retry.max_delay < retry.delay:
+                raise DeclarativeConfigError(
+                    f"on_error.retry.max_delay ({retry.max_delay}) must be >= "
+                    f"delay ({retry.delay}) for node '{node.name}'."
+                )
+
+        # Validate fallback target exists
+        if on_error.fallback:
+            if on_error.fallback not in node_names:
+                raise DeclarativeConfigError(
+                    f"on_error.fallback target '{on_error.fallback}' "
+                    f"for node '{node.name}' does not exist in the graph."
+                )
 
 
 def populate_hooks(

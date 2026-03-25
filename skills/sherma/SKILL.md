@@ -66,6 +66,25 @@ agents:        # Agent graph definitions
 | `set_state` | Set individual state variables | `values` (map of field → CEL expression) |
 | `interrupt` | Pause for human input | `value` (required CEL expression) |
 
+### Error handling (`on_error`)
+
+Any `call_llm`, `tool_node`, or `call_agent` node can declare `on_error`:
+
+```yaml
+on_error:
+  retry:              # call_llm only
+    max_attempts: 3   # total attempts
+    strategy: exponential  # or "fixed"
+    delay: 1.0        # base delay (seconds)
+    max_delay: 30.0   # cap
+  fallback: handler   # node to route to on failure
+```
+
+- `retry` wraps only `model.ainvoke()` (safe, stateless)
+- `fallback` routes to a recovery node when retries exhaust
+- Error info stored in `state["__sherma__"]["last_error"]`
+- `on_node_error` hook only fires if no fallback handles it
+
 ### Edge types
 
 ```yaml

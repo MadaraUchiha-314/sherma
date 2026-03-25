@@ -116,6 +116,33 @@ class InterruptArgs(BaseModel):
     value: str
 
 
+class RetryPolicy(BaseModel):
+    """Retry configuration for a node.
+
+    Controls how many times the retryable operation is attempted and
+    the delay between attempts.  ``max_attempts`` is the **total**
+    number of tries (1 initial + retries).
+    """
+
+    max_attempts: int = 3
+    strategy: Literal["fixed", "exponential"] = "exponential"
+    delay: float = 1.0  # base delay in seconds
+    max_delay: float = 30.0  # cap for exponential backoff
+
+
+class OnErrorDef(BaseModel):
+    """Declarative error handling for a node.
+
+    * ``retry`` - retry policy (only supported on ``call_llm`` nodes).
+    * ``fallback`` - name of a node to route to when the error is not
+      recovered by retries.  Supported on ``call_llm``, ``tool_node``,
+      and ``call_agent`` nodes.
+    """
+
+    retry: RetryPolicy | None = None
+    fallback: str | None = None
+
+
 class NodeDef(BaseModel):
     """A node definition in the graph."""
 
@@ -136,6 +163,7 @@ class NodeDef(BaseModel):
         | SetStateArgs
         | InterruptArgs
     )
+    on_error: OnErrorDef | None = None
 
     @model_validator(mode="before")
     @classmethod

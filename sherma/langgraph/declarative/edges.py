@@ -8,7 +8,9 @@ from typing import Any
 from langgraph.graph import END
 
 from sherma.langgraph.declarative.cel_engine import CelEngine
+from sherma.langgraph.declarative.nodes import INTERNAL_STATE_KEY
 from sherma.langgraph.declarative.schema import EdgeDef
+from sherma.langgraph.declarative.transform import HAS_ERROR_FALLBACK
 
 # Built-in conditions that bypass CEL and use native Python checks.
 _BUILTIN_CONDITIONS: dict[str, Callable[[dict[str, Any]], bool]] = {}
@@ -25,7 +27,19 @@ def _has_tool_calls(state: dict[str, Any]) -> bool:
     return bool(tool_calls)
 
 
+def _has_error_fallback(state: dict[str, Any]) -> bool:
+    """Check if the node set an error fallback sentinel in ``__sherma__``."""
+    internal = state.get(INTERNAL_STATE_KEY, {})
+    fallback = internal.get("error_fallback")
+    if fallback:
+        # Clear the sentinel so it doesn't trigger again on subsequent edges
+        internal.pop("error_fallback", None)
+        return True
+    return False
+
+
 _BUILTIN_CONDITIONS["has_tool_calls"] = _has_tool_calls
+_BUILTIN_CONDITIONS[HAS_ERROR_FALLBACK] = _has_error_fallback
 
 
 def _resolve_target(target: str) -> str:
