@@ -1,3 +1,9 @@
+## v0.15.0 (2026-03-26)
+
+### Feat
+
+- add declarative on_error with retry and fallback routing (#37)
+
 ## v0.14.0 (2026-03-25)
 
 ### Feat
