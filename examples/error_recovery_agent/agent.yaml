@@ -1,0 +1,78 @@
+# Error Recovery Agent
+# Demonstrates on_error with retry and fallback routing.
+# The call_llm node retries on transient failures, and falls back
+# to an error_handler node if all retries are exhausted.
+
+manifest_version: 1
+
+prompts:
+  - id: system-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful assistant. Answer the user's question concisely.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+tools:
+  - id: get_weather
+    version: "1.0.0"
+    import_path: examples.tools.get_weather
+
+agents:
+  error-recovery-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: agent
+
+      nodes:
+        # call_llm with retry + fallback
+        - name: agent
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+            prompt:
+              - role: system
+                content: 'prompts["system-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            tools:
+              - id: get_weather
+          on_error:
+            retry:
+              max_attempts: 3
+              strategy: exponential
+              delay: 1.0
+              max_delay: 10.0
+            fallback: error_handler
+
+        # Fallback node: produces a friendly error message
+        - name: error_handler
+          type: data_transform
+          args:
+            expression: >
+              {
+                "messages": [
+                  "I'm sorry, I encountered an error: "
+                  + state["__sherma__"]["last_error"]["message"]
+                  + ". Please try again later."
+                ]
+              }
+
+      edges:
+        # Normal flow: agent → __end__
+        # (tool_node + conditional edges auto-injected for tools)
+        - source: agent
+          target: __end__
+
+        - source: error_handler
+          target: __end__
