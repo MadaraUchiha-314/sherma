@@ -387,6 +387,68 @@ The CEL expression can reference state, enabling structured metadata:
 
 When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
 
+## Error Handling (`on_error`)
+
+Nodes can declare an `on_error` block for retry and fallback routing:
+
+```yaml
+- name: agent
+  type: call_llm
+  args:
+    llm: { id: gpt-4o }
+    prompt:
+      - role: system
+        content: '"You are helpful."'
+      - role: messages
+        content: state.messages
+  on_error:
+    retry:
+      max_attempts: 3       # total attempts (1 initial + 2 retries)
+      strategy: exponential  # "fixed" | "exponential"
+      delay: 1.0             # base delay in seconds
+      max_delay: 30.0        # cap for exponential backoff
+    fallback: error_handler  # node to route to on failure
+```
+
+### Support Matrix
+
+| Node type | `retry` | `fallback` |
+|-----------|:-------:|:----------:|
+| `call_llm` | Yes | Yes |
+| `tool_node` | No | Yes |
+| `call_agent` | No | Yes |
+| `data_transform` | No | No |
+| `set_state` | No | No |
+| `interrupt` | No | No |
+
+- **`retry`** is only supported on `call_llm` because the retry wraps only the `model.ainvoke()` call (stateless, safe to retry). Other node types may have side effects.
+- **`fallback`** is supported on IO-bound nodes (`call_llm`, `tool_node`, `call_agent`). When retries are exhausted (or on first failure for nodes without retry), execution routes to the fallback node instead of crashing.
+
+### Error State
+
+When an error triggers fallback routing, error details are stored in `state["__sherma__"]["last_error"]`:
+
+```python
+{
+    "node": "agent",           # node that failed
+    "type": "RateLimitError",  # exception class name
+    "message": "Rate limit exceeded",
+    "attempt": 3,              # which attempt failed
+}
+```
+
+This is accessible in CEL for downstream error handler nodes.
+
+### Interaction with `on_node_error` Hook
+
+The `on_node_error` hook runs only when declarative `on_error` does not handle the error:
+
+1. Exception occurs
+2. Retry `model.ainvoke()` (if `call_llm` with `retry`)
+3. Retries exhausted - store error in `__sherma__`
+4. If `fallback` configured - route to fallback node (hook **not** called)
+5. If no fallback - call `on_node_error` hook - re-raise if not consumed
+
 ## Edges
 
 ### Static Edges

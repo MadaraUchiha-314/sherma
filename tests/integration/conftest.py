@@ -50,6 +50,50 @@ class FakeChatModel(BaseChatModel):
         return self
 
 
+class FailingChatModel(BaseChatModel):
+    """A chat model that fails a set number of times before succeeding.
+
+    Usage::
+
+        model = FailingChatModel(
+            fail_count=2,
+            error=RuntimeError("rate limit"),
+            success_response=AIMessage(content="ok"),
+        )
+
+    The first ``fail_count`` calls raise ``error``, then subsequent calls
+    return ``success_response``.
+    """
+
+    fail_count: int = 1
+    error: Exception = RuntimeError("transient failure")
+    success_response: BaseMessage | None = None
+    call_count: int = 0
+
+    model_config = {"arbitrary_types_allowed": True}  # noqa: RUF012
+
+    @property
+    def _llm_type(self) -> str:
+        return "failing-chat-model"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        self.call_count += 1
+        if self.call_count <= self.fail_count:
+            raise self.error
+        response = self.success_response or BaseMessage(content="recovered", type="ai")
+        return ChatResult(generations=[ChatGeneration(message=response)])
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> FailingChatModel:
+        """Return self — tool binding doesn't change scripted responses."""
+        return self
+
+
 def make_a2a_message(
     text: str,
     message_id: str = "user-1",

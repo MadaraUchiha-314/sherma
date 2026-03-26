@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
+from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
@@ -62,6 +64,7 @@ if TYPE_CHECKING:
         DeclarativeConfig,
         InterruptArgs,
         NodeDef,
+        RetryPolicy,
         SetStateArgs,
         ToolNodeArgs,
     )
@@ -92,6 +95,8 @@ async def _run_node_error_hook(
     exc: Exception,
 ) -> dict[str, Any]:
     """Run on_node_error hook chain. Returns fallback if consumed, else re-raises."""
+    if isinstance(exc, GraphBubbleUp):
+        raise exc  # never intercept interrupt flow
     if hooks is None:
         raise exc
     err_ctx = await hooks.run_hook(
@@ -107,6 +112,35 @@ async def _run_node_error_hook(
     if err_ctx.error is None:
         return {}
     raise err_ctx.error from exc
+
+
+def _compute_delay(retry: RetryPolicy, attempt: int) -> float:
+    """Compute the delay in seconds before the next retry attempt."""
+    if retry.strategy == "fixed":
+        return min(retry.delay, retry.max_delay)
+    # exponential: delay * 2^(attempt-1)
+    return min(retry.delay * (2 ** (attempt - 1)), retry.max_delay)
+
+
+def _store_error_and_fallback(
+    state: dict[str, Any],
+    node_name: str,
+    exc: Exception,
+    attempt: int,
+    fallback: str,
+) -> dict[str, Any]:
+    """Store error info in ``__sherma__`` and set the fallback sentinel."""
+    internal = _get_internal(state)
+    internal["last_error"] = {
+        "node": node_name,
+        "type": type(exc).__qualname__,
+        "message": str(exc),
+        "attempt": attempt,
+    }
+    internal["error_fallback"] = fallback
+    result: dict[str, Any] = {}
+    _set_internal(result, internal)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +332,36 @@ def build_call_llm_node(
                 len(all_messages),
                 system_prompt,
             )
-            response = await model.ainvoke(all_messages)
+
+            # Retry loop wraps only model.ainvoke() — the IO call.
+            on_error = _ctx.node_def.on_error
+            retry = on_error.retry if on_error else None
+            max_attempts = retry.max_attempts if retry else 1
+
+            response: Any = None
+            last_invoke_exc: Exception | None = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    response = await model.ainvoke(all_messages)
+                    last_invoke_exc = None
+                    break
+                except Exception as invoke_exc:
+                    if isinstance(invoke_exc, GraphBubbleUp):
+                        raise
+                    last_invoke_exc = invoke_exc
+                    logger.warning(
+                        "[%s] LLM attempt %d/%d failed: %s",
+                        _ctx.node_def.name,
+                        attempt,
+                        max_attempts,
+                        invoke_exc,
+                    )
+                    if attempt < max_attempts and retry:
+                        delay = _compute_delay(retry, attempt)
+                        await asyncio.sleep(delay)
+
+            if last_invoke_exc is not None:
+                raise last_invoke_exc
 
             if args.response_format and isinstance(response, dict):
                 import json
@@ -356,6 +419,19 @@ def build_call_llm_node(
 
             return result
         except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
+            on_error = _ctx.node_def.on_error
+            if on_error and on_error.fallback:
+                _retry = on_error.retry
+                _max = _retry.max_attempts if _retry else 1
+                return _store_error_and_fallback(
+                    state,
+                    _ctx.node_def.name,
+                    exc,
+                    attempt=_max,
+                    fallback=on_error.fallback,
+                )
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(call_llm_fn, ctx)
@@ -512,6 +588,17 @@ def build_tool_node(
 
             return result
         except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
+            on_error = _ctx.node_def.on_error
+            if on_error and on_error.fallback:
+                return _store_error_and_fallback(
+                    state,
+                    _ctx.node_def.name,
+                    exc,
+                    attempt=1,
+                    fallback=on_error.fallback,
+                )
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(tool_node_fn, ctx)
@@ -621,6 +708,17 @@ def build_call_agent_node(
 
             return result
         except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
+            on_error = _ctx.node_def.on_error
+            if on_error and on_error.fallback:
+                return _store_error_and_fallback(
+                    state,
+                    _ctx.node_def.name,
+                    exc,
+                    attempt=1,
+                    fallback=on_error.fallback,
+                )
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(call_agent_fn, ctx)
@@ -679,6 +777,8 @@ def build_data_transform_node(
 
             return result
         except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(data_transform_fn, ctx)
@@ -736,6 +836,8 @@ def build_set_state_node(
 
             return result
         except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(set_state_fn, ctx)
@@ -830,6 +932,8 @@ def build_interrupt_node(
 
             return result
         except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(interrupt_fn, ctx)
