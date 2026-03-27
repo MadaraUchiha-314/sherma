@@ -66,10 +66,11 @@ agents:        # Agent graph definitions
 | `set_state` | Set individual state variables | `values` (map of field → CEL expression) |
 | `interrupt` | Pause for human input | `value` (required CEL expression) |
 | `load_skills` | Programmatically load skills | `skill_ids` (CEL → list of `{id, version}`) |
+| `custom` | Logic defined entirely by hooks | `metadata` (optional dict for hooks) |
 
 ### Error handling (`on_error`)
 
-Any `call_llm`, `tool_node`, or `call_agent` node can declare `on_error`:
+Any `call_llm`, `tool_node`, `call_agent`, or `custom` node can declare `on_error`:
 
 ```yaml
 on_error:
@@ -598,6 +599,10 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 '["a", "b", "c"].join(", ")'                                   # join list → string
 '"hello world".substring(0, 5)'                                # extract substring
 
+# Templating: ${key} substitution from a map
+'template("Hello ${name}!", {"name": state.user})'             # basic substitution
+'template(prompts["plan"]["instructions"], {"skills": state.skill_list})'  # prompt templating
+
 # Combining functions
 'json(state.data.trim())["name"].lowerAscii()'                 # trim → parse → lowercase
 'state.tags.split(",").join(" | ")'                            # split → rejoin
@@ -609,7 +614,7 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 - **String literals need inner quotes**: `'"hello"'` not `'hello'`. Without inner quotes, CEL treats it as a variable name.
 - **`size()` not `len()`**: CEL uses `size()` for list/string length.
 - **Map syntax**: `{"key": value}` — keys must be strings in double quotes.
-- **No f-strings**: Use `+` for concatenation: `'"Count: " + string(count)'`
+- **No f-strings**: Use `template()` for substitution or `+` for concatenation: `template("Count: ${n}", {"n": state.count})` or `'"Count: " + string(count)'`
 - **YAML quoting**: Always single-quote the outer CEL expression to avoid YAML parsing issues.
 - **`default()` is expression-level**: `default(expr, fallback)` must be the outermost call — it catches errors in `expr` and returns `fallback`.
 

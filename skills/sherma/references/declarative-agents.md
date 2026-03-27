@@ -411,6 +411,39 @@ Loaded tools are tracked in `__sherma__.loaded_tools_from_skills` and can be use
 - Use `load_skills` when the agent needs skills loaded before the planning node runs (e.g., a structured-output LLM selects skills upfront).
 - Use progressive disclosure (`list_skills` / `load_skill_md` tools) when the LLM should discover and load skills dynamically during conversation.
 
+### `custom`
+
+A node whose logic is defined entirely by hooks. The `custom` node type has no built-in behavior — it fires `node_enter` → `node_execute` → `node_exit`, and the `node_execute` hook (unique to custom nodes) provides the execution logic.
+
+This is the escape hatch for procedural logic that doesn't fit declarative node types (complex token counting, custom API calls with auth, stateful computations), while keeping the YAML purely declarative.
+
+```yaml
+- name: summarize_if_needed
+  type: custom
+  args:
+    metadata:              # Optional: arbitrary data accessible to hooks
+      description: "Summarize long conversations"
+```
+
+The corresponding hook:
+
+```python
+from sherma.hooks import BaseHookExecutor, NodeExecuteContext
+
+class SummarizationHook(BaseHookExecutor):
+    async def node_execute(self, ctx: NodeExecuteContext) -> NodeExecuteContext | None:
+        if ctx.node_name == "summarize_if_needed":
+            messages = ctx.state["messages"]
+            ctx.result = {
+                "summary_messages": await do_summarization(messages),
+                "summarized_until": len(messages),
+            }
+            return ctx
+        return None
+```
+
+The returned `result` dict is merged into state (same semantics as `data_transform`). Hook metadata is accessible via `ctx.node_context.node_def.args.metadata`.
+
 ## Error Handling (`on_error`)
 
 Nodes can declare an `on_error` block for retry and fallback routing:
@@ -445,9 +478,10 @@ Nodes can declare an `on_error` block for retry and fallback routing:
 | `set_state` | No | No |
 | `interrupt` | No | No |
 | `load_skills` | No | No |
+| `custom` | No | Yes |
 
 - **`retry`** is only supported on `call_llm` because the retry wraps only the `model.ainvoke()` call (stateless, safe to retry). Other node types may have side effects.
-- **`fallback`** is supported on IO-bound nodes (`call_llm`, `tool_node`, `call_agent`). When retries are exhausted (or on first failure for nodes without retry), execution routes to the fallback node instead of crashing.
+- **`fallback`** is supported on IO-bound nodes (`call_llm`, `tool_node`, `call_agent`, `custom`). When retries are exhausted (or on first failure for nodes without retry), execution routes to the fallback node instead of crashing.
 
 ### Error State
 
@@ -582,6 +616,25 @@ Aligned with the [cel-go strings extension](https://pkg.go.dev/github.com/google
 
 # Combine JSON parsing with string functions
 'json(state.data.trim())["name"].lowerAscii()'
+```
+
+#### Templating
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `template(string, map)` | Substitute `${key}` placeholders from a map | `template("Hello ${name}!", {"name": "world"})` |
+
+Unresolved placeholders (keys not in the map) are left as-is. Non-string values are coerced to strings.
+
+```yaml
+# Inject state into a prompt template
+'template(prompts["plan-prompt"]["instructions"], {"skill_instructions": state.skill_instructions})'
+
+# Multiple placeholders
+'template("Hello ${name}, your role is ${role}.", {"name": state.user, "role": state.assigned_role})'
+
+# Non-string values are coerced
+'template("Count: ${n}, Active: ${flag}", {"n": state.count, "flag": state.active})'
 ```
 
 All custom functions can be called both as functions (`json(x)`) and as methods (`x.json()`).

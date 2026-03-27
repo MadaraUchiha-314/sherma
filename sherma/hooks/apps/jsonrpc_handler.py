@@ -21,6 +21,7 @@ HOOK_METHODS: frozenset[str] = frozenset(
         "before_skill_load",
         "after_skill_load",
         "node_enter",
+        "node_execute",
         "node_exit",
         "before_interrupt",
         "after_interrupt",

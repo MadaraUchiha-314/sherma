@@ -1084,6 +1084,79 @@ def build_load_skills_node(
 
 
 # ---------------------------------------------------------------------------
+# custom
+# ---------------------------------------------------------------------------
+
+
+def build_custom_node(
+    ctx: NodeContext,
+) -> Callable[..., Any]:
+    """Build a custom node whose logic is defined entirely by hooks.
+
+    The lifecycle is ``node_enter`` → ``node_execute`` → ``node_exit``.
+    The ``node_execute`` hook is unique to custom nodes and is where the
+    user-supplied Python logic runs.
+    """
+
+    async def custom_fn(_ctx: NodeContext, state: dict[str, Any]) -> dict[str, Any]:
+        hooks = _ctx.hook_manager
+
+        try:
+            # node_enter
+            if hooks:
+                from sherma.hooks.types import NodeEnterContext
+
+                await hooks.run_hook(
+                    "node_enter",
+                    NodeEnterContext(
+                        node_context=_ctx,
+                        node_name=_ctx.node_def.name,
+                        node_type=_ctx.node_def.type,
+                        state=state,
+                    ),
+                )
+
+            # node_execute (custom nodes only)
+            result: dict[str, Any] = {}
+            if hooks:
+                from sherma.hooks.types import NodeExecuteContext
+
+                exec_ctx = await hooks.run_hook(
+                    "node_execute",
+                    NodeExecuteContext(
+                        node_context=_ctx,
+                        node_name=_ctx.node_def.name,
+                        state=state,
+                    ),
+                )
+                result = exec_ctx.result
+
+            # node_exit
+            if hooks:
+                from sherma.hooks.types import NodeExitContext
+
+                exit_ctx = await hooks.run_hook(
+                    "node_exit",
+                    NodeExitContext(
+                        node_context=_ctx,
+                        node_name=_ctx.node_def.name,
+                        node_type=_ctx.node_def.type,
+                        result=result,
+                        state=state,
+                    ),
+                )
+                result = exit_ctx.result
+
+            return result
+        except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
+            return await _run_node_error_hook(hooks, _ctx, state, exc)
+
+    return partial(custom_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
 # Tool resolution helpers
 # ---------------------------------------------------------------------------
 

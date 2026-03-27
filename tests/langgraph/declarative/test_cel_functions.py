@@ -300,6 +300,76 @@ class TestSubstring:
 
 
 # ---------------------------------------------------------------------------
+# Tier 4: template()
+# ---------------------------------------------------------------------------
+
+
+class TestTemplate:
+    def test_basic_substitution(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate('template("Hello ${name}!", {"name": "world"})', {})
+        assert result == "Hello world!"
+
+    def test_multiple_placeholders(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            'template("${greeting}, ${name}!", {"greeting": "Hi", "name": "Alice"})',
+            {},
+        )
+        assert result == "Hi, Alice!"
+
+    def test_unresolved_placeholders_left_as_is(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            'template("Hello ${name}, your role is ${role}.", {"name": "Bob"})',
+            {},
+        )
+        assert result == "Hello Bob, your role is ${role}."
+
+    def test_empty_map(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate('template("Hello ${name}!", {})', {})
+        assert result == "Hello ${name}!"
+
+    def test_non_string_values(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            'template("count=${count}, flag=${flag}", {"count": 42, "flag": true})',
+            {},
+        )
+        assert result == "count=42, flag=True"
+
+    def test_empty_string_template(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate('template("", {"key": "value"})', {})
+        assert result == ""
+
+    def test_repeated_placeholder(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            'template("${x} and ${x}", {"x": "same"})',
+            {},
+        )
+        assert result == "same and same"
+
+    def test_with_state_values(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            'template("Welcome ${user}!", {"user": state.username})',
+            {"username": "Charlie"},
+        )
+        assert result == "Welcome Charlie!"
+
+    def test_multiline_template(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            'template(state.tpl, {"a": "first", "b": "second"})',
+            {"tpl": "Line1: ${a}\nLine2: ${b}"},
+        )
+        assert result == "Line1: first\nLine2: second"
+
+
+# ---------------------------------------------------------------------------
 # Integration: combining functions
 # ---------------------------------------------------------------------------
 

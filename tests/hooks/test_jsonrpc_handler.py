@@ -23,8 +23,8 @@ def test_hook_methods_matches_handler():
 
 
 def test_hook_methods_count():
-    """There are exactly 16 remote-capable hooks (all except on_chat_model_create)."""
-    assert len(HOOK_METHODS) == 16
+    """There are exactly 17 remote-capable hooks (all except on_chat_model_create)."""
+    assert len(HOOK_METHODS) == 17
     assert "on_chat_model_create" not in HOOK_METHODS
 
 

@@ -127,6 +127,18 @@ class LoadSkillsArgs(BaseModel):
     skill_ids: str
 
 
+class CustomArgs(BaseModel):
+    """Arguments for a custom node.
+
+    Custom nodes have no built-in logic — their behaviour is defined
+    entirely by the ``node_execute`` hook.  An optional ``metadata``
+    dict can carry arbitrary data accessible to hooks via
+    ``ctx.node_context.node_def.args.metadata``.
+    """
+
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetryPolicy(BaseModel):
     """Retry configuration for a node.
 
@@ -166,6 +178,7 @@ class NodeDef(BaseModel):
         "set_state",
         "interrupt",
         "load_skills",
+        "custom",
     ]
     args: (
         CallLLMArgs
@@ -175,6 +188,7 @@ class NodeDef(BaseModel):
         | SetStateArgs
         | InterruptArgs
         | LoadSkillsArgs
+        | CustomArgs
     )
     on_error: OnErrorDef | None = None
 
@@ -196,6 +210,7 @@ class NodeDef(BaseModel):
             "set_state": SetStateArgs,
             "interrupt": InterruptArgs,
             "load_skills": LoadSkillsArgs,
+            "custom": CustomArgs,
         }
         args_cls = type_map.get(node_type)
         if args_cls is not None:

@@ -61,6 +61,9 @@ class HookHandler:
     async def node_enter(self, params: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
+    async def node_execute(self, params: dict[str, Any]) -> dict[str, Any] | None:
+        return None
+
     async def node_exit(self, params: dict[str, Any]) -> dict[str, Any] | None:
         return None
 

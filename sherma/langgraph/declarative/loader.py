@@ -696,7 +696,7 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
 
     # Validate on_error configuration per node type
     _RETRY_ALLOWED = {"call_llm"}
-    _FALLBACK_ALLOWED = {"call_llm", "tool_node", "call_agent"}
+    _FALLBACK_ALLOWED = {"call_llm", "tool_node", "call_agent", "custom"}
 
     for node in graph.nodes:
         on_error = node.on_error
@@ -743,6 +743,17 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
                     f"on_error.fallback target '{on_error.fallback}' "
                     f"for node '{node.name}' does not exist in the graph."
                 )
+
+    # Warn if custom nodes exist but no hooks are declared
+    has_custom = any(n.type == "custom" for n in graph.nodes)
+    if has_custom and not config.hooks:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Agent '%s' has custom node(s) but no hooks are declared. "
+            "Custom nodes rely on the node_execute hook for their logic.",
+            agent_name,
+        )
 
 
 def populate_hooks(

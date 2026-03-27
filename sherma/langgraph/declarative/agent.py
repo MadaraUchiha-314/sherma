@@ -29,6 +29,7 @@ from sherma.langgraph.declarative.nodes import (
     NodeContext,
     build_call_agent_node,
     build_call_llm_node,
+    build_custom_node,
     build_data_transform_node,
     build_interrupt_node,
     build_load_skills_node,
@@ -344,6 +345,9 @@ class DeclarativeAgent(LangGraphAgent):
                 skill_registry=self._registries.skill_registry,
                 tool_registry=self._registries.tool_registry,
             )
+
+        if node_def.type == "custom":
+            return build_custom_node(ctx)
 
         raise GraphConstructionError(f"Unknown node type: {node_def.type}")
 
