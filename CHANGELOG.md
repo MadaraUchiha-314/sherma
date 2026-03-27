@@ -1,3 +1,9 @@
+## v0.18.0 (2026-03-27)
+
+### Feat
+
+- add load_skills node type for programmatic skill loading (#49)
+
 ## v0.17.0 (2026-03-27)
 
 ### Feat
