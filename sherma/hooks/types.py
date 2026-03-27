@@ -28,6 +28,7 @@ class HookType(Enum):
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
     BEFORE_GRAPH_INVOKE = "before_graph_invoke"
     AFTER_GRAPH_INVOKE = "after_graph_invoke"
+    NODE_EXECUTE = "node_execute"
     ON_NODE_ERROR = "on_node_error"
     ON_ERROR = "on_error"
 
@@ -194,6 +195,20 @@ class AfterGraphInvokeContext:
     config: dict[str, Any]
     input: dict[str, Any]
     result: dict[str, Any]
+
+
+@dataclass
+class NodeExecuteContext:
+    """Context for node_execute hooks (custom nodes only).
+
+    ``result`` starts as an empty dict.  The hook populates it with
+    the state updates the custom node should produce.
+    """
+
+    node_context: NodeContext
+    node_name: str
+    state: dict[str, Any]
+    result: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

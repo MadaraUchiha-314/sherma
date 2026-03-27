@@ -65,10 +65,11 @@ agents:        # Agent graph definitions
 | `data_transform` | Transform state via CEL → dict | `expression` (CEL returning a dict) |
 | `set_state` | Set individual state variables | `values` (map of field → CEL expression) |
 | `interrupt` | Pause for human input | `value` (required CEL expression) |
+| `custom` | Logic defined entirely by hooks | `metadata` (optional dict for hooks) |
 
 ### Error handling (`on_error`)
 
-Any `call_llm`, `tool_node`, or `call_agent` node can declare `on_error`:
+Any `call_llm`, `tool_node`, `call_agent`, or `custom` node can declare `on_error`:
 
 ```yaml
 on_error:

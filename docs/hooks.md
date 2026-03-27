@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 17 lifecycle hook points:
+sherma provides 18 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -17,6 +17,7 @@ sherma provides 17 lifecycle hook points:
 | `before_skill_load` | Before loading a skill via `load_skill_md` |
 | `after_skill_load` | After a skill is loaded and its tools registered |
 | `node_enter` | When execution enters any graph node |
+| `node_execute` | When a `custom` node runs its logic (custom nodes only) |
 | `node_exit` | When execution leaves any graph node |
 | `before_interrupt` | Before an interrupt pauses graph execution |
 | `after_interrupt` | After an interrupt resumes with user input |
@@ -106,15 +107,23 @@ class AfterToolCallContext:
     state: dict[str, Any]
 ```
 
-### `NodeEnterContext` / `NodeExitContext`
+### `NodeEnterContext` / `NodeExecuteContext` / `NodeExitContext`
 
 ```python
 @dataclass
 class NodeEnterContext:
     node_context: NodeContext
     node_name: str
-    node_type: str             # "call_llm", "tool_node", etc.
+    node_type: str             # "call_llm", "tool_node", "custom", etc.
     state: dict[str, Any]
+
+@dataclass
+class NodeExecuteContext:
+    """Fires only for custom nodes, between node_enter and node_exit."""
+    node_context: NodeContext
+    node_name: str
+    state: dict[str, Any]
+    result: dict[str, Any]     # Starts as {}, hook populates it
 
 @dataclass
 class NodeExitContext:

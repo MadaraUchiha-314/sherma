@@ -387,6 +387,39 @@ The CEL expression can reference state, enabling structured metadata:
 
 When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
 
+### `custom`
+
+A node whose logic is defined entirely by hooks. The `custom` node type has no built-in behavior — it fires `node_enter` → `node_execute` → `node_exit`, and the `node_execute` hook (unique to custom nodes) provides the execution logic.
+
+This is the escape hatch for procedural logic that doesn't fit declarative node types (complex token counting, custom API calls with auth, stateful computations), while keeping the YAML purely declarative.
+
+```yaml
+- name: summarize_if_needed
+  type: custom
+  args:
+    metadata:              # Optional: arbitrary data accessible to hooks
+      description: "Summarize long conversations"
+```
+
+The corresponding hook:
+
+```python
+from sherma.hooks import BaseHookExecutor, NodeExecuteContext
+
+class SummarizationHook(BaseHookExecutor):
+    async def node_execute(self, ctx: NodeExecuteContext) -> NodeExecuteContext | None:
+        if ctx.node_name == "summarize_if_needed":
+            messages = ctx.state["messages"]
+            ctx.result = {
+                "summary_messages": await do_summarization(messages),
+                "summarized_until": len(messages),
+            }
+            return ctx
+        return None
+```
+
+The returned `result` dict is merged into state (same semantics as `data_transform`). Hook metadata is accessible via `ctx.node_context.node_def.args.metadata`.
+
 ## Error Handling (`on_error`)
 
 Nodes can declare an `on_error` block for retry and fallback routing:
@@ -420,9 +453,10 @@ Nodes can declare an `on_error` block for retry and fallback routing:
 | `data_transform` | No | No |
 | `set_state` | No | No |
 | `interrupt` | No | No |
+| `custom` | No | Yes |
 
 - **`retry`** is only supported on `call_llm` because the retry wraps only the `model.ainvoke()` call (stateless, safe to retry). Other node types may have side effects.
-- **`fallback`** is supported on IO-bound nodes (`call_llm`, `tool_node`, `call_agent`). When retries are exhausted (or on first failure for nodes without retry), execution routes to the fallback node instead of crashing.
+- **`fallback`** is supported on IO-bound nodes (`call_llm`, `tool_node`, `call_agent`, `custom`). When retries are exhausted (or on first failure for nodes without retry), execution routes to the fallback node instead of crashing.
 
 ### Error State
 

@@ -276,6 +276,7 @@ class HookHandler:
     async def before_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
     async def after_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
     async def node_enter(self, params: dict[str, Any]) -> dict[str, Any] | None
+    async def node_execute(self, params: dict[str, Any]) -> dict[str, Any] | None
     async def node_exit(self, params: dict[str, Any]) -> dict[str, Any] | None
     async def before_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
     async def after_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
@@ -331,6 +332,7 @@ class HookType(Enum):
     BEFORE_SKILL_LOAD = "before_skill_load"
     AFTER_SKILL_LOAD = "after_skill_load"
     NODE_ENTER = "node_enter"
+    NODE_EXECUTE = "node_execute"
     NODE_EXIT = "node_exit"
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
@@ -354,6 +356,7 @@ Imported from `sherma.hooks.types`:
 - `BeforeSkillLoadContext`
 - `AfterSkillLoadContext`
 - `NodeEnterContext`
+- `NodeExecuteContext`
 - `NodeExitContext`
 - `BeforeInterruptContext`
 - `AfterInterruptContext`
