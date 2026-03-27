@@ -1,3 +1,9 @@
+## v0.17.0 (2026-03-27)
+
+### Feat
+
+- add custom node type with node_execute hook (#48)
+
 ## v0.16.0 (2026-03-27)
 
 ### Feat
