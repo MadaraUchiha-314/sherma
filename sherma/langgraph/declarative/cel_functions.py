@@ -150,6 +150,33 @@ def cel_substring(
 
 
 # ---------------------------------------------------------------------------
+# Tier 4: Templating
+# ---------------------------------------------------------------------------
+
+
+def cel_template(
+    text: celtypes.StringType,
+    substitutions: celtypes.MapType,
+) -> celtypes.StringType:
+    """Substitute ``${key}`` placeholders in a string using values from a map.
+
+    Unresolved placeholders (keys not present in the map) are left as-is.
+
+    Usage in CEL::
+
+        template("Hello ${name}!", {"name": "world"})   // "Hello world!"
+
+        // With prompt instructions:
+        template(prompts["plan"]["instructions"], {"skills": state.skill_list})
+    """
+    result = str(text)
+    for key, value in substitutions.items():
+        placeholder = "${" + str(key) + "}"
+        result = result.replace(placeholder, str(value))
+    return celtypes.StringType(result)
+
+
+# ---------------------------------------------------------------------------
 # Registry of all custom functions
 # ---------------------------------------------------------------------------
 
@@ -168,4 +195,6 @@ CUSTOM_FUNCTIONS: dict[str, Any] = {
     "indexOf": cel_index_of,
     "join": cel_join,
     "substring": cel_substring,
+    # Tier 4: Templating
+    "template": cel_template,
 }

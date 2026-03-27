@@ -559,6 +559,25 @@ Aligned with the [cel-go strings extension](https://pkg.go.dev/github.com/google
 'json(state.data.trim())["name"].lowerAscii()'
 ```
 
+#### Templating
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `template(string, map)` | Substitute `${key}` placeholders from a map | `template("Hello ${name}!", {"name": "world"})` |
+
+Unresolved placeholders (keys not in the map) are left as-is. Non-string values are coerced to strings.
+
+```yaml
+# Inject state into a prompt template
+'template(prompts["plan-prompt"]["instructions"], {"skill_instructions": state.skill_instructions})'
+
+# Multiple placeholders
+'template("Hello ${name}, your role is ${role}.", {"name": state.user, "role": state.assigned_role})'
+
+# Non-string values are coerced
+'template("Count: ${n}, Active: ${flag}", {"n": state.count, "flag": state.active})'
+```
+
 All custom functions can be called both as functions (`json(x)`) and as methods (`x.json()`).
 
 ### Examples

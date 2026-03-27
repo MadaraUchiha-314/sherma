@@ -198,3 +198,24 @@ def test_evaluate_state_bracket_access():
     cel = CelEngine()
     result = cel.evaluate('state["x"] + state["y"]', {"x": 10, "y": 20})
     assert result == 30
+
+
+def test_template_with_prompt_extra_vars():
+    """template() works with prompt instructions from extra_vars."""
+    prompt_text = (
+        "You are a helpful assistant.\n\n"
+        "## Available Skills\n"
+        "${skill_instructions}\n\n"
+        "## User Context\n"
+        "${user_context}"
+    )
+    cel = CelEngine(extra_vars={"prompts": {"plan": {"instructions": prompt_text}}})
+    result = cel.evaluate(
+        'template(prompts["plan"]["instructions"], '
+        '{"skill_instructions": state.skills, "user_context": state.ctx})',
+        {"skills": "Use the weather tool.", "ctx": "Location: NYC"},
+    )
+    assert "Use the weather tool." in result
+    assert "Location: NYC" in result
+    assert "${skill_instructions}" not in result
+    assert "${user_context}" not in result
