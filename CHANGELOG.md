@@ -1,3 +1,9 @@
+## v0.16.0 (2026-03-27)
+
+### Feat
+
+- add template() CEL function for prompt string templating (#47)
+
 ## v0.15.0 (2026-03-26)
 
 ### Feat
