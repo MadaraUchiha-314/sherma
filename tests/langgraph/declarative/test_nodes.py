@@ -24,6 +24,7 @@ from sherma.langgraph.declarative.nodes import (
     build_call_llm_node,
     build_data_transform_node,
     build_interrupt_node,
+    build_load_skills_node,
     build_set_state_node,
     build_tool_node,
 )
@@ -32,6 +33,7 @@ from sherma.langgraph.declarative.schema import (
     DataTransformArgs,
     DeclarativeConfig,
     InterruptArgs,
+    LoadSkillsArgs,
     NodeDef,
     PromptMessageDef,
     RegistryRef,
@@ -1278,3 +1280,266 @@ async def test_build_call_llm_node_sub_agents_false():
     assert result["messages"][0].content == "No tools"
     # bind_tools should NOT have been called since it's an AsyncMock (no bind_tools)
     chat_model.ainvoke.assert_called_once()
+
+
+# --- load_skills node tests ---
+
+
+def _make_skill_registries():
+    """Create skill and tool registries with a test skill."""
+    from sherma.entities.skill import Skill, SkillFrontMatter
+    from sherma.entities.skill_card import LocalToolDef, SkillCard
+    from sherma.registry.skill import SkillRegistry
+    from sherma.registry.tool import ToolRegistry
+
+    card = SkillCard(
+        id="weather",
+        version="1.0.0",
+        name="Weather",
+        description="Weather skill",
+        base_uri=".",
+        local_tools={
+            "get_weather": LocalToolDef(
+                id="get_weather",
+                version="1.0.0",
+                import_path="examples.tools.get_weather",
+            )
+        },
+    )
+    skill = Skill(
+        id="weather",
+        version="1.0.0",
+        front_matter=SkillFrontMatter(name="Weather", description="Weather skill"),
+        skill_card=card,
+    )
+    return skill, card, SkillRegistry(), ToolRegistry()
+
+
+@pytest.mark.asyncio
+async def test_build_load_skills_node_basic():
+    """load_skills loads a single skill and produces AIMessage + ToolMessage."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import ToolMessage
+
+    from sherma.registry.base import RegistryEntry
+
+    skill, _card, skill_registry, tool_registry = _make_skill_registries()
+    await skill_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=skill)
+    )
+
+    node_def = NodeDef(
+        name="load",
+        type="load_skills",
+        args=LoadSkillsArgs(skill_ids='[{"id": "weather", "version": "1.0.0"}]'),
+    )
+    cel = CelEngine()
+    fn = build_load_skills_node(_make_ctx(node_def), cel, skill_registry, tool_registry)
+
+    with patch(
+        "sherma.langgraph.skill_tools.load_and_register_skill",
+        return_value=("# Weather Skill\nUse get_weather tool.", ["get_weather"]),
+    ) as mock_load:
+        result = await fn({"messages": [], INTERNAL_STATE_KEY: {}})
+
+    mock_load.assert_called_once()
+    msgs = result["messages"]
+    assert len(msgs) == 2
+    # First message: AIMessage with tool_calls
+    ai_msg = msgs[0]
+    assert isinstance(ai_msg, AIMessage)
+    assert len(ai_msg.tool_calls) == 1
+    assert ai_msg.tool_calls[0]["name"] == "load_skill_md"
+    assert ai_msg.tool_calls[0]["args"]["skill_id"] == "weather"
+    # Second message: ToolMessage with skill content
+    tool_msg = msgs[1]
+    assert isinstance(tool_msg, ToolMessage)
+    assert "Weather Skill" in tool_msg.content
+    # Internal state tracks tool IDs
+    internal = result[INTERNAL_STATE_KEY]
+    assert "get_weather" in internal["loaded_tools_from_skills"]
+
+
+@pytest.mark.asyncio
+async def test_build_load_skills_node_multiple_skills():
+    """load_skills loads multiple skills in a single AIMessage."""
+    from unittest.mock import patch
+
+    from langchain_core.messages import ToolMessage
+
+    from sherma.registry.base import RegistryEntry
+
+    skill, _card, skill_registry, tool_registry = _make_skill_registries()
+    await skill_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=skill)
+    )
+
+    node_def = NodeDef(
+        name="load",
+        type="load_skills",
+        args=LoadSkillsArgs(
+            skill_ids=(
+                '[{"id": "weather", "version": "1.0.0"},'
+                ' {"id": "calendar", "version": "2.0.0"}]'
+            )
+        ),
+    )
+    cel = CelEngine()
+    fn = build_load_skills_node(_make_ctx(node_def), cel, skill_registry, tool_registry)
+
+    call_count = 0
+
+    async def mock_load(sid, ver, sr, tr, hm=None):
+        nonlocal call_count
+        call_count += 1
+        if sid == "weather":
+            return "# Weather", ["get_weather"]
+        return "# Calendar", ["create_event"]
+
+    with patch(
+        "sherma.langgraph.skill_tools.load_and_register_skill",
+        side_effect=mock_load,
+    ):
+        result = await fn({"messages": [], INTERNAL_STATE_KEY: {}})
+
+    assert call_count == 2
+    msgs = result["messages"]
+    # 1 AIMessage with 2 tool_calls + 2 ToolMessages
+    assert len(msgs) == 3
+    ai_msg = msgs[0]
+    assert isinstance(ai_msg, AIMessage)
+    assert len(ai_msg.tool_calls) == 2
+    assert isinstance(msgs[1], ToolMessage)
+    assert isinstance(msgs[2], ToolMessage)
+    internal = result[INTERNAL_STATE_KEY]
+    assert "get_weather" in internal["loaded_tools_from_skills"]
+    assert "create_event" in internal["loaded_tools_from_skills"]
+
+
+@pytest.mark.asyncio
+async def test_build_load_skills_node_empty_list():
+    """load_skills with empty list produces no messages."""
+    from sherma.registry.skill import SkillRegistry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="load",
+        type="load_skills",
+        args=LoadSkillsArgs(skill_ids="[]"),
+    )
+    cel = CelEngine()
+    fn = build_load_skills_node(
+        _make_ctx(node_def), cel, SkillRegistry(), ToolRegistry()
+    )
+
+    result = await fn({"messages": [], INTERNAL_STATE_KEY: {}})
+    assert result["messages"] == []
+    assert result[INTERNAL_STATE_KEY]["loaded_tools_from_skills"] == []
+
+
+@pytest.mark.asyncio
+async def test_build_load_skills_node_preserves_existing_tool_ids():
+    """load_skills appends to existing loaded_tools_from_skills."""
+    from unittest.mock import patch
+
+    from sherma.registry.base import RegistryEntry
+
+    skill, _card, skill_registry, tool_registry = _make_skill_registries()
+    await skill_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=skill)
+    )
+
+    node_def = NodeDef(
+        name="load",
+        type="load_skills",
+        args=LoadSkillsArgs(skill_ids='[{"id": "weather"}]'),
+    )
+    cel = CelEngine()
+    fn = build_load_skills_node(_make_ctx(node_def), cel, skill_registry, tool_registry)
+
+    with patch(
+        "sherma.langgraph.skill_tools.load_and_register_skill",
+        return_value=("# Weather", ["get_weather"]),
+    ):
+        result = await fn(
+            {
+                "messages": [],
+                INTERNAL_STATE_KEY: {"loaded_tools_from_skills": ["existing_tool"]},
+            }
+        )
+
+    internal = result[INTERNAL_STATE_KEY]
+    assert "existing_tool" in internal["loaded_tools_from_skills"]
+    assert "get_weather" in internal["loaded_tools_from_skills"]
+
+
+@pytest.mark.asyncio
+async def test_build_load_skills_node_default_version():
+    """load_skills defaults version to '*' when not provided."""
+    from unittest.mock import patch
+
+    from sherma.registry.base import RegistryEntry
+
+    skill, _card, skill_registry, tool_registry = _make_skill_registries()
+    await skill_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=skill)
+    )
+
+    node_def = NodeDef(
+        name="load",
+        type="load_skills",
+        args=LoadSkillsArgs(skill_ids='[{"id": "weather"}]'),
+    )
+    cel = CelEngine()
+    fn = build_load_skills_node(_make_ctx(node_def), cel, skill_registry, tool_registry)
+
+    with patch(
+        "sherma.langgraph.skill_tools.load_and_register_skill",
+        return_value=("# Weather", ["get_weather"]),
+    ) as mock_load:
+        await fn({"messages": [], INTERNAL_STATE_KEY: {}})
+
+    # version should default to "*"
+    call_args = mock_load.call_args
+    assert call_args[0][1] == "*"
+
+
+@pytest.mark.asyncio
+async def test_build_load_skills_node_skips_failed_skills():
+    """load_skills continues loading when a skill fails."""
+    from unittest.mock import patch
+
+    from sherma.registry.base import RegistryEntry
+
+    skill, _card, skill_registry, tool_registry = _make_skill_registries()
+    await skill_registry.add(
+        RegistryEntry(id="weather", version="1.0.0", instance=skill)
+    )
+
+    node_def = NodeDef(
+        name="load",
+        type="load_skills",
+        args=LoadSkillsArgs(
+            skill_ids='[{"id": "broken"}, {"id": "weather", "version": "1.0.0"}]'
+        ),
+    )
+    cel = CelEngine()
+    fn = build_load_skills_node(_make_ctx(node_def), cel, skill_registry, tool_registry)
+
+    async def mock_load(sid, ver, sr, tr, hm=None):
+        if sid == "broken":
+            raise RuntimeError("Skill not found")
+        return "# Weather", ["get_weather"]
+
+    with patch(
+        "sherma.langgraph.skill_tools.load_and_register_skill",
+        side_effect=mock_load,
+    ):
+        result = await fn({"messages": [], INTERNAL_STATE_KEY: {}})
+
+    # Only the working skill should produce messages
+    msgs = result["messages"]
+    assert len(msgs) == 2  # 1 AIMessage + 1 ToolMessage
+    internal = result[INTERNAL_STATE_KEY]
+    assert "get_weather" in internal["loaded_tools_from_skills"]

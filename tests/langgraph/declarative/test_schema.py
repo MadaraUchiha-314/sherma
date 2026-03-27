@@ -16,6 +16,7 @@ from sherma.langgraph.declarative.schema import (
     HookDef,
     InterruptArgs,
     LLMDef,
+    LoadSkillsArgs,
     NodeDef,
     PromptDef,
     PromptMessageDef,
@@ -366,3 +367,19 @@ def test_use_sub_agents_as_tools_default_is_false():
         prompt=[PromptMessageDef(role="system", content='"hello"')],
     )
     assert args.use_sub_agents_as_tools is False
+
+
+def test_load_skills_args():
+    args = LoadSkillsArgs(skill_ids='[{"id": "weather", "version": "1.0.0"}]')
+    assert args.skill_ids == '[{"id": "weather", "version": "1.0.0"}]'
+
+
+def test_load_skills_node_def_parsing():
+    """NodeDef with type=load_skills resolves args to LoadSkillsArgs."""
+    node = NodeDef(
+        name="load",
+        type="load_skills",
+        args={"skill_ids": "state.selected_skills"},
+    )
+    assert isinstance(node.args, LoadSkillsArgs)
+    assert node.args.skill_ids == "state.selected_skills"

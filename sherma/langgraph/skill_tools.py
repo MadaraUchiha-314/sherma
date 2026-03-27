@@ -30,6 +30,103 @@ def _normalize_version(version: str) -> str:
     return version
 
 
+async def load_and_register_skill(
+    skill_id: str,
+    version: str,
+    skill_registry: SkillRegistry,
+    tool_registry: ToolRegistry,
+    hook_manager: HookManager | None = None,
+) -> tuple[str, list[str]]:
+    """Load a skill's SKILL.md, register its tools, return (content, tool_ids).
+
+    This is the shared core logic used by both the progressive-disclosure
+    ``load_skill_md`` tool and the declarative ``load_skills`` node.
+    """
+    version = _normalize_version(version)
+    logger.info("load_and_register_skill: skill_id=%s, version=%s", skill_id, version)
+
+    # before_skill_load
+    if hook_manager:
+        from sherma.hooks.types import BeforeSkillLoadContext
+
+        before_ctx = await hook_manager.run_hook(
+            "before_skill_load",
+            BeforeSkillLoadContext(
+                node_context=None,
+                skill_id=skill_id,
+                version=version,
+            ),
+        )
+        skill_id = before_ctx.skill_id
+        version = before_ctx.version
+
+    skill = await skill_registry.get(skill_id, version)
+    skill_card = skill.skill_card
+    if skill_card is None:
+        return f"Error: skill '{skill_id}' has no skill card", []
+
+    resolver = SkillResolver(skill_card)
+
+    # Load SKILL.md content
+    content = await resolver.load_file("SKILL.md")
+
+    # Parse and update the skill in the registry with loaded content
+    parsed_skill = _parse_skill_md(content, skill_card.id, skill_card.version)
+    parsed_skill.skill_card = skill_card
+    await skill_registry.add(
+        RegistryEntry(
+            id=skill_card.id,
+            version=skill_card.version,
+            instance=parsed_skill,
+        )
+    )
+
+    # Load and register MCP tools
+    mcp_tools = await load_mcp_tools_from_skill(skill_card)
+    tools_loaded: list[str] = []
+    for mcp_tool in mcp_tools:
+        sherma_tool = from_langgraph_tool(mcp_tool)
+        await tool_registry.add(
+            RegistryEntry(
+                id=sherma_tool.id,
+                version=sherma_tool.version,
+                instance=sherma_tool,
+            )
+        )
+        tools_loaded.append(sherma_tool.id)
+
+    # Load and register local tools
+    local_tools = load_local_tools_from_skill(skill_card)
+    for local_tool in local_tools:
+        sherma_tool = from_langgraph_tool(local_tool)
+        await tool_registry.add(
+            RegistryEntry(
+                id=sherma_tool.id,
+                version=sherma_tool.version,
+                instance=sherma_tool,
+            )
+        )
+        tools_loaded.append(sherma_tool.id)
+
+    # after_skill_load
+    if hook_manager:
+        from sherma.hooks.types import AfterSkillLoadContext
+
+        after_ctx = await hook_manager.run_hook(
+            "after_skill_load",
+            AfterSkillLoadContext(
+                node_context=None,
+                skill_id=skill_id,
+                version=version,
+                content=content,
+                tools_loaded=tools_loaded,
+            ),
+        )
+        content = after_ctx.content
+
+    return content, tools_loaded
+
+
 def create_skill_tools(
     skill_registry: SkillRegistry,
     tool_registry: ToolRegistry,
@@ -77,88 +174,9 @@ def create_skill_tools(
 
         This also registers any MCP or local tools defined in the skill.
         """
-        version = _normalize_version(version)
-        logger.info("load_skill_md called: skill_id=%s, version=%s", skill_id, version)
-
-        # before_skill_load
-        if hook_manager:
-            from sherma.hooks.types import BeforeSkillLoadContext
-
-            before_ctx = await hook_manager.run_hook(
-                "before_skill_load",
-                BeforeSkillLoadContext(
-                    node_context=None,
-                    skill_id=skill_id,
-                    version=version,
-                ),
-            )
-            skill_id = before_ctx.skill_id
-            version = before_ctx.version
-
-        skill = await skill_registry.get(skill_id, version)
-        skill_card = skill.skill_card
-        if skill_card is None:
-            return f"Error: skill '{skill_id}' has no skill card"
-
-        resolver = SkillResolver(skill_card)
-
-        # Load SKILL.md content
-        content = await resolver.load_file("SKILL.md")
-
-        # Parse and update the skill in the registry with loaded content
-        parsed_skill = _parse_skill_md(content, skill_card.id, skill_card.version)
-        parsed_skill.skill_card = skill_card
-        await skill_registry.add(
-            RegistryEntry(
-                id=skill_card.id,
-                version=skill_card.version,
-                instance=parsed_skill,
-            )
+        content, _tool_ids = await load_and_register_skill(
+            skill_id, version, skill_registry, tool_registry, hook_manager
         )
-
-        # Load and register MCP tools
-        mcp_tools = await load_mcp_tools_from_skill(skill_card)
-        tools_loaded: list[str] = []
-        for mcp_tool in mcp_tools:
-            sherma_tool = from_langgraph_tool(mcp_tool)
-            await tool_registry.add(
-                RegistryEntry(
-                    id=sherma_tool.id,
-                    version=sherma_tool.version,
-                    instance=sherma_tool,
-                )
-            )
-            tools_loaded.append(sherma_tool.id)
-
-        # Load and register local tools
-        local_tools = load_local_tools_from_skill(skill_card)
-        for local_tool in local_tools:
-            sherma_tool = from_langgraph_tool(local_tool)
-            await tool_registry.add(
-                RegistryEntry(
-                    id=sherma_tool.id,
-                    version=sherma_tool.version,
-                    instance=sherma_tool,
-                )
-            )
-            tools_loaded.append(sherma_tool.id)
-
-        # after_skill_load
-        if hook_manager:
-            from sherma.hooks.types import AfterSkillLoadContext
-
-            after_ctx = await hook_manager.run_hook(
-                "after_skill_load",
-                AfterSkillLoadContext(
-                    node_context=None,
-                    skill_id=skill_id,
-                    version=version,
-                    content=content,
-                    tools_loaded=tools_loaded,
-                ),
-            )
-            content = after_ctx.content
-
         return content
 
     @tool

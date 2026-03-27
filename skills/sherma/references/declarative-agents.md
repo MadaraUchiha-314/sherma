@@ -387,6 +387,30 @@ The CEL expression can reference state, enabling structured metadata:
 
 When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
 
+### `load_skills`
+
+Programmatically loads skills by evaluating a CEL expression to get a list of skill IDs. For each skill, it loads the SKILL.md, registers tools, and synthesizes `AIMessage(tool_calls)` + `ToolMessage` pairs into `state.messages` — making the result indistinguishable from progressive disclosure to downstream nodes.
+
+```yaml
+- name: load_selected_skills
+  type: load_skills
+  args:
+    skill_ids: 'json(state.messages[size(state.messages) - 1].content)["skills"]'
+```
+
+The `skill_ids` CEL expression must evaluate to a list of objects with `id` (required) and `version` (optional, defaults to `"*"`) keys:
+
+```python
+# Example CEL result:
+[{"id": "weather", "version": "1.0.0"}, {"id": "calendar"}]
+```
+
+Loaded tools are tracked in `__sherma__.loaded_tools_from_skills` and can be used by downstream `call_llm` nodes with `use_tools_from_loaded_skills: true`. If a skill fails to load, it is skipped with a warning and remaining skills continue loading.
+
+**When to use `load_skills` vs progressive disclosure:**
+- Use `load_skills` when the agent needs skills loaded before the planning node runs (e.g., a structured-output LLM selects skills upfront).
+- Use progressive disclosure (`list_skills` / `load_skill_md` tools) when the LLM should discover and load skills dynamically during conversation.
+
 ## Error Handling (`on_error`)
 
 Nodes can declare an `on_error` block for retry and fallback routing:
@@ -420,6 +444,7 @@ Nodes can declare an `on_error` block for retry and fallback routing:
 | `data_transform` | No | No |
 | `set_state` | No | No |
 | `interrupt` | No | No |
+| `load_skills` | No | No |
 
 - **`retry`** is only supported on `call_llm` because the retry wraps only the `model.ainvoke()` call (stateless, safe to retry). Other node types may have side effects.
 - **`fallback`** is supported on IO-bound nodes (`call_llm`, `tool_node`, `call_agent`). When retries are exhausted (or on first failure for nodes without retry), execution routes to the fallback node instead of crashing.
