@@ -19,6 +19,7 @@ from sherma.hooks.types import (
     ChatModelCreateContext,
     GraphInvokeContext,
     NodeEnterContext,
+    NodeExecuteContext,
     NodeExitContext,
     OnErrorContext,
     OnNodeErrorContext,
@@ -67,6 +68,10 @@ class HookExecutor(Protocol):
     ) -> AfterSkillLoadContext | None: ...
 
     async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None: ...
+
+    async def node_execute(
+        self, ctx: NodeExecuteContext
+    ) -> NodeExecuteContext | None: ...
 
     async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None: ...
 
@@ -144,6 +149,9 @@ class BaseHookExecutor:
         return None
 
     async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
+        return None
+
+    async def node_execute(self, ctx: NodeExecuteContext) -> NodeExecuteContext | None:
         return None
 
     async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:

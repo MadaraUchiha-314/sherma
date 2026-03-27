@@ -1278,3 +1278,211 @@ async def test_build_call_llm_node_sub_agents_false():
     assert result["messages"][0].content == "No tools"
     # bind_tools should NOT have been called since it's an AsyncMock (no bind_tools)
     chat_model.ainvoke.assert_called_once()
+
+
+# --- Custom node tests ---
+
+
+@pytest.mark.asyncio
+async def test_build_custom_node_no_hooks():
+    """Custom node without hooks returns empty dict."""
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    node_def = NodeDef(
+        name="my_custom",
+        type="custom",
+        args=CustomArgs(),
+    )
+    fn = build_custom_node(_make_ctx(node_def))
+    result = await fn({"counter": 5})
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_build_custom_node_with_hook():
+    """Custom node with node_execute hook returns hook-provided result."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    class MyExecuteHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            ctx.result = {"doubled": ctx.state["counter"] * 2}
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(MyExecuteHook())
+
+    node_def = NodeDef(
+        name="doubler",
+        type="custom",
+        args=CustomArgs(),
+    )
+    fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
+    result = await fn({"counter": 5})
+    assert result == {"doubled": 10}
+
+
+@pytest.mark.asyncio
+async def test_custom_node_fires_all_hooks():
+    """Custom node fires node_enter, node_execute, node_exit in order."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    events: list[str] = []
+
+    class TrackingHook(BaseHookExecutor):
+        async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
+            events.append("node_enter")
+            return None
+
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            events.append("node_execute")
+            ctx.result = {"done": True}
+            return ctx
+
+        async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
+            events.append("node_exit")
+            return None
+
+    hook_manager = HookManager()
+    hook_manager.register(TrackingHook())
+
+    node_def = NodeDef(
+        name="my_custom",
+        type="custom",
+        args=CustomArgs(),
+    )
+    fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
+    result = await fn({})
+    assert events == ["node_enter", "node_execute", "node_exit"]
+    assert result == {"done": True}
+
+
+@pytest.mark.asyncio
+async def test_custom_node_exit_can_modify_result():
+    """node_exit hook can modify the result produced by node_execute."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    class ExecuteHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            ctx.result = {"value": 1}
+            return ctx
+
+        async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
+            ctx.result["extra"] = True
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(ExecuteHook())
+
+    node_def = NodeDef(
+        name="custom_with_exit",
+        type="custom",
+        args=CustomArgs(),
+    )
+    fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
+    result = await fn({})
+    assert result == {"value": 1, "extra": True}
+
+
+@pytest.mark.asyncio
+async def test_custom_node_dispatches_by_name():
+    """Multiple custom nodes with a single hook that dispatches by node_name."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    class MultiHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            if ctx.node_name == "add_one":
+                ctx.result = {"value": ctx.state.get("value", 0) + 1}
+            elif ctx.node_name == "double":
+                ctx.result = {"value": ctx.state.get("value", 0) * 2}
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(MultiHook())
+
+    node_a = NodeDef(name="add_one", type="custom", args=CustomArgs())
+    node_b = NodeDef(name="double", type="custom", args=CustomArgs())
+
+    fn_a = build_custom_node(_make_ctx(node_a, hook_manager=hook_manager))
+    fn_b = build_custom_node(_make_ctx(node_b, hook_manager=hook_manager))
+
+    assert await fn_a({"value": 5}) == {"value": 6}
+    assert await fn_b({"value": 5}) == {"value": 10}
+
+
+@pytest.mark.asyncio
+async def test_custom_node_metadata_accessible():
+    """Hook can access metadata from CustomArgs via node_context."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    class MetadataHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            meta = ctx.node_context.node_def.args.metadata  # type: ignore[union-attr]
+            ctx.result = {"greeting": meta.get("prefix", "") + " world"}
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(MetadataHook())
+
+    node_def = NodeDef(
+        name="greet",
+        type="custom",
+        args=CustomArgs(metadata={"prefix": "hello"}),
+    )
+    fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
+    result = await fn({})
+    assert result == {"greeting": "hello world"}
+
+
+@pytest.mark.asyncio
+async def test_custom_node_error_handling():
+    """Custom node fires on_node_error when node_execute hook raises."""
+    from sherma.hooks.types import NodeExecuteContext, OnNodeErrorContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    class FailingHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            raise ValueError("custom node failed")
+
+    class ConsumeErrorHook(BaseHookExecutor):
+        async def on_node_error(
+            self, ctx: OnNodeErrorContext
+        ) -> OnNodeErrorContext | None:
+            ctx.error = None
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(FailingHook())
+    hook_manager.register(ConsumeErrorHook())
+
+    node_def = NodeDef(
+        name="failing_custom",
+        type="custom",
+        args=CustomArgs(),
+    )
+    fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
+    result = await fn({})
+    assert result == {}

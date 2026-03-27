@@ -24,6 +24,7 @@ from sherma.hooks.types import (
     BeforeToolCallContext,
     GraphInvokeContext,
     NodeEnterContext,
+    NodeExecuteContext,
     NodeExitContext,
     OnErrorContext,
     OnNodeErrorContext,
@@ -148,6 +149,9 @@ class RemoteHookExecutor(BaseHookExecutor):
 
     async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
         return await self._execute_hook("node_enter", ctx)
+
+    async def node_execute(self, ctx: NodeExecuteContext) -> NodeExecuteContext | None:
+        return await self._execute_hook("node_execute", ctx)
 
     async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
         return await self._execute_hook("node_exit", ctx)
