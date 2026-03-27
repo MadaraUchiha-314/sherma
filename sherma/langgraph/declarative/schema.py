@@ -116,6 +116,17 @@ class InterruptArgs(BaseModel):
     value: str
 
 
+class LoadSkillsArgs(BaseModel):
+    """Arguments for a load_skills node.
+
+    The ``skill_ids`` CEL expression must evaluate to a list of objects
+    with ``id`` (required) and ``version`` (optional, defaults to ``"*"``)
+    keys.
+    """
+
+    skill_ids: str
+
+
 class CustomArgs(BaseModel):
     """Arguments for a custom node.
 
@@ -166,6 +177,7 @@ class NodeDef(BaseModel):
         "data_transform",
         "set_state",
         "interrupt",
+        "load_skills",
         "custom",
     ]
     args: (
@@ -175,6 +187,7 @@ class NodeDef(BaseModel):
         | DataTransformArgs
         | SetStateArgs
         | InterruptArgs
+        | LoadSkillsArgs
         | CustomArgs
     )
     on_error: OnErrorDef | None = None
@@ -196,6 +209,7 @@ class NodeDef(BaseModel):
             "data_transform": DataTransformArgs,
             "set_state": SetStateArgs,
             "interrupt": InterruptArgs,
+            "load_skills": LoadSkillsArgs,
             "custom": CustomArgs,
         }
         args_cls = type_map.get(node_type)

@@ -200,6 +200,60 @@ Skills can be local (files on disk) or remote (served over HTTP):
 }
 ```
 
+## Programmatic Skill Loading (`load_skills` node)
+
+For agents that need skills loaded before the planning node runs, use the `load_skills` node type. This is an alternative to progressive disclosure where a dedicated node selects and loads skills upfront.
+
+```yaml
+nodes:
+  - name: find_relevant_skills
+    type: call_llm
+    args:
+      prompt:
+        - role: system
+          content: 'prompts["find-relevant-skills"]["instructions"]'
+        - role: messages
+          content: 'state.messages'
+      response_format:
+        name: SelectedSkills
+        description: Skills relevant to the request
+        schema:
+          type: object
+          properties:
+            skills:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  version: { type: string }
+                required: [id]
+          required: [skills]
+
+  - name: load_selected_skills
+    type: load_skills
+    args:
+      skill_ids: 'json(state.messages[size(state.messages) - 1].content)["skills"]'
+
+  - name: plan
+    type: call_llm
+    args:
+      prompt:
+        - role: system
+          content: 'prompts["plan"]["instructions"]'
+        - role: messages
+          content: 'state.messages'
+      use_tools_from_loaded_skills: true
+```
+
+The `load_skills` node:
+- Evaluates the `skill_ids` CEL expression to get a list of `{id, version}` objects
+- Loads each skill's SKILL.md and registers its tools
+- Synthesizes `AIMessage(tool_calls)` + `ToolMessage` pairs into `state.messages`
+- Tracks loaded tool IDs in `__sherma__.loaded_tools_from_skills`
+
+Both patterns (progressive disclosure and programmatic loading) can coexist in the same agent.
+
 ## Programmatic Usage
 
 You can also use skill tools outside of declarative agents:

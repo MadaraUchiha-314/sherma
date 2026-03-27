@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import re
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
@@ -63,6 +64,7 @@ if TYPE_CHECKING:
         DataTransformArgs,
         DeclarativeConfig,
         InterruptArgs,
+        LoadSkillsArgs,
         NodeDef,
         RetryPolicy,
         SetStateArgs,
@@ -937,6 +939,148 @@ def build_interrupt_node(
             return await _run_node_error_hook(hooks, _ctx, state, exc)
 
     return partial(interrupt_fn, ctx)
+
+
+# ---------------------------------------------------------------------------
+# load_skills
+# ---------------------------------------------------------------------------
+
+
+def build_load_skills_node(
+    ctx: NodeContext,
+    cel: CelEngine,
+    skill_registry: SkillRegistry,
+    tool_registry: ToolRegistry,
+) -> Callable[..., Any]:
+    """Build a load_skills node that programmatically loads skills.
+
+    Evaluates the ``skill_ids`` CEL expression to get a list of
+    ``{id, version}`` objects, loads each skill's SKILL.md, registers
+    their tools, and synthesizes ``AIMessage(tool_calls)`` +
+    ``ToolMessage`` pairs into ``state.messages``.
+    """
+    args: LoadSkillsArgs = ctx.node_def.args  # type: ignore[assignment]
+
+    async def load_skills_fn(
+        _ctx: NodeContext, state: dict[str, Any]
+    ) -> dict[str, Any]:
+        hooks = _ctx.hook_manager
+
+        try:
+            # node_enter
+            if hooks:
+                from sherma.hooks.types import NodeEnterContext
+
+                await hooks.run_hook(
+                    "node_enter",
+                    NodeEnterContext(
+                        node_context=_ctx,
+                        node_name=_ctx.node_def.name,
+                        node_type=_ctx.node_def.type,
+                        state=state,
+                    ),
+                )
+
+            # Evaluate CEL to get list of {id, version} dicts
+            raw = cel.evaluate(args.skill_ids, state)
+            if not isinstance(raw, list):
+                raise ValueError(
+                    f"skill_ids CEL expression must evaluate to a list, "
+                    f"got {type(raw).__name__}"
+                )
+
+            from sherma.langgraph.skill_tools import load_and_register_skill
+
+            internal = _get_internal(state)
+            current_ids: list[str] = list(internal.get("loaded_tools_from_skills", []))
+
+            # Build tool_calls for the AIMessage and collect ToolMessages
+            tool_calls: list[dict[str, Any]] = []
+            tool_messages: list[ToolMessage] = []
+
+            for item in raw:
+                if not isinstance(item, dict) or "id" not in item:
+                    logger.warning(
+                        "[%s] Skipping invalid skill entry: %r",
+                        _ctx.node_def.name,
+                        item,
+                    )
+                    continue
+
+                skill_id = item["id"]
+                version = item.get("version", "*")
+                call_id = f"load_skill_{uuid.uuid4().hex[:8]}"
+
+                try:
+                    content, tool_ids = await load_and_register_skill(
+                        skill_id,
+                        version,
+                        skill_registry,
+                        tool_registry,
+                        hooks,
+                    )
+                except Exception:
+                    logger.warning(
+                        "[%s] Failed to load skill '%s'",
+                        _ctx.node_def.name,
+                        skill_id,
+                        exc_info=True,
+                    )
+                    continue
+
+                tool_calls.append(
+                    {
+                        "id": call_id,
+                        "name": "load_skill_md",
+                        "args": {"skill_id": skill_id, "version": version},
+                    }
+                )
+                tool_messages.append(ToolMessage(content=content, tool_call_id=call_id))
+
+                for tid in tool_ids:
+                    if tid not in current_ids:
+                        current_ids.append(tid)
+
+            # Build result messages
+            messages: list[Any] = []
+            if tool_calls:
+                messages.append(AIMessage(content="", tool_calls=tool_calls))
+                messages.extend(tool_messages)
+
+            internal["loaded_tools_from_skills"] = current_ids
+            result: dict[str, Any] = {"messages": messages}
+            _set_internal(result, internal)
+
+            logger.info(
+                "[%s] Loaded %d skill(s), %d tool(s) registered",
+                _ctx.node_def.name,
+                len(tool_calls),
+                len(current_ids),
+            )
+
+            # node_exit
+            if hooks:
+                from sherma.hooks.types import NodeExitContext
+
+                exit_ctx = await hooks.run_hook(
+                    "node_exit",
+                    NodeExitContext(
+                        node_context=_ctx,
+                        node_name=_ctx.node_def.name,
+                        node_type=_ctx.node_def.type,
+                        result=result,
+                        state=state,
+                    ),
+                )
+                result = exit_ctx.result
+
+            return result
+        except Exception as exc:
+            if isinstance(exc, GraphBubbleUp):
+                raise
+            return await _run_node_error_hook(hooks, _ctx, state, exc)
+
+    return partial(load_skills_fn, ctx)
 
 
 # ---------------------------------------------------------------------------

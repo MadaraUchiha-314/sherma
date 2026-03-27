@@ -1,0 +1,112 @@
+# Load Skills — LLM-Driven Example
+# An LLM selects which skills to load via structured output, then a
+# load_skills node programmatically loads them before the planning node runs.
+# This is the non-progressive-disclosure pattern: skill selection happens
+# upfront, not during conversation.
+
+manifest_version: 1
+
+prompts:
+  - id: select-skills
+    version: "1.0.0"
+    instructions: >
+      You are a skill selector. Given the user's request, decide which skills
+      are relevant. Available skills: weather (get current weather for any city).
+      Return ONLY the relevant skills. If none are relevant, return an empty list.
+
+  - id: plan-and-execute
+    version: "1.0.0"
+    instructions: >
+      You are a helpful assistant. Skills have been pre-loaded for you.
+      Use the available tools to answer the user's question.
+      Be direct, concise, and helpful.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+skills:
+  - id: weather
+    version: "1.0.0"
+    skill_card_path: ../skills/weather/skill-card.json
+
+agents:
+  llm-driven-load-agent:
+    langgraph_config:
+      recursion_limit: 25
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: select_skills
+
+      nodes:
+        # Step 1: LLM picks which skills to load via structured output.
+        # The response is a JSON object like {"skills": [{"id": "weather"}]}.
+        - name: select_skills
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt:
+              - role: system
+                content: 'prompts["select-skills"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            response_format:
+              name: SelectedSkills
+              description: Skills to load for this request
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        version:
+                          type: string
+                      required:
+                        - id
+                required:
+                  - skills
+
+        # Step 2: Programmatically load the skills the LLM selected.
+        # The CEL expression extracts the skills list from the structured
+        # output in the last message.
+        - name: load_selected_skills
+          type: load_skills
+          args:
+            skill_ids: 'json(state.messages[size(state.messages) - 1].content)["skills"]'
+
+        # Step 3: Plan and execute using the loaded skill tools.
+        - name: execute
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt:
+              - role: system
+                content: 'prompts["plan-and-execute"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            use_tools_from_loaded_skills: true
+
+      edges:
+        - source: select_skills
+          target: load_selected_skills
+
+        - source: load_selected_skills
+          target: execute
+
+        - source: execute
+          target: __end__

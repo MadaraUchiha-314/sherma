@@ -32,6 +32,7 @@ from sherma.langgraph.declarative.nodes import (
     build_custom_node,
     build_data_transform_node,
     build_interrupt_node,
+    build_load_skills_node,
     build_set_state_node,
     build_tool_node,
 )
@@ -336,6 +337,14 @@ class DeclarativeAgent(LangGraphAgent):
 
         if node_def.type == "interrupt":
             return build_interrupt_node(ctx, cel)
+
+        if node_def.type == "load_skills":
+            return build_load_skills_node(
+                ctx,
+                cel,
+                skill_registry=self._registries.skill_registry,
+                tool_registry=self._registries.tool_registry,
+            )
 
         if node_def.type == "custom":
             return build_custom_node(ctx)

@@ -1,0 +1,66 @@
+# Load Skills — Manual Example
+# Skills are specified statically in the YAML. The agent loads a fixed set
+# of skills before the planning node runs, without any LLM involvement in
+# the selection step.
+
+manifest_version: 1
+
+prompts:
+  - id: plan-and-execute
+    version: "1.0.0"
+    instructions: >
+      You are a helpful assistant with access to loaded skills and their tools.
+      Use the available tools to answer the user's question. Be direct and concise.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+skills:
+  - id: weather
+    version: "1.0.0"
+    skill_card_path: ../skills/weather/skill-card.json
+
+agents:
+  manual-load-agent:
+    langgraph_config:
+      recursion_limit: 25
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: load_skills
+
+      nodes:
+        # Step 1: Load skills statically — no LLM needed.
+        # The CEL expression is a literal list of skill IDs.
+        - name: load_skills
+          type: load_skills
+          args:
+            skill_ids: '[{"id": "weather", "version": "1.0.0"}]'
+
+        # Step 2: Plan and execute using the loaded skill tools.
+        - name: execute
+          type: call_llm
+          args:
+            llm:
+              id: openai-gpt-4o-mini
+              version: "1.0.0"
+            prompt:
+              - role: system
+                content: 'prompts["plan-and-execute"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            use_tools_from_loaded_skills: true
+
+      edges:
+        - source: load_skills
+          target: execute
+
+        - source: execute
+          target: __end__

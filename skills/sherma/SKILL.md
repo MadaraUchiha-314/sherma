@@ -65,6 +65,7 @@ agents:        # Agent graph definitions
 | `data_transform` | Transform state via CEL → dict | `expression` (CEL returning a dict) |
 | `set_state` | Set individual state variables | `values` (map of field → CEL expression) |
 | `interrupt` | Pause for human input | `value` (required CEL expression) |
+| `load_skills` | Programmatically load skills | `skill_ids` (CEL → list of `{id, version}`) |
 | `custom` | Logic defined entirely by hooks | `metadata` (optional dict for hooks) |
 
 ### Error handling (`on_error`)
