@@ -13,10 +13,36 @@ Add a built-in `summarize` node type that declarative agents can use to manage c
 ### State Contract
 - The node operates on **user-defined state fields** (not hardcoded), following the existing pattern where `summary_field` and `cursor_field` reference state keys.
 - Messages are always read from the `messages` state field (standard convention).
-- The node returns state updates for `summary_field`, `cursor_field`, and optionally `messages`.
+- The node returns state updates for `summary_field`, `cursor_field`, `summary_cursor_field`, and optionally `messages`.
+
+### Dual-Cursor Design
+
+The node maintains **two cursors** to handle unbounded growth of both messages and summaries:
+
+1. **`cursor_field`** (message cursor) — tracks how far into the `messages` list we have summarized. Messages before this index have already been condensed into summaries.
+2. **`summary_cursor_field`** (summary cursor) — tracks how far into the `summary_messages` list we have re-summarized. Summaries before this index have been condensed into a single meta-summary.
+
+**Flow:**
+
+```
+messages:  [m0, m1, m2, ..., m50, m51, ..., m99, m100, ..., m110]
+                                    ^cursor                   ^latest
+            ── already summarized ──┘── to_summarize ──┘── keep ──┘
+
+summaries: [s0, s1, s2, ..., s20, s21, ..., s30]
+                               ^summary_cursor    ^latest
+            ── re-summarized ──┘── to_re_summarize ┘
+```
+
+**When the node runs:**
+1. Check if `summary_messages` tokens exceed the threshold → if yes, re-summarize older summaries (those after `summary_cursor`), advance `summary_cursor`.
+2. Check if `summary_messages + unsummarized messages` tokens exceed the threshold → if yes, summarize older messages into a new summary entry, advance `cursor`.
+
+This prevents the summary list from growing without bound in very long conversations.
 
 ### Re-summarization
-- If accumulated summaries themselves exceed the threshold, the node re-summarizes them into a single condensed summary before proceeding.
+- When accumulated summaries exceed the threshold, the node summarizes summaries from `summary_cursor` to end into a single condensed summary, then advances `summary_cursor`.
+- This is a recursive safety net — in practice most conversations will only trigger message-level summarization.
 
 ## Implementation Steps
 
@@ -33,6 +59,7 @@ class SummarizeArgs(BaseModel):
     messages_to_keep: int = 6
     summary_field: str = "summary_messages"
     cursor_field: str = "summarized_until"
+    summary_cursor_field: str = "summary_summarized_until"
     prompt: str | None = None  # CEL expression for custom summarization prompt
     exclude_message_types: list[str] = Field(default_factory=list)
 ```
@@ -46,16 +73,20 @@ Update the `type_map` in `_resolve_args_type` to include `"summarize": Summarize
 Create the node builder function following the established pattern (see `build_interrupt_node` for reference):
 
 1. **Resolve LLM** — look up from registry via `RegistryRef`, or fall back to `default_llm`.
-2. **Count tokens** — compute token count of `state[summary_field] + state.messages[state[cursor_field]:]`.
-3. **Check threshold** — if `token_count / model_context_window < threshold`, return early (no-op).
-4. **Filter messages** — separate messages into:
-   - `to_summarize`: `messages[cursor:len-messages_to_keep]` (excluding types in `exclude_message_types`)
-   - `to_keep`: last `messages_to_keep` messages
-5. **Summarize** — call the LLM with the existing summaries + messages to summarize, using the configured prompt (or a sensible default).
-6. **Re-summarize check** — if the new summary + kept messages still exceed the threshold, re-summarize the accumulated summaries.
-7. **Return state updates** — `{summary_field: [new_summary_msg], cursor_field: new_cursor}`.
+2. **Phase 1 — Re-summarize summaries (if needed):**
+   a. Read `summary_messages` from `state[summary_field]` and `summary_cursor` from `state[summary_cursor_field]`.
+   b. Count tokens of `summary_messages[summary_cursor:]`.
+   c. If exceeds threshold: call LLM to condense `summary_messages[summary_cursor:]` into a single summary. Append to summary list, advance `summary_cursor` to point past the condensed entries.
+3. **Phase 2 — Summarize messages (if needed):**
+   a. Read `messages` from state and `cursor` from `state[cursor_field]`.
+   b. Count tokens of `summary_messages + messages[cursor:]`.
+   c. If below threshold: return early (no-op).
+   d. Split messages into `to_summarize = messages[cursor : len-messages_to_keep]` (filtering out `exclude_message_types`) and `to_keep = messages[-messages_to_keep:]`.
+   e. Call LLM with existing summaries + `to_summarize`, using the configured prompt (or a sensible default).
+   f. Append new summary to `summary_messages`, advance `cursor` to `len(messages) - messages_to_keep`.
+4. **Return state updates** — `{summary_field: updated_summaries, cursor_field: new_cursor, summary_cursor_field: new_summary_cursor}`.
 
-Hook lifecycle: `node_enter` → (logic) → `node_exit`, plus `before_llm_call` / `after_llm_call` on the summarization LLM invocation.
+Hook lifecycle: `node_enter` → (logic) → `node_exit`, plus `before_llm_call` / `after_llm_call` on each LLM invocation.
 
 ### Step 3: Register the builder in `agent.py`
 
@@ -69,7 +100,9 @@ In `_build_graph()`, add the `"summarize"` case to the node-type dispatch that c
   - `messages_to_keep` preserves the correct recent messages.
   - `cursor_field` advances correctly.
   - `exclude_message_types` filters correctly.
-  - Re-summarization of accumulated summaries.
+  - Summary list re-summarization triggers when summaries exceed threshold.
+  - `summary_cursor_field` advances correctly after re-summarization.
+  - Dual-cursor independence: message cursor and summary cursor advance independently.
   - Custom prompt CEL expression is evaluated.
   - Fallback to default LLM when `llm` is not specified.
 
@@ -81,6 +114,41 @@ In `_build_graph()`, add the `"summarize"` case to the node-type dispatch that c
 - Update `docs/README.md` with the new `summarize` node type documentation.
 - Update `skills/sherma/references/` with matching content.
 - Update `skills/sherma/SKILL.md` if the quick reference or API surface listing needs changes.
+
+## Example YAML Usage
+
+```yaml
+state:
+  fields:
+    - name: messages
+      type: list
+      default: []
+    - name: summary_messages
+      type: list
+      default: []
+      reducer: replace
+    - name: summarized_until
+      type: int
+      default: 0
+    - name: summary_summarized_until
+      type: int
+      default: 0
+
+nodes:
+  - name: summarize_if_needed
+    type: summarize
+    args:
+      llm: { id: openai-gpt-4o-mini }
+      model_context_window: 128000
+      threshold: 0.75
+      messages_to_keep: 6
+      summary_field: summary_messages
+      cursor_field: summarized_until
+      summary_cursor_field: summary_summarized_until
+      prompt: 'prompts["summarize"]["instructions"]'
+      exclude_message_types:
+        - loaded_skills
+```
 
 ## Files to Modify
 
@@ -99,3 +167,7 @@ In `_build_graph()`, add the `"summarize"` case to the node-type dispatch that c
 
 1. **Token counting accuracy** — Should we require a specific tokenizer library (e.g., `tiktoken`) as a dependency, or rely solely on LangChain's built-in counting?
 2. **Reducer dependency** — The issue mentions FR-4 (custom reducers) for the `summary_messages` `replace` behavior. If custom reducers aren't implemented yet, the `summary_field` will use the default list append reducer, which means the node must return the full replacement list each time.
+
+## Plan Revisions
+
+- **Rev 1**: Added dual-cursor design. The original plan had a single `cursor_field` for messages only, with a vague "re-summarize if too big" step. Revised to use two independent cursors (`cursor_field` for messages, `summary_cursor_field` for summaries) so that summary list growth is bounded. Phase 1 (re-summarize summaries) now runs before Phase 2 (summarize messages) to free up space before deciding whether new message summarization is needed.
