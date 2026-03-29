@@ -576,6 +576,32 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 'state.retry_count < 3 && state.status != "failed"'
 ```
 
+### List macros (built-in)
+
+```yaml
+# Filter: keep elements matching a predicate
+'state.messages.filter(m, m["type"] == "human")'               # filter by type
+'state.items.filter(x, x > 0)'                                # filter primitives
+
+# Exists: check if any element matches
+'state.messages.exists(m, m["type"] == "ai")'                  # any AI message?
+'state.messages.exists(m, m["additional_kwargs"]["type"] == "approval_decision")'
+
+# All: check if all elements match
+'state.items.all(x, x > 0)'                                   # all positive?
+
+# Map: transform each element
+'state.messages.map(m, m["type"])'                             # extract field from each
+'state.items.map(x, x * 2)'                                   # double each
+
+# Count matching elements
+'size(state.messages.filter(m, m["type"] == "human")) > 0'
+
+# findLast pattern: last() + filter()
+'last(state.messages.filter(m, m["type"] == "human"))'         # last human message
+'default(last(state.messages.filter(m, m["additional_kwargs"]["type"] == "approval_decision"))["content"], "")'
+```
+
 ### Custom functions
 
 ```yaml
@@ -588,6 +614,11 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 # Safe access: fallback on errors
 'default(json(state.response)["action"], "continue")'          # fallback if parse/key fails
 'default(state.missing_field, 0)'                              # fallback for missing state
+
+# List utilities
+'last(state.items)'                                            # last element (error if empty)
+'last(state.messages.filter(m, m["type"] == "ai"))'            # findLast pattern
+'default(last(state.messages.filter(m, ...))["content"], "")'  # safe findLast with fallback
 
 # String extensions (cel-go compatible)
 'state.tags.split(",")'                                        # split → list

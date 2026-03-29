@@ -547,9 +547,38 @@ Branches are evaluated in order. The first matching condition determines the tar
 
 State fields are always accessed through the `state` prefix. Extra variables like `prompts` and `llms` remain at the top level.
 
-CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing), map construction, comparisons, and boolean logic.
+CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing, `filter`, `exists`, `map`), map construction, comparisons, and boolean logic.
 
 CEL can also handle Pydantic models, dataclasses, and any object with `__dict__` -- these are automatically converted to CEL maps, so you can access their fields with standard map syntax (e.g., `obj.field` or `obj["field"]`).
+
+### List Macros (built-in)
+
+CEL provides built-in macros for filtering, searching, and transforming lists. These support variable binding and predicate expressions natively:
+
+| Macro | Syntax | Description |
+| --- | --- | --- |
+| `filter` | `list.filter(x, predicate)` | Returns elements matching the predicate |
+| `exists` | `list.exists(x, predicate)` | Returns `true` if any element matches |
+| `all` | `list.all(x, predicate)` | Returns `true` if all elements match |
+| `exists_one` | `list.exists_one(x, predicate)` | Returns `true` if exactly one element matches |
+| `map` | `list.map(x, expr)` | Transforms each element |
+
+```yaml
+# Filter messages by type
+'state.messages.filter(m, m["type"] == "human")'
+
+# Check if any message matches a condition
+'state.messages.exists(m, m["type"] == "ai" && m["content"].contains("COMPLETE"))'
+
+# Check if all items satisfy a predicate
+'state.items.all(x, x > 0)'
+
+# Count matching elements
+'size(state.messages.filter(m, m["additional_kwargs"]["type"] == "approval_decision")) > 0'
+
+# Extract a field from each element
+'state.messages.map(m, m["type"])'
+```
 
 ### Custom Functions
 
@@ -637,6 +666,25 @@ Unresolved placeholders (keys not in the map) are left as-is. Non-string values 
 'template("Count: ${n}, Active: ${flag}", {"n": state.count, "flag": state.active})'
 ```
 
+#### List Utilities
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `last(list)` | Return the last element of a list (error if empty) | `last(state.items)` |
+
+Combine `last()` with the built-in `filter()` macro to implement a **findLast** pattern:
+
+```yaml
+# Find the last human message
+'last(state.messages.filter(m, m["type"] == "human"))'
+
+# Find the last approval decision, with safe fallback
+'default(last(state.messages.filter(m, m["additional_kwargs"]["type"] == "approval_decision"))["content"], "")'
+
+# Route based on whether the last matching message exists
+'default(last(state.messages.filter(m, m["type"] == "ai"))["content"], "") != ""'
+```
+
 All custom functions can be called both as functions (`json(x)`) and as methods (`x.json()`).
 
 ### Examples
@@ -659,6 +707,12 @@ All custom functions can be called both as functions (`json(x)`) and as methods 
 
 # Integer literal
 '42'
+
+# Filter and check for matching messages (routing pattern)
+'state.messages.exists(m, m["additional_kwargs"]["type"] == "approval_decision")'
+
+# Find last matching message content with fallback
+'default(last(state.messages.filter(m, m["additional_kwargs"]["type"] == "approval_decision"))["content"], "")'
 ```
 
 ## Loading a Declarative Agent
