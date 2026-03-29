@@ -465,6 +465,90 @@ class GuardrailHook(BaseHookExecutor):
         return ctx  # Return modified context
 ```
 
+### Human-in-the-loop approval (message metadata routing)
+
+Routes based on `additional_kwargs` and `type` fields on messages. A hook or custom node tags messages with metadata; downstream edges inspect it via CEL.
+
+```yaml
+prompts:
+  - id: draft-prompt
+    version: "1.0.0"
+    instructions: >
+      Draft a response to the user's request. Be thorough.
+
+  - id: revise-prompt
+    version: "1.0.0"
+    instructions: >
+      The reviewer asked for changes. Revise your draft accordingly.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+hooks:
+  - import_path: my_package.hooks.ApprovalTaggingHook
+
+agents:
+  approval-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: draft
+      nodes:
+        - name: draft
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+            prompt:
+              - role: system
+                content: 'prompts["draft-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+
+        # Pause for human review — pass the draft as interrupt value
+        - name: get_approval
+          type: interrupt
+          args:
+            value: >
+              {"type": "approval", "draft": state.messages[size(state.messages) - 1]["content"]}
+
+        # Route based on additional_kwargs set by ApprovalTaggingHook
+        # The hook tags the human response with additional_kwargs["decision"]
+        - name: revise
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+            prompt:
+              - role: system
+                content: 'prompts["revise-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+
+      edges:
+        - source: draft
+          target: get_approval
+
+        - source: get_approval
+          branches:
+            # Route using additional_kwargs metadata set by a hook
+            - condition: >
+                state.messages[size(state.messages) - 1]["additional_kwargs"]["decision"] == "approve"
+              target: __end__
+          default: revise
+
+        # After revision, go back for another review
+        - source: revise
+          target: get_approval
+```
+
+The `ApprovalTaggingHook` sets `additional_kwargs["decision"]` on the human message during `node_exit` of the interrupt node. You can also route on the message `type` field (e.g., `state.messages[0]["type"] == "human"`).
+
 ### A2A server
 
 ```python

@@ -875,3 +875,88 @@ agents:
               target: __end__
           default: execute
 ```
+
+## Complete Example: Human-in-the-Loop Approval
+
+An approval workflow that uses message metadata for routing. A hook tags human responses with `additional_kwargs["decision"]`, and CEL edges inspect that metadata to approve or loop back for revision:
+
+```yaml
+manifest_version: 1
+
+prompts:
+  - id: draft-prompt
+    version: "1.0.0"
+    instructions: >
+      Draft a response to the user's request. Be thorough.
+
+  - id: revise-prompt
+    version: "1.0.0"
+    instructions: >
+      The reviewer asked for changes. Revise your draft accordingly.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+default_llm:
+  id: openai-gpt-4o-mini
+
+hooks:
+  - import_path: my_package.hooks.ApprovalTaggingHook
+
+agents:
+  approval-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: draft
+      nodes:
+        - name: draft
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'prompts["draft-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+
+        # Pause for human review
+        - name: get_approval
+          type: interrupt
+          args:
+            value: >
+              {"type": "approval", "draft": state.messages[size(state.messages) - 1]["content"]}
+
+        - name: revise
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'prompts["revise-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+
+      edges:
+        - source: draft
+          target: get_approval
+
+        # Route using additional_kwargs metadata set by a hook
+        - source: get_approval
+          branches:
+            - condition: >
+                state.messages[size(state.messages) - 1]["additional_kwargs"]["decision"] == "approve"
+              target: __end__
+          default: revise
+
+        # After revision, go back for another review
+        - source: revise
+          target: get_approval
+```
+
+The `ApprovalTaggingHook` sets `additional_kwargs["decision"]` on the human message during `node_exit` of the interrupt node. You can also route on the message `type` field — for example, `state.messages[0]["type"] == "human"` returns `true` for `HumanMessage` objects.
