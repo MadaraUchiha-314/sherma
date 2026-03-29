@@ -370,6 +370,235 @@ class TestTemplate:
 
 
 # ---------------------------------------------------------------------------
+# Tier 5: List macros (built-in) and last()
+# ---------------------------------------------------------------------------
+
+
+class TestListMacros:
+    """Tests for built-in CEL macros: filter, exists, all, exists_one, map."""
+
+    def test_filter_primitives(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            "state.items.filter(x, x > 2)", {"items": [1, 2, 3, 4, 5]}
+        )
+        assert result == [3, 4, 5]
+
+    def test_filter_maps(self) -> None:
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hello"},
+            {"type": "ai", "content": "hi"},
+            {"type": "human", "content": "bye"},
+        ]
+        result = cel.evaluate(
+            'state.messages.filter(m, m["type"] == "human")', {"messages": messages}
+        )
+        assert result == [
+            {"type": "human", "content": "hello"},
+            {"type": "human", "content": "bye"},
+        ]
+
+    def test_filter_empty_result(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("state.items.filter(x, x > 100)", {"items": [1, 2, 3]})
+        assert result == []
+
+    def test_filter_with_size(self) -> None:
+        """The pattern from issue #40: size(filter(...)) > 0."""
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hello"},
+            {"type": "ai", "content": "hi"},
+        ]
+        result = cel.evaluate_bool(
+            'size(state.messages.filter(m, m["type"] == "human")) > 0',
+            {"messages": messages},
+        )
+        assert result is True
+
+    def test_filter_nested_access(self) -> None:
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "additional_kwargs": {"type": "approval_decision"}},
+            {"type": "ai", "additional_kwargs": {"type": "response"}},
+            {"type": "human", "additional_kwargs": {"type": "question"}},
+        ]
+        expr = (
+            'state.messages.filter(m, m["additional_kwargs"]'
+            '["type"] == "approval_decision")'
+        )
+        result = cel.evaluate(expr, {"messages": messages})
+        assert len(result) == 1
+        assert result[0]["additional_kwargs"]["type"] == "approval_decision"
+
+    def test_exists_true(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate_bool(
+            "state.items.exists(x, x > 3)", {"items": [1, 2, 3, 4]}
+        )
+        assert result is True
+
+    def test_exists_false(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate_bool(
+            "state.items.exists(x, x > 100)", {"items": [1, 2, 3]}
+        )
+        assert result is False
+
+    def test_exists_on_maps(self) -> None:
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hi"},
+            {"type": "ai", "content": "hello"},
+        ]
+        result = cel.evaluate_bool(
+            'state.messages.exists(m, m["type"] == "ai")', {"messages": messages}
+        )
+        assert result is True
+
+    def test_all_true(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate_bool("state.items.all(x, x > 0)", {"items": [1, 2, 3]})
+        assert result is True
+
+    def test_all_false(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate_bool("state.items.all(x, x > 2)", {"items": [1, 2, 3]})
+        assert result is False
+
+    def test_exists_one_true(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate_bool(
+            "state.items.exists_one(x, x > 4)", {"items": [1, 2, 3, 4, 5]}
+        )
+        assert result is True
+
+    def test_exists_one_false_multiple(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate_bool(
+            "state.items.exists_one(x, x > 2)", {"items": [1, 2, 3, 4, 5]}
+        )
+        assert result is False
+
+    def test_map_transform(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("state.items.map(x, x * 2)", {"items": [1, 2, 3]})
+        assert result == [2, 4, 6]
+
+    def test_map_extract_field(self) -> None:
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hello"},
+            {"type": "ai", "content": "hi"},
+        ]
+        result = cel.evaluate(
+            'state.messages.map(m, m["type"])', {"messages": messages}
+        )
+        assert result == ["human", "ai"]
+
+    def test_filter_with_langchain_messages(self) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        cel = CelEngine()
+        messages = [
+            HumanMessage(content="hello"),
+            AIMessage(content="hi there"),
+            HumanMessage(content="bye"),
+        ]
+        result = cel.evaluate(
+            'state.messages.filter(m, m["type"] == "human")',
+            {"messages": messages},
+        )
+        assert len(result) == 2
+
+    def test_exists_with_langchain_messages(self) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        cel = CelEngine()
+        messages = [HumanMessage(content="hello"), AIMessage(content="hi")]
+        result = cel.evaluate_bool(
+            'state.messages.exists(m, m["type"] == "ai")',
+            {"messages": messages},
+        )
+        assert result is True
+
+
+class TestLast:
+    def test_basic(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("last(state.items)", {"items": [1, 2, 3]})
+        assert result == 3
+
+    def test_single_element(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("last(state.items)", {"items": [42]})
+        assert result == 42
+
+    def test_empty_list_raises(self) -> None:
+        cel = CelEngine()
+        with pytest.raises(CelEvaluationError, match="CEL evaluation failed"):
+            cel.evaluate("last(state.items)", {"items": []})
+
+    def test_last_map(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            "last(state.items)",
+            {"items": [{"a": 1}, {"a": 2}]},
+        )
+        assert result == {"a": 2}
+
+    def test_find_last_pattern(self) -> None:
+        """last() + filter() implements the findLast pattern."""
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "first"},
+            {"type": "ai", "content": "response"},
+            {"type": "human", "content": "last_human"},
+        ]
+        result = cel.evaluate(
+            'last(state.messages.filter(m, m["type"] == "human"))',
+            {"messages": messages},
+        )
+        assert result == {"type": "human", "content": "last_human"}
+
+    def test_find_last_with_default(self) -> None:
+        """default(last(filter(...))["field"], fallback) pattern."""
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hello"},
+            {"type": "ai", "content": "response"},
+        ]
+        result = cel.evaluate(
+            'default(last(state.messages.filter(m, m["type"] == "ai"))["content"], "")',
+            {"messages": messages},
+        )
+        assert result == "response"
+
+    def test_find_last_with_default_empty_fallback(self) -> None:
+        """default() falls back when filter returns empty and last() errors."""
+        cel = CelEngine()
+        messages = [{"type": "human", "content": "hello"}]
+        expr = (
+            "default(last(state.messages.filter("
+            'm, m["type"] == "ai"))["content"], "none")'
+        )
+        result = cel.evaluate(expr, {"messages": messages})
+        assert result == "none"
+
+    def test_from_state(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("last(state.tags)", {"tags": ["a", "b", "c"]})
+        assert result == "c"
+
+    def test_method_style(self) -> None:
+        """last() can be called as a method on a list."""
+        cel = CelEngine()
+        result = cel.evaluate("state.items.last()", {"items": [1, 2, 3]})
+        assert result == 3
+
+
+# ---------------------------------------------------------------------------
 # Integration: combining functions
 # ---------------------------------------------------------------------------
 
@@ -428,3 +657,52 @@ class TestIntegration:
             {"response": "plain text response"},
         )
         assert result == "continue"
+
+    def test_filter_last_default_routing(self) -> None:
+        """Full findLast pattern from issue #40."""
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "additional_kwargs": {"type": "question"}},
+            {"type": "ai", "additional_kwargs": {"type": "response"}},
+            {
+                "type": "human",
+                "content": "approved",
+                "additional_kwargs": {"type": "approval_decision"},
+            },
+            {"type": "ai", "additional_kwargs": {"type": "response"}},
+        ]
+        expr = (
+            "default(last(state.messages.filter("
+            'm, m["additional_kwargs"]["type"]'
+            ' == "approval_decision"))["content"], "")'
+        )
+        result = cel.evaluate(expr, {"messages": messages})
+        assert result == "approved"
+
+    def test_filter_last_default_no_match(self) -> None:
+        """findLast pattern falls back gracefully when no match."""
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hello"},
+            {"type": "ai", "content": "hi"},
+        ]
+        expr = (
+            "default(last(state.messages.filter("
+            'm, m["additional_kwargs"]["type"]'
+            ' == "approval_decision"))["content"], "")'
+        )
+        result = cel.evaluate(expr, {"messages": messages})
+        assert result == ""
+
+    def test_exists_for_routing_condition(self) -> None:
+        """exists() as a routing condition."""
+        cel = CelEngine()
+        messages = [
+            {"type": "human", "content": "hello"},
+            {"type": "ai", "content": "hi", "tool_calls": [{"name": "search"}]},
+        ]
+        result = cel.evaluate_bool(
+            'state.messages.exists(m, m["type"] == "ai" && size(m["tool_calls"]) > 0)',
+            {"messages": messages},
+        )
+        assert result is True

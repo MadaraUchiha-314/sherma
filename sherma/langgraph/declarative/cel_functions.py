@@ -150,6 +150,34 @@ def cel_substring(
 
 
 # ---------------------------------------------------------------------------
+# Tier 5: List utilities
+# ---------------------------------------------------------------------------
+
+
+def cel_last(items: celtypes.ListType) -> Any:
+    """Return the last element of a list.
+
+    Raises an error if the list is empty.  Combine with ``filter()`` to
+    implement a *findLast* pattern::
+
+        last(state.messages.filter(m, m["type"] == "approval"))
+
+    Use with ``default()`` for a safe fallback on empty results::
+
+        default(last(state.messages.filter(m, m["type"] == "approval"))["content"], "")
+
+    Usage in CEL::
+
+        last([1, 2, 3])                  // 3
+        last(state.items)                 // last element
+        last(state.msgs.filter(m, ...))   // findLast pattern
+    """
+    if len(items) == 0:
+        raise ValueError("last() called on empty list")
+    return items[-1]
+
+
+# ---------------------------------------------------------------------------
 # Tier 4: Templating
 # ---------------------------------------------------------------------------
 
@@ -197,4 +225,6 @@ CUSTOM_FUNCTIONS: dict[str, Any] = {
     "substring": cel_substring,
     # Tier 4: Templating
     "template": cel_template,
+    # Tier 5: List utilities
+    "last": cel_last,
 }
