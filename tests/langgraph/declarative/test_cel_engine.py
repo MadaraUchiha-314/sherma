@@ -166,6 +166,77 @@ def test_evaluate_ai_message_empty_tool_calls():
     assert result == 0
 
 
+def test_evaluate_message_additional_kwargs():
+    """CEL can access additional_kwargs on LangChain messages."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    msg = AIMessage(
+        content="done",
+        additional_kwargs={"type": "approval_decision", "context": "test-ctx"},
+    )
+    result = cel.evaluate(
+        'state.messages[0]["additional_kwargs"]["type"]',
+        {"messages": [msg]},
+    )
+    assert result == "approval_decision"
+
+
+def test_evaluate_message_additional_kwargs_nested():
+    """CEL can access nested values inside additional_kwargs."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    msg = AIMessage(
+        content="ok",
+        additional_kwargs={
+            "a2a_metadata": {"messageId": "msg-1", "taskId": "task-2"},
+        },
+    )
+    result = cel.evaluate(
+        'state.msg["additional_kwargs"]["a2a_metadata"]["taskId"]',
+        {"msg": msg},
+    )
+    assert result == "task-2"
+
+
+def test_evaluate_message_type_ai():
+    """CEL returns 'ai' for AIMessage type field."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    result = cel.evaluate('state.msg["type"]', {"msg": AIMessage(content="hello")})
+    assert result == "ai"
+
+
+def test_evaluate_message_type_system():
+    """CEL returns 'system' for SystemMessage type field."""
+    from langchain_core.messages import SystemMessage
+
+    cel = CelEngine()
+    result = cel.evaluate(
+        'state.msg["type"]', {"msg": SystemMessage(content="you are helpful")}
+    )
+    assert result == "system"
+
+
+def test_evaluate_message_type_routing():
+    """CEL can route based on message type and additional_kwargs together."""
+    from langchain_core.messages import AIMessage
+
+    cel = CelEngine()
+    msg = AIMessage(
+        content="approved",
+        additional_kwargs={"type": "approval_decision"},
+    )
+    result = cel.evaluate_bool(
+        'state.messages[size(state.messages) - 1]["additional_kwargs"]["type"]'
+        ' == "approval_decision"',
+        {"messages": [msg]},
+    )
+    assert result is True
+
+
 def test_evaluate_dataclass_as_map():
     """Dataclass objects are converted to CEL maps with field access."""
     import dataclasses

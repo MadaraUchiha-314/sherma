@@ -342,6 +342,143 @@ async def test_declarative_agent_interrupt_node():
     assert any(m.content == "Alice" for m in human_msgs)
 
 
+_APPROVAL_CONDITION = (
+    "state.messages[size(state.messages) - 1]"
+    '["additional_kwargs"]["decision"] == "approve"'
+)
+
+APPROVAL_ROUTING_YAML = f"""\
+manifest_version: 1
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        - name: outcome
+          type: str
+          default: ""
+    graph:
+      entry_point: ask_approval
+      nodes:
+        - name: ask_approval
+          type: interrupt
+          args:
+            value: '"Approve or reject?"'
+        - name: handle_approved
+          type: set_state
+          args:
+            values:
+              outcome: '"approved"'
+        - name: handle_rejected
+          type: set_state
+          args:
+            values:
+              outcome: '"rejected"'
+      edges:
+        - source: ask_approval
+          branches:
+            - condition: '{_APPROVAL_CONDITION}'
+              target: handle_approved
+          default: handle_rejected
+        - source: handle_approved
+          target: __end__
+        - source: handle_rejected
+          target: __end__
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_additional_kwargs_routing_approve():
+    """CEL routes on additional_kwargs set by a hook on interrupt response."""
+    from langchain_core.messages import HumanMessage
+    from langgraph.types import Command
+
+    from sherma.hooks.executor import BaseHookExecutor
+    from sherma.hooks.types import NodeExitContext
+
+    class TagDecisionHook(BaseHookExecutor):
+        async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
+            if ctx.node_type != "interrupt":
+                return None
+            msgs = ctx.result.get("messages", [])
+            if msgs and isinstance(msgs[-1], HumanMessage):
+                content = str(msgs[-1].content).strip().lower()
+                decision = "approve" if "approve" in content else "reject"
+                ctx.result["messages"] = [
+                    HumanMessage(
+                        content=msgs[-1].content,
+                        additional_kwargs={"decision": decision},
+                    )
+                ]
+            return ctx
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=APPROVAL_ROUTING_YAML,
+        hooks=[TagDecisionHook()],
+    )
+    compiled = await agent.get_graph()
+    config = {"configurable": {"thread_id": "approve-test"}}
+
+    # First invoke triggers interrupt
+    await compiled.ainvoke({"messages": []}, config)
+
+    # Resume with "approve" — hook tags it, CEL routes to handle_approved
+    result = await compiled.ainvoke(Command(resume="approve"), config)
+    assert result["outcome"] == "approved"
+
+    # Verify the human message carries additional_kwargs
+    human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
+    tagged = [m for m in human_msgs if m.additional_kwargs.get("decision")]
+    assert len(tagged) == 1
+    assert tagged[0].additional_kwargs["decision"] == "approve"
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_additional_kwargs_routing_reject():
+    """CEL routes to default when additional_kwargs decision is not 'approve'."""
+    from langchain_core.messages import HumanMessage
+    from langgraph.types import Command
+
+    from sherma.hooks.executor import BaseHookExecutor
+    from sherma.hooks.types import NodeExitContext
+
+    class TagDecisionHook(BaseHookExecutor):
+        async def node_exit(self, ctx: NodeExitContext) -> NodeExitContext | None:
+            if ctx.node_type != "interrupt":
+                return None
+            msgs = ctx.result.get("messages", [])
+            if msgs and isinstance(msgs[-1], HumanMessage):
+                content = str(msgs[-1].content).strip().lower()
+                decision = "approve" if "approve" in content else "reject"
+                ctx.result["messages"] = [
+                    HumanMessage(
+                        content=msgs[-1].content,
+                        additional_kwargs={"decision": decision},
+                    )
+                ]
+            return ctx
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=APPROVAL_ROUTING_YAML,
+        hooks=[TagDecisionHook()],
+    )
+    compiled = await agent.get_graph()
+    config = {"configurable": {"thread_id": "reject-test"}}
+
+    await compiled.ainvoke({"messages": []}, config)
+
+    # Resume with "no thanks" — hook tags as reject, CEL falls to default
+    result = await compiled.ainvoke(Command(resume="no thanks"), config)
+    assert result["outcome"] == "rejected"
+
+
 @pytest.mark.asyncio
 async def test_declarative_agent_with_config_object():
     """DeclarativeAgent accepts a pre-built DeclarativeConfig."""

@@ -1,0 +1,91 @@
+# Approval Agent — Message Metadata Routing
+#
+# Demonstrates routing based on message `additional_kwargs` in CEL.
+#
+# Flow:
+#   1. LLM drafts a response
+#   2. Interrupt pauses for human approval
+#   3. ApprovalTaggingHook (in node_exit) parses the user's reply and tags
+#      the HumanMessage with additional_kwargs["decision"]
+#   4. CEL edge inspects additional_kwargs to approve or loop back for revision
+#
+# The message `type` field ("ai", "human") is also accessible in CEL:
+#   state.messages[size(state.messages) - 1]["type"] == "human"
+
+manifest_version: 1
+
+prompts:
+  - id: draft-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful writing assistant. Draft a concise response to the
+      user's request. Keep it to 2-3 sentences.
+
+  - id: revise-prompt
+    version: "1.0.0"
+    instructions: >
+      The reviewer rejected your previous draft and provided feedback.
+      Revise your draft based on the reviewer's comments.
+      The reviewer's feedback is the most recent human message.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+agents:
+  approval-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+
+    graph:
+      entry_point: draft
+      nodes:
+        - name: draft
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+            prompt:
+              - role: system
+                content: 'prompts["draft-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+
+        # Pause for human review — show the draft and ask for approval
+        - name: get_approval
+          type: interrupt
+          args:
+            value: >
+              {"type": "approval_request",
+               "draft": state.messages[size(state.messages) - 1]["content"],
+               "instructions": "Reply 'approve' to accept, or provide feedback to revise."}
+
+        - name: revise
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+            prompt:
+              - role: system
+                content: 'prompts["revise-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+
+      edges:
+        - source: draft
+          target: get_approval
+
+        # Route using additional_kwargs["decision"] set by ApprovalTaggingHook
+        - source: get_approval
+          branches:
+            - condition: >
+                state.messages[size(state.messages) - 1]["additional_kwargs"]["decision"] == "approve"
+              target: __end__
+          default: revise
+
+        # After revision, go back for another review
+        - source: revise
+          target: get_approval
