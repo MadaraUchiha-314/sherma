@@ -1,3 +1,9 @@
+## v0.19.0 (2026-03-29)
+
+### Feat
+
+- add message metadata access in CEL (additional_kwargs, type) (#52)
+
 ## v0.18.0 (2026-03-27)
 
 ### Feat
