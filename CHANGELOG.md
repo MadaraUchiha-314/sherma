@@ -1,3 +1,9 @@
+## v0.20.0 (2026-03-29)
+
+### Feat
+
+- add list filtering and searching in CEL (#51)
+
 ## v0.19.0 (2026-03-29)
 
 ### Feat
