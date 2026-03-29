@@ -574,6 +574,12 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 # Boolean check
 'state.retry_count < 3 && state.status != "failed"'
+
+# Message type (returns "ai", "human", "system", "tool")
+'state.messages[size(state.messages) - 1]["type"] == "ai"'
+
+# Message metadata via additional_kwargs
+'state.messages[0]["additional_kwargs"]["type"] == "approval_decision"'
 ```
 
 ### Custom functions

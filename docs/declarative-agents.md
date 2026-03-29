@@ -661,6 +661,40 @@ All custom functions can be called both as functions (`json(x)`) and as methods 
 '42'
 ```
 
+### Message Metadata Access
+
+LangChain message objects are automatically converted to CEL maps, exposing all public fields including `content`, `type`, `additional_kwargs`, `tool_calls`, and more.
+
+#### Message type
+
+Use `type` to distinguish message roles (`"ai"`, `"human"`, `"system"`, `"tool"`):
+
+```yaml
+# Route based on whether the last message is from the AI
+'state.messages[size(state.messages) - 1]["type"] == "ai"'
+```
+
+#### `additional_kwargs`
+
+Messages carry arbitrary metadata in `additional_kwargs`. Access nested values with standard map syntax:
+
+```yaml
+# Check a custom metadata tag on the last message
+'state.messages[size(state.messages) - 1]["additional_kwargs"]["type"] == "approval_decision"'
+
+# Access nested metadata (e.g., A2A metadata)
+'state.messages[0]["additional_kwargs"]["a2a_metadata"]["taskId"]'
+
+# Route based on metadata
+edges:
+  - source: get_approval
+    branches:
+      - condition: >
+          state.messages[size(state.messages) - 1]["additional_kwargs"]["type"] == "approval_decision"
+        target: handle_approval
+    default: continue
+```
+
 ## Loading a Declarative Agent
 
 ### From a YAML file
