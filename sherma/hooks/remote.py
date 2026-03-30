@@ -16,11 +16,13 @@ from sherma.hooks.types import (
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
+    AfterSkillUnloadContext,
     AfterToolCallContext,
     BeforeAgentCallContext,
     BeforeInterruptContext,
     BeforeLLMCallContext,
     BeforeSkillLoadContext,
+    BeforeSkillUnloadContext,
     BeforeToolCallContext,
     GraphInvokeContext,
     NodeEnterContext,
@@ -146,6 +148,16 @@ class RemoteHookExecutor(BaseHookExecutor):
         self, ctx: AfterSkillLoadContext
     ) -> AfterSkillLoadContext | None:
         return await self._execute_hook("after_skill_load", ctx)
+
+    async def before_skill_unload(
+        self, ctx: BeforeSkillUnloadContext
+    ) -> BeforeSkillUnloadContext | None:
+        return await self._execute_hook("before_skill_unload", ctx)
+
+    async def after_skill_unload(
+        self, ctx: AfterSkillUnloadContext
+    ) -> AfterSkillUnloadContext | None:
+        return await self._execute_hook("after_skill_unload", ctx)
 
     async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
         return await self._execute_hook("node_enter", ctx)

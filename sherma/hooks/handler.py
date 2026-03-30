@@ -58,6 +58,14 @@ class HookHandler:
     async def after_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
+    async def before_skill_unload(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        return None
+
+    async def after_skill_unload(self, params: dict[str, Any]) -> dict[str, Any] | None:
+        return None
+
     async def node_enter(self, params: dict[str, Any]) -> dict[str, Any] | None:
         return None
 

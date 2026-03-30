@@ -538,38 +538,66 @@ def build_tool_node(
                 )
                 result = after_ctx.result
 
-            # Track skill tool IDs when load_skill_md is called.
+            # Track skill tool IDs when load_skill_md / unload_skill_md
+            # is called.
             if skill_registry is not None:
                 internal = _get_internal(state)
                 current_ids: list[str] = list(
                     internal.get("loaded_tools_from_skills", [])
                 )
+                loaded_skills: dict[str, dict[str, Any]] = dict(
+                    internal.get("loaded_skills", {})
+                )
                 for tc in pending_calls:
-                    if tc.get("name") != "load_skill_md":
-                        continue
-                    skill_id = tc.get("args", {}).get("skill_id", "")
-                    version = tc.get("args", {}).get("version", "*")
+                    tc_name = tc.get("name", "")
+                    tc_args = tc.get("args", {})
+                    skill_id = tc_args.get("skill_id", "")
+                    version = tc_args.get("version", "*")
                     if not skill_id:
                         continue
                     if _BARE_VERSION_RE.match(version):
                         version = f"=={version}"
-                    try:
-                        skill = await skill_registry.get(skill_id, version)
-                        card = skill.skill_card
-                        if card:
-                            for tool_id in card.local_tools:
-                                if tool_id not in current_ids:
-                                    current_ids.append(tool_id)
-                            for mcp_id in card.mcps:
-                                if mcp_id not in current_ids:
-                                    current_ids.append(mcp_id)
-                    except Exception:
-                        logger.warning(
-                            "[%s] Could not resolve skill for '%s'",
-                            _ctx.node_def.name,
-                            skill_id,
-                        )
+
+                    if tc_name == "load_skill_md":
+                        try:
+                            skill = await skill_registry.get(skill_id, version)
+                            card = skill.skill_card
+                            if card:
+                                skill_tool_ids: list[str] = []
+                                for tool_id in card.local_tools:
+                                    if tool_id not in current_ids:
+                                        current_ids.append(tool_id)
+                                    skill_tool_ids.append(tool_id)
+                                for mcp_id in card.mcps:
+                                    if mcp_id not in current_ids:
+                                        current_ids.append(mcp_id)
+                                    skill_tool_ids.append(mcp_id)
+                                loaded_skills[skill_id] = {
+                                    "version": version,
+                                    "tools": skill_tool_ids,
+                                }
+                        except Exception:
+                            logger.warning(
+                                "[%s] Could not resolve skill for '%s'",
+                                _ctx.node_def.name,
+                                skill_id,
+                            )
+
+                    elif tc_name == "unload_skill_md":
+                        skill_meta = loaded_skills.pop(skill_id, None)
+                        if skill_meta:
+                            for tid in skill_meta.get("tools", []):
+                                if tid in current_ids:
+                                    current_ids.remove(tid)
+                        else:
+                            logger.warning(
+                                "[%s] Skill '%s' was not in loaded_skills",
+                                _ctx.node_def.name,
+                                skill_id,
+                            )
+
                 internal["loaded_tools_from_skills"] = current_ids
+                internal["loaded_skills"] = loaded_skills
                 _set_internal(result, internal)
 
             # node_exit
@@ -993,6 +1021,9 @@ def build_load_skills_node(
 
             internal = _get_internal(state)
             current_ids: list[str] = list(internal.get("loaded_tools_from_skills", []))
+            loaded_skills: dict[str, dict[str, Any]] = dict(
+                internal.get("loaded_skills", {})
+            )
 
             # Build tool_calls for the AIMessage and collect ToolMessages
             tool_calls: list[dict[str, Any]] = []
@@ -1040,6 +1071,10 @@ def build_load_skills_node(
                 for tid in tool_ids:
                     if tid not in current_ids:
                         current_ids.append(tid)
+                loaded_skills[skill_id] = {
+                    "version": version,
+                    "tools": tool_ids,
+                }
 
             # Build result messages
             messages: list[Any] = []
@@ -1048,6 +1083,7 @@ def build_load_skills_node(
                 messages.extend(tool_messages)
 
             internal["loaded_tools_from_skills"] = current_ids
+            internal["loaded_skills"] = loaded_skills
             result: dict[str, Any] = {"messages": messages}
             _set_internal(result, internal)
 

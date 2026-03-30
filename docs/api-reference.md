@@ -470,7 +470,7 @@ def create_skill_tools(
 ) -> list[BaseTool]
 ```
 
-Returns: `list_skills`, `load_skill_md`, `list_skill_resources`, `load_skill_resource`, `list_skill_assets`, `load_skill_asset`.
+Returns: `list_skills`, `load_skill_md`, `unload_skill_md`, `list_skill_resources`, `load_skill_resource`, `list_skill_assets`, `load_skill_asset`.
 
 ## Types
 

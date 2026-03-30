@@ -324,6 +324,8 @@ prompts:
       1. Call list_skills to see available skills.
       2. Call load_skill_md for the most relevant skill.
       3. Respond with a brief summary.
+      When a skill is no longer needed, call unload_skill_md to free
+      context window space.
 
   - id: plan-and-execute
     version: "1.0.0"
@@ -372,6 +374,7 @@ agents:
             tools:
               - id: list_skills
               - id: load_skill_md
+              - id: unload_skill_md
 
         - name: execute
           type: call_llm

@@ -21,6 +21,8 @@ class HookType(Enum):
     AFTER_AGENT_CALL = "after_agent_call"
     BEFORE_SKILL_LOAD = "before_skill_load"
     AFTER_SKILL_LOAD = "after_skill_load"
+    BEFORE_SKILL_UNLOAD = "before_skill_unload"
+    AFTER_SKILL_UNLOAD = "after_skill_unload"
     NODE_ENTER = "node_enter"
     NODE_EXIT = "node_exit"
     BEFORE_INTERRUPT = "before_interrupt"
@@ -115,6 +117,25 @@ class AfterSkillLoadContext:
     version: str
     content: str
     tools_loaded: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BeforeSkillUnloadContext:
+    """Context for before_skill_unload hooks."""
+
+    node_context: NodeContext | None
+    skill_id: str
+    version: str
+
+
+@dataclass
+class AfterSkillUnloadContext:
+    """Context for after_skill_unload hooks."""
+
+    node_context: NodeContext | None
+    skill_id: str
+    version: str
+    tools_unloaded: list[str] = field(default_factory=list)
 
 
 @dataclass

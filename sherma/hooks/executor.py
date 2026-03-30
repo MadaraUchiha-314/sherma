@@ -10,11 +10,13 @@ from sherma.hooks.types import (
     AfterInterruptContext,
     AfterLLMCallContext,
     AfterSkillLoadContext,
+    AfterSkillUnloadContext,
     AfterToolCallContext,
     BeforeAgentCallContext,
     BeforeInterruptContext,
     BeforeLLMCallContext,
     BeforeSkillLoadContext,
+    BeforeSkillUnloadContext,
     BeforeToolCallContext,
     ChatModelCreateContext,
     GraphInvokeContext,
@@ -66,6 +68,14 @@ class HookExecutor(Protocol):
     async def after_skill_load(
         self, ctx: AfterSkillLoadContext
     ) -> AfterSkillLoadContext | None: ...
+
+    async def before_skill_unload(
+        self, ctx: BeforeSkillUnloadContext
+    ) -> BeforeSkillUnloadContext | None: ...
+
+    async def after_skill_unload(
+        self, ctx: AfterSkillUnloadContext
+    ) -> AfterSkillUnloadContext | None: ...
 
     async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None: ...
 
@@ -146,6 +156,16 @@ class BaseHookExecutor:
     async def after_skill_load(
         self, ctx: AfterSkillLoadContext
     ) -> AfterSkillLoadContext | None:
+        return None
+
+    async def before_skill_unload(
+        self, ctx: BeforeSkillUnloadContext
+    ) -> BeforeSkillUnloadContext | None:
+        return None
+
+    async def after_skill_unload(
+        self, ctx: AfterSkillUnloadContext
+    ) -> AfterSkillUnloadContext | None:
         return None
 
     async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:

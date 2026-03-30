@@ -20,6 +20,8 @@ HOOK_METHODS: frozenset[str] = frozenset(
         "after_agent_call",
         "before_skill_load",
         "after_skill_load",
+        "before_skill_unload",
+        "after_skill_unload",
         "node_enter",
         "node_execute",
         "node_exit",
