@@ -538,7 +538,7 @@ def build_tool_node(
                 )
                 result = after_ctx.result
 
-            # Track skill tool IDs when load_skill_md / unload_skill_md
+            # Track skill tool IDs when load_skill_md / unload_skill
             # is called.
             if skill_registry is not None:
                 internal = _get_internal(state)
@@ -583,7 +583,7 @@ def build_tool_node(
                                 skill_id,
                             )
 
-                    elif tc_name == "unload_skill_md":
+                    elif tc_name == "unload_skill":
                         skill_meta = loaded_skills.pop(skill_id, None)
                         if skill_meta:
                             for tid in skill_meta.get("tools", []):

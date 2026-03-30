@@ -8,9 +8,9 @@ When an agent loads skills via `load_skill_md`, they accumulate in the context w
 
 ## Approach
 
-### 1. `unload_skill_md` Tool
+### 1. `unload_skill` Tool
 
-Add an `unload_skill_md` tool to `create_skill_tools()` that:
+Add an `unload_skill` tool to `create_skill_tools()` that:
 - Removes the skill's tool IDs from `__sherma__.loaded_tools_from_skills`
 - Removes the skill's tool entries from the `ToolRegistry`
 - Tracks unloaded skills in `__sherma__.loaded_skills` metadata
@@ -31,10 +31,10 @@ __sherma__ = {
 
 This provides a mapping from skill_id → its tools and metadata, making unloading straightforward.
 
-### 3. Handle `unload_skill_md` in `tool_node`
+### 3. Handle `unload_skill` in `tool_node`
 
-The `tool_node` currently intercepts `load_skill_md` calls to update internal state. Add similar interception for `unload_skill_md`:
-- When `unload_skill_md` is called, remove the skill's tools from `loaded_tools_from_skills`
+The `tool_node` currently intercepts `load_skill_md` calls to update internal state. Add similar interception for `unload_skill`:
+- When `unload_skill` is called, remove the skill's tools from `loaded_tools_from_skills`
 - Remove the skill entry from `loaded_skills`
 
 ### 4. Hook Types for Skill Unload
@@ -47,12 +47,12 @@ Update `examples/declarative_skill_agent/agent.yaml` system prompt to inform the
 
 ### 6. Update Docs and Skill References
 
-Update `docs/skills.md` and `skills/sherma/references/skills.md` to document the new `unload_skill_md` tool and skill lifecycle management.
+Update `docs/skills.md` and `skills/sherma/references/skills.md` to document the new `unload_skill` tool and skill lifecycle management.
 
 ## Files to Change
 
-- `sherma/langgraph/skill_tools.py` — Add `unload_skill_md` tool and `unload_and_deregister_skill` function
-- `sherma/langgraph/declarative/nodes.py` — Handle `unload_skill_md` in tool_node, update load tracking
+- `sherma/langgraph/skill_tools.py` — Add `unload_skill` tool and `_unload_skill` function
+- `sherma/langgraph/declarative/nodes.py` — Handle `unload_skill` in tool_node, update load tracking
 - `sherma/hooks/types.py` — Add `BeforeSkillUnloadContext`, `AfterSkillUnloadContext`, hook enum entries
 - `sherma/registry/base.py` — Add `remove()` method to Registry
 - `examples/declarative_skill_agent/agent.yaml` — Update system prompt

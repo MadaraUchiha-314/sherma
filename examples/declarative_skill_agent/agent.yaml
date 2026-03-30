@@ -13,8 +13,8 @@ prompts:
       1. Call list_skills ONCE to see available skills.
       2. Call load_skill_md ONCE for the most relevant skill.
       3. After loading, respond with a brief text summary.
-      When a loaded skill is no longer needed, call unload_skill_md to
-      free context window space and remove its tools.
+      When a loaded skill is no longer needed, call unload_skill to
+      free context window space and unbind its tools.
       IMPORTANT: Do NOT repeat tool calls. Call each tool at most once,
       then reply with text (no tool calls).
 
@@ -78,7 +78,7 @@ agents:
             tools:
               - id: list_skills
               - id: load_skill_md
-              - id: unload_skill_md
+              - id: unload_skill
 
         - name: execute
           type: call_llm

@@ -9,7 +9,7 @@ The skill lifecycle follows the progressive disclosure pattern:
 1. **List** -- The LLM calls `list_skills` to see what skills are available (names and descriptions only)
 2. **Load** -- The LLM calls `load_skill_md` to read the full skill documentation and activate its tools
 3. **Execute** -- The LLM uses the loaded tools to accomplish the task
-4. **Unload** -- The LLM calls `unload_skill_md` to remove the skill's tools when they are no longer needed
+4. **Unload** -- The LLM calls `unload_skill` to remove the skill's tools when they are no longer needed
 
 This lets agents start with a lightweight catalog, load what they need, and unload skills to keep context windows efficient.
 
@@ -127,7 +127,7 @@ When skills are declared in a YAML config, sherma creates seven LangGraph tools 
 | --- | --- |
 | `list_skills()` | List all available skills with id, version, name, description |
 | `load_skill_md(skill_id, version)` | Load SKILL.md and register the skill's tools |
-| `unload_skill_md(skill_id, version)` | Unload a skill and deregister its tools |
+| `unload_skill(skill_id, version)` | Unload a skill and unbind its tools |
 | `list_skill_resources(skill_id, version)` | List reference files in the skill |
 | `load_skill_resource(skill_id, resource_path, version)` | Load a specific reference file |
 | `list_skill_assets(skill_id, version)` | List asset files in the skill |
@@ -137,12 +137,11 @@ These tools are created by `create_skill_tools()` and registered automatically w
 
 ### Unloading Skills
 
-When a skill is no longer needed, the LLM can call `unload_skill_md(skill_id)` to:
-1. Deregister all MCP and local tools that were loaded with the skill
-2. Remove the skill's tool IDs from the internal `loaded_tools_from_skills` tracking
-3. Update the `loaded_skills` metadata in `__sherma__`
+When a skill is no longer needed, the LLM can call `unload_skill(skill_id)` to:
+1. Remove the skill's tool IDs from `loaded_tools_from_skills` so they are no longer bound to the LLM
+2. Remove the skill entry from `loaded_skills` in `__sherma__`
 
-This prevents unused skills from consuming context window space and keeps the tool set focused on the current task.
+The tools remain in the `ToolRegistry` (which is shared across runs) but are no longer bound to the LLM. The skill can be re-loaded later with `load_skill_md` if needed again.
 
 ## Using Skills in Declarative Agents
 

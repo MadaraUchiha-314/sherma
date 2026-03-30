@@ -127,23 +127,21 @@ async def load_and_register_skill(
     return content, tools_loaded
 
 
-async def unload_and_deregister_skill(
+async def _unload_skill(
     skill_id: str,
     version: str,
     skill_registry: SkillRegistry,
-    tool_registry: ToolRegistry,
     hook_manager: HookManager | None = None,
 ) -> list[str]:
-    """Unload a skill: deregister its tools and return the removed tool IDs.
+    """Mark a skill as unloaded and return its tool IDs.
 
-    This is the inverse of ``load_and_register_skill``.  It removes all
-    tools that were registered when the skill was loaded (MCP and local
-    tools declared in the skill card) from the ``ToolRegistry``.
+    This is a run-local operation: it does **not** remove tools from the
+    ``ToolRegistry`` (which is shared across runs).  Instead callers
+    update ``__sherma__`` internal state so that downstream
+    ``use_tools_from_loaded_skills`` nodes stop binding the skill's tools.
     """
     version = _normalize_version(version)
-    logger.info(
-        "unload_and_deregister_skill: skill_id=%s, version=%s", skill_id, version
-    )
+    logger.info("unload_skill: skill_id=%s, version=%s", skill_id, version)
 
     # before_skill_unload
     if hook_manager:
@@ -166,22 +164,10 @@ async def unload_and_deregister_skill(
         return []
 
     tools_unloaded: list[str] = []
-
-    # Remove MCP tools
     for mcp_id in skill_card.mcps:
-        try:
-            await tool_registry.remove(mcp_id)
-            tools_unloaded.append(mcp_id)
-        except Exception:
-            logger.warning("Could not remove MCP tool '%s' from registry", mcp_id)
-
-    # Remove local tools
+        tools_unloaded.append(mcp_id)
     for tool_id in skill_card.local_tools:
-        try:
-            await tool_registry.remove(tool_id)
-            tools_unloaded.append(tool_id)
-        except Exception:
-            logger.warning("Could not remove local tool '%s' from registry", tool_id)
+        tools_unloaded.append(tool_id)
 
     # after_skill_unload
     if hook_manager:
@@ -303,27 +289,28 @@ def create_skill_tools(
         return await resolver.load_file(asset_path)
 
     @tool
-    async def unload_skill_md(skill_id: str, version: str = "*") -> str:
-        """Unload a previously loaded skill, removing its tools.
+    async def unload_skill(skill_id: str, version: str = "*") -> str:
+        """Unload a previously loaded skill so its tools are no longer bound.
 
         Call this when a skill is no longer needed to free context window
-        space.  The skill's tools will be deregistered and will no longer
-        be available for use.
+        space.  The skill's tools will no longer be available for use in
+        subsequent LLM calls.  The skill can be re-loaded later with
+        ``load_skill_md`` if needed again.
         """
-        tools_removed = await unload_and_deregister_skill(
-            skill_id, version, skill_registry, tool_registry, hook_manager
+        tools_removed = await _unload_skill(
+            skill_id, version, skill_registry, hook_manager
         )
         if tools_removed:
             return (
                 f"Skill '{skill_id}' unloaded. "
-                f"Removed tools: {', '.join(tools_removed)}"
+                f"Unbound tools: {', '.join(tools_removed)}"
             )
         return f"Skill '{skill_id}' unloaded (no tools were registered)."
 
     return [
         list_skills,
         load_skill_md,
-        unload_skill_md,
+        unload_skill,
         list_skill_resources,
         load_skill_resource,
         list_skill_assets,

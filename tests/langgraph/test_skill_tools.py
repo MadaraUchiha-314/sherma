@@ -134,11 +134,11 @@ async def test_load_skill_asset(setup_registries):
 
 
 @pytest.mark.asyncio
-async def test_unload_skill_md(setup_registries):
+async def test_unload_skill(setup_registries):
     sk_reg, t_reg = setup_registries
     tools = create_skill_tools(sk_reg, t_reg)
     load_skill_md = tools[1]
-    unload_skill_md = tools[2]
+    unload_skill = tools[2]
 
     # First load the skill
     with patch(
@@ -149,12 +149,12 @@ async def test_unload_skill_md(setup_registries):
         await load_skill_md.ainvoke({"skill_id": "my-skill", "version": "*"})
 
     # Now unload it
-    result = await unload_skill_md.ainvoke({"skill_id": "my-skill", "version": "*"})
+    result = await unload_skill.ainvoke({"skill_id": "my-skill", "version": "*"})
     assert "unloaded" in result.lower()
 
 
 @pytest.mark.asyncio
-async def test_unload_skill_md_no_skill_card(setup_registries):
+async def test_unload_skill_no_skill_card(setup_registries):
     """Unloading a skill with no skill card should succeed gracefully."""
     sk_reg, t_reg = setup_registries
 
@@ -169,9 +169,9 @@ async def test_unload_skill_md_no_skill_card(setup_registries):
     )
 
     tools = create_skill_tools(sk_reg, t_reg)
-    unload_skill_md = tools[2]
+    unload_skill = tools[2]
 
-    result = await unload_skill_md.ainvoke({"skill_id": "no-card", "version": "*"})
+    result = await unload_skill.ainvoke({"skill_id": "no-card", "version": "*"})
     assert "unloaded" in result.lower()
     assert "no tools" in result.lower()
 
@@ -184,7 +184,7 @@ async def test_create_skill_tools_returns_seven(registries):
     names = [t.name for t in tools]
     assert "list_skills" in names
     assert "load_skill_md" in names
-    assert "unload_skill_md" in names
+    assert "unload_skill" in names
     assert "list_skill_resources" in names
     assert "load_skill_resource" in names
     assert "list_skill_assets" in names
