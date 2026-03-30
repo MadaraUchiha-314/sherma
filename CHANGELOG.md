@@ -1,3 +1,9 @@
+## v0.21.0 (2026-03-30)
+
+### Feat
+
+- add skill unloading and per-skill tool tracking (#55)
+
 ## v0.20.0 (2026-03-29)
 
 ### Feat
