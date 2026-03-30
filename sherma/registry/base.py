@@ -55,6 +55,28 @@ class Registry(ABC, Generic[T]):
             raise VersionNotFoundError(entry.id, entry.version)
         self._entries[entry.id][entry.version] = entry
 
+    async def remove(self, entity_id: str, version: str = WILDCARD) -> None:
+        """Remove an entry from the registry.
+
+        If *version* is the wildcard ``"*"``, all versions of the entity
+        are removed.  Otherwise only the specified version is deleted.
+
+        Raises ``EntityNotFoundError`` when the entity id is not present.
+        """
+        if entity_id not in self._entries:
+            raise EntityNotFoundError(entity_id, version)
+
+        if version == WILDCARD:
+            del self._entries[entity_id]
+        else:
+            matched = find_best_match(list(self._entries[entity_id].keys()), version)
+            if matched is None:
+                raise VersionNotFoundError(entity_id, version)
+            del self._entries[entity_id][matched]
+            if not self._entries[entity_id]:
+                del self._entries[entity_id]
+        logger.debug("Removed %s/%s from registry", entity_id, version)
+
     async def get(self, entity_id: str, version: str = WILDCARD) -> T:
         """Resolve and return an entity by id and version specifier."""
         if entity_id not in self._entries:

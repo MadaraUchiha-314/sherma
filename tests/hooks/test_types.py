@@ -32,7 +32,7 @@ def test_hook_type_enum_values():
     assert HookType.NODE_ENTER.value == "node_enter"
     assert HookType.NODE_EXIT.value == "node_exit"
     assert HookType.NODE_EXECUTE.value == "node_execute"
-    assert len(HookType) == 18
+    assert len(HookType) == 20
 
 
 def test_before_llm_call_context():

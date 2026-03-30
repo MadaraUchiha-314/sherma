@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 18 lifecycle hook points:
+sherma provides 20 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -16,6 +16,8 @@ sherma provides 18 lifecycle hook points:
 | `after_agent_call` | After receiving sub-agent response |
 | `before_skill_load` | Before loading a skill via `load_skill_md` |
 | `after_skill_load` | After a skill is loaded and its tools registered |
+| `before_skill_unload` | Before unloading a skill via `unload_skill` |
+| `after_skill_unload` | After a skill is unloaded and its tools unbound |
 | `node_enter` | When execution enters any graph node |
 | `node_execute` | When a `custom` node runs its logic (custom nodes only) |
 | `node_exit` | When execution leaves any graph node |
@@ -169,6 +171,23 @@ class AfterSkillLoadContext:
     version: str
     content: str               # SKILL.md content
     tools_loaded: list[str]    # IDs of tools registered
+```
+
+### Skill Unload Contexts
+
+```python
+@dataclass
+class BeforeSkillUnloadContext:
+    node_context: NodeContext | None
+    skill_id: str
+    version: str
+
+@dataclass
+class AfterSkillUnloadContext:
+    node_context: NodeContext | None
+    skill_id: str
+    version: str
+    tools_unloaded: list[str]  # IDs of tools unbound
 ```
 
 ### `ChatModelCreateContext`

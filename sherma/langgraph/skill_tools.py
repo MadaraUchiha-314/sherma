@@ -127,6 +127,65 @@ async def load_and_register_skill(
     return content, tools_loaded
 
 
+async def _unload_skill(
+    skill_id: str,
+    version: str,
+    skill_registry: SkillRegistry,
+    hook_manager: HookManager | None = None,
+) -> list[str]:
+    """Mark a skill as unloaded and return its tool IDs.
+
+    This is a run-local operation: it does **not** remove tools from the
+    ``ToolRegistry`` (which is shared across runs).  Instead callers
+    update ``__sherma__`` internal state so that downstream
+    ``use_tools_from_loaded_skills`` nodes stop binding the skill's tools.
+    """
+    version = _normalize_version(version)
+    logger.info("unload_skill: skill_id=%s, version=%s", skill_id, version)
+
+    # before_skill_unload
+    if hook_manager:
+        from sherma.hooks.types import BeforeSkillUnloadContext
+
+        before_ctx = await hook_manager.run_hook(
+            "before_skill_unload",
+            BeforeSkillUnloadContext(
+                node_context=None,
+                skill_id=skill_id,
+                version=version,
+            ),
+        )
+        skill_id = before_ctx.skill_id
+        version = before_ctx.version
+
+    skill = await skill_registry.get(skill_id, version)
+    skill_card = skill.skill_card
+    if skill_card is None:
+        return []
+
+    tools_unloaded: list[str] = []
+    for mcp_id in skill_card.mcps:
+        tools_unloaded.append(mcp_id)
+    for tool_id in skill_card.local_tools:
+        tools_unloaded.append(tool_id)
+
+    # after_skill_unload
+    if hook_manager:
+        from sherma.hooks.types import AfterSkillUnloadContext
+
+        await hook_manager.run_hook(
+            "after_skill_unload",
+            AfterSkillUnloadContext(
+                node_context=None,
+                skill_id=skill_id,
+                version=version,
+                tools_unloaded=tools_unloaded,
+            ),
+        )
+
+    return tools_unloaded
+
+
 def create_skill_tools(
     skill_registry: SkillRegistry,
     tool_registry: ToolRegistry,
@@ -229,9 +288,29 @@ def create_skill_tools(
         resolver = SkillResolver(skill.skill_card)
         return await resolver.load_file(asset_path)
 
+    @tool
+    async def unload_skill(skill_id: str, version: str = "*") -> str:
+        """Unload a previously loaded skill so its tools are no longer bound.
+
+        Call this when a skill is no longer needed to free context window
+        space.  The skill's tools will no longer be available for use in
+        subsequent LLM calls.  The skill can be re-loaded later with
+        ``load_skill_md`` if needed again.
+        """
+        tools_removed = await _unload_skill(
+            skill_id, version, skill_registry, hook_manager
+        )
+        if tools_removed:
+            return (
+                f"Skill '{skill_id}' unloaded. "
+                f"Unbound tools: {', '.join(tools_removed)}"
+            )
+        return f"Skill '{skill_id}' unloaded (no tools were registered)."
+
     return [
         list_skills,
         load_skill_md,
+        unload_skill,
         list_skill_resources,
         load_skill_resource,
         list_skill_assets,
