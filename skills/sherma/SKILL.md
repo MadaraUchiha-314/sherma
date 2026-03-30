@@ -321,9 +321,9 @@ prompts:
   - id: discover-skills
     version: "1.0.0"
     instructions: >
-      1. Call list_skills to see available skills.
-      2. Call load_skill_md for the most relevant skill.
-      3. Respond with a brief summary.
+      Here are the available skills: ${available_skills}
+      1. Call load_skill_md for the most relevant skill.
+      2. Respond with a brief summary.
       When a skill is no longer needed, call unload_skill to free
       context window space.
 
@@ -368,11 +368,10 @@ agents:
             llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
             prompt:
               - role: system
-                content: 'prompts["discover-skills"]["instructions"]'
+                content: 'template(prompts["discover-skills"]["instructions"], {"available_skills": string(skills)})'
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: list_skills
               - id: load_skill_md
               - id: unload_skill
 

@@ -367,4 +367,27 @@ class DeclarativeAgent(LangGraphAgent):
         if llms:
             extra["llms"] = llms
 
+        # Expose skill metadata so prompts can reference it without an
+        # LLM tool call (e.g. ``skills["weather"]["name"]``).
+        if config.skills and self._registries is not None:
+            skills: dict[str, dict[str, str]] = {}
+            skill_registry = self._registries.skill_registry
+            for skill_def in config.skills:
+                entries = skill_registry._entries.get(skill_def.id, {})
+                entry = entries.get(skill_def.version)
+                if entry and entry.instance:
+                    fm = entry.instance.front_matter
+                    skills[skill_def.id] = {
+                        "id": skill_def.id,
+                        "version": skill_def.version,
+                        "name": fm.name,
+                        "description": fm.description,
+                    }
+                else:
+                    skills[skill_def.id] = {
+                        "id": skill_def.id,
+                        "version": skill_def.version,
+                    }
+            extra["skills"] = skills
+
         return extra

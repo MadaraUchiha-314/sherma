@@ -9,10 +9,12 @@ prompts:
   - id: discover-skills
     version: "1.0.0"
     instructions: >
-      You have access to a catalog of skills. Given the user's request:
-      1. Call list_skills ONCE to see available skills.
-      2. Call load_skill_md ONCE for the most relevant skill.
-      3. After loading, respond with a brief text summary.
+      You have access to a catalog of skills. Here are the available skills:
+      ${available_skills}
+
+      Given the user's request:
+      1. Call load_skill_md ONCE for the most relevant skill from the catalog above.
+      2. After loading, respond with a brief text summary.
       When a loaded skill is no longer needed, call unload_skill to
       free context window space and unbind its tools.
       IMPORTANT: Do NOT repeat tool calls. Call each tool at most once,
@@ -72,11 +74,10 @@ agents:
               version: "1.0.0"
             prompt:
               - role: system
-                content: 'prompts["discover-skills"]["instructions"]'
+                content: 'template(prompts["discover-skills"]["instructions"], {"available_skills": string(skills)})'
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: list_skills
               - id: load_skill_md
               - id: unload_skill
 
