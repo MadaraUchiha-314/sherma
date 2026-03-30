@@ -544,8 +544,9 @@ Branches are evaluated in order. The first matching condition determines the tar
 - **State variables**: Accessed via `state.field` or `state["field"]` (e.g., `state.messages`, `state["counter"]`)
 - **Prompts**: `prompts["prompt-id"]["instructions"]`
 - **LLMs**: `llms["llm-id"]["model_name"]`
+- **Skills**: `skills["skill-id"]["name"]`, `skills["skill-id"]["description"]` (when skills are declared)
 
-State fields are always accessed through the `state` prefix. Extra variables like `prompts` and `llms` remain at the top level.
+State fields are always accessed through the `state` prefix. Extra variables like `prompts`, `llms`, and `skills` remain at the top level.
 
 CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing, `filter`, `exists`, `map`), map construction, comparisons, and boolean logic.
 
@@ -843,10 +844,12 @@ prompts:
   - id: discover-skills
     version: "1.0.0"
     instructions: >
-      You have access to a catalog of skills. Given the user's request:
-      1. Call list_skills to see available skills.
-      2. Call load_skill_md for the most relevant skill.
-      3. Respond with a brief text summary.
+      You have access to a catalog of skills. Here are the available skills:
+      ${available_skills}
+
+      Given the user's request:
+      1. Call load_skill_md for the most relevant skill from the catalog above.
+      2. Respond with a brief text summary.
 
   - id: plan-and-execute
     version: "1.0.0"
@@ -890,12 +893,12 @@ agents:
           args:
             prompt:
               - role: system
-                content: 'prompts["discover-skills"]["instructions"]'
+                content: 'template(prompts["discover-skills"]["instructions"], {"available_skills": string(skills)})'
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: list_skills
               - id: load_skill_md
+              - id: unload_skill
 
         - name: execute
           type: call_llm

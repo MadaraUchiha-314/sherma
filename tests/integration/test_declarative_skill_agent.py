@@ -31,10 +31,12 @@ prompts:
   - id: discover-skills
     version: "1.0.0"
     instructions: >
-      You have access to a catalog of skills. Given the user's request:
-      1. Call list_skills ONCE to see available skills.
-      2. Call load_skill_md ONCE for the most relevant skill.
-      3. After loading, respond with a brief text summary.
+      You have access to a catalog of skills. Here are the available skills:
+      ${available_skills}
+
+      Given the user's request:
+      1. Call load_skill_md ONCE for the most relevant skill from the catalog above.
+      2. After loading, respond with a brief text summary.
 
   - id: plan-and-execute
     version: "1.0.0"
@@ -86,12 +88,14 @@ agents:
               version: "1.0.0"
             prompt:
               - role: system
-                content: 'prompts["discover-skills"]["instructions"]'
+                content: >-
+                  template(prompts["discover-skills"]["instructions"],
+                  {"available_skills": string(skills)})
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: list_skills
               - id: load_skill_md
+              - id: unload_skill
 
         - name: execute
           type: call_llm
@@ -153,7 +157,7 @@ agents:
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_skill_discovery_and_execution(monkeypatch):
-    """Full skill loop: discover → list_skills → load_skill_md → execute → reflect."""
+    """Full skill loop: discover → load_skill_md → execute → reflect."""
     if not SKILL_CARD_PATH.exists():
         pytest.skip(f"Skill card not found at {SKILL_CARD_PATH}")
 
@@ -161,44 +165,33 @@ async def test_skill_discovery_and_execution(monkeypatch):
 
     fake_model = FakeChatModel(
         responses=[
-            # 1. discover_skills: call list_skills
+            # 1. discover_skills: call load_skill_md (skill catalog already in prompt)
             AIMessage(
                 content="",
                 tool_calls=[
                     {
                         "id": "call_1",
-                        "name": "list_skills",
-                        "args": {},
-                    }
-                ],
-            ),
-            # 2. discover_skills (after tool result): call load_skill_md
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "id": "call_2",
                         "name": "load_skill_md",
                         "args": {"skill_id": "weather", "version": "1.0.0"},
                     }
                 ],
             ),
-            # 3. discover_skills: text summary (no more tool calls)
+            # 2. discover_skills: text summary (no more tool calls)
             AIMessage(content="Found weather skill. Ready to execute."),
-            # 4. execute: call get_weather tool
+            # 3. execute: call get_weather tool
             AIMessage(
                 content="",
                 tool_calls=[
                     {
-                        "id": "call_3",
+                        "id": "call_2",
                         "name": "get_weather",
                         "args": {"city": "Tokyo"},
                     }
                 ],
             ),
-            # 5. execute: text result after tool
+            # 4. execute: text result after tool
             AIMessage(content="Tokyo weather: 20C, clear skies."),
-            # 6. reflect: TASK_COMPLETE
+            # 5. reflect: TASK_COMPLETE
             AIMessage(content="TASK_COMPLETE: Tokyo is 20C with clear skies."),
         ],
     )

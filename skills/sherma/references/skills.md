@@ -6,12 +6,14 @@ sherma implements the [Agent Skills](https://agentskills.io/) specification for 
 
 The skill lifecycle follows the progressive disclosure pattern:
 
-1. **List** -- The LLM calls `list_skills` to see what skills are available (names and descriptions only)
+1. **Discover** -- Skill metadata (id, version, name, description) is available as a `skills` CEL extra variable at build time. The `discover_skills` prompt can reference the catalog directly without an LLM tool call.
 2. **Load** -- The LLM calls `load_skill_md` to read the full skill documentation and activate its tools
 3. **Execute** -- The LLM uses the loaded tools to accomplish the task
 4. **Unload** -- The LLM calls `unload_skill` to remove the skill's tools when they are no longer needed
 
-This lets agents start with a lightweight catalog, load what they need, and unload skills to keep context windows efficient.
+This lets agents start with a lightweight catalog injected into the prompt, load what they need, and unload skills to keep context windows efficient.
+
+> **Note:** The `list_skills` tool is still available for runtime discovery of dynamically registered skills, but for the standard declarative pattern the `skills` CEL variable is preferred because it avoids an extra LLM round-trip.
 
 ## Skill Card
 
@@ -158,19 +160,32 @@ Relative `skill_card_path` values are resolved against the YAML file's directory
 
 ### Discovery node
 
-Use `list_skills` and `load_skill_md` as tools on a `call_llm` node:
+Skill metadata is injected into prompts via the `skills` CEL variable and the `template()` function. The LLM sees the catalog directly and calls `load_skill_md` for the relevant skill -- no `list_skills` tool call needed:
 
 ```yaml
+prompts:
+  - id: discover-skills
+    version: "1.0.0"
+    instructions: >
+      Here are the available skills: ${available_skills}
+      Call load_skill_md for the most relevant skill.
+
 nodes:
   - name: discover
     type: call_llm
     args:
       llm: { id: my-llm, version: "1.0.0" }
-      prompt: 'prompts["discover"]["instructions"]'
+      prompt:
+        - role: system
+          content: 'template(prompts["discover-skills"]["instructions"], {"available_skills": string(skills)})'
+        - role: messages
+          content: 'state.messages'
       tools:
-        - id: list_skills
         - id: load_skill_md
+        - id: unload_skill
 ```
+
+The `skills` variable is a map keyed by skill id. Each entry contains `id`, `version`, `name`, and `description` from the resolved skill card.
 
 ### Execution node with loaded skill tools
 
