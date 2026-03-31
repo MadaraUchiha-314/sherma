@@ -53,7 +53,16 @@ nodes:
 | `state_updates` field | Result dict |
 |---|---|
 | **Not specified** (default) | `{"messages": [response]}` -- current behavior, unchanged |
-| **Specified** | Each key-value in `state_updates` is evaluated as a CEL expression. The response is **not** auto-appended to `messages` unless the user explicitly includes `messages` in the output mapping. |
+| **Specified** | Each key-value in `state_updates` is evaluated as a CEL expression. The response is **not** auto-appended to `messages` unless the user explicitly includes `messages` in the mapping. |
+
+### Reducer-aware semantics
+
+`state_updates` values are **deltas passed to LangGraph's reducers**, not final state values. This is the same as how every LangGraph node return dict works:
+
+- **Fields with a reducer** (e.g., `messages` uses `add_messages`): the value is the delta. `[llm_response]` means "append this message". Writing `state.messages + [llm_response]` would be **wrong** — the reducer would try to merge the full list onto the existing list.
+- **Fields without a reducer** (plain TypedDict fields): the value replaces the current field value. The delta IS the final value.
+
+This is not new behavior — it's how LangGraph state updates already work. `state_updates` simply lets the user control which keys appear in the returned dict and what values they hold.
 
 ### CEL context for `state_updates` expressions
 
@@ -61,7 +70,7 @@ The CEL evaluation context includes everything in `state` plus:
 - `llm_response` -- the raw AIMessage object, exposed as a dict-like with keys:
   - `llm_response.content` (str) -- the text content of the response
   - `llm_response.tool_calls` (list) -- tool calls, if any
-  - `llm_response` (object) -- the full response object (for appending to messages: `state.messages + [llm_response]`)
+  - `llm_response` (object) -- the full response object (for passing as a delta to reducers)
 
 ### Examples
 
@@ -74,14 +83,20 @@ state_updates:
 **Append to messages AND store content separately:**
 ```yaml
 state_updates:
-  messages: 'state.messages + [llm_response]'
-  last_response: 'llm_response.content'
+  messages: '[llm_response]'        # delta: reducer appends this
+  last_response: 'llm_response.content'  # plain field: replaces value
 ```
 
-**Append to a custom list field:**
+**Append to a custom list field (with reducer):**
 ```yaml
 state_updates:
-  history: 'state.history + [llm_response]'
+  history: '[llm_response]'
+```
+
+**Replace a plain field with the full response:**
+```yaml
+state_updates:
+  last_ai_message: 'llm_response'
 ```
 
 ---
@@ -128,3 +143,4 @@ state_updates:
 ## Plan Revisions
 
 - **2026-03-31**: Renamed `output` → `state_updates` per owner feedback. Resolved tool call safety question: emit a warning (not error) when `state_updates` omits `messages` on a tooled node.
+- **2026-03-31**: Added reducer-aware semantics section. `state_updates` values are deltas passed to LangGraph reducers, not final state values. Fixed examples to use `'[llm_response]'` instead of `'state.messages + [llm_response]'`.

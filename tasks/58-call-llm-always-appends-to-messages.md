@@ -19,3 +19,6 @@
 ### Iteration 1 (2026-03-31)
 - **Naming**: Owner chose `state_updates` over `output` — makes the intent explicit.
 - **Tool call safety**: Owner confirmed: emit a warning (not error) when `state_updates` omits `messages` on a `call_llm` node with tools bound.
+
+### Iteration 2 (2026-03-31)
+- **Reducer semantics**: Owner flagged that `state_updates` values go through LangGraph's field reducers (e.g., `add_messages` for `messages`). Clarified that values are **deltas**, not final state — consistent with how all LangGraph node returns work. Fixed examples: `'[llm_response]'` (delta) instead of `'state.messages + [llm_response]'` (would duplicate).
