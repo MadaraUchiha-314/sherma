@@ -167,7 +167,22 @@ nodes:
 
 1. **Token counting accuracy** — Should we require a specific tokenizer library (e.g., `tiktoken`) as a dependency, or rely solely on LangChain's built-in counting?
 2. **Reducer dependency** — The issue mentions FR-4 (custom reducers) for the `summary_messages` `replace` behavior. If custom reducers aren't implemented yet, the `summary_field` will use the default list append reducer, which means the node must return the full replacement list each time.
+3. **`model_context_window` removal** — Research shows no framework infers context window size client-side. OpenAI Agents SDK uses item-count heuristics, Claude auto-compaction is server-side, LangGraph uses user-configured `max_token_limit`. The built-in node should drop `model_context_window` and use either a user-configured token budget or message-count threshold instead.
+
+## Reference Implementation (Existing Features)
+
+An example implementation using only existing sherma features lives at
+`examples/conversation_summarization/`. It demonstrates the dual-cursor
+pattern with `call_llm`, `set_state`, conditional edges, and `interrupt`.
+
+### Limitations of the YAML-only approach (motivating the built-in node type)
+
+1. **Summary pollution** — `call_llm` always appends its response to `messages`, so summary LLM responses appear in the conversation history. A built-in node would write to a dedicated state field instead.
+2. **No list slicing in CEL** — Cannot pass only unsummarized messages to the LLM. The summarize `call_llm` receives ALL messages. A built-in node would slice `messages[cursor:len-keep]` in Python.
+3. **Message-count thresholds only** — CEL cannot count tokens. A built-in node would use `model.get_num_tokens_from_messages()`.
+4. **No message deletion** — Cannot remove already-summarized messages from `messages` to free context. A built-in node could use LangGraph's `RemoveMessage`.
 
 ## Plan Revisions
 
 - **Rev 1**: Added dual-cursor design. The original plan had a single `cursor_field` for messages only, with a vague "re-summarize if too big" step. Revised to use two independent cursors (`cursor_field` for messages, `summary_cursor_field` for summaries) so that summary list growth is bounded. Phase 1 (re-summarize summaries) now runs before Phase 2 (summarize messages) to free up space before deciding whether new message summarization is needed.
+- **Rev 2**: Dropped `model_context_window` as a node arg based on research (OpenAI, Claude, LangGraph all avoid client-side context window inference). Added reference implementation using existing features at `examples/conversation_summarization/` with documented limitations that motivate the built-in node type.

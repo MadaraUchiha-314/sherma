@@ -1,0 +1,214 @@
+# Conversation Summarization Example
+#
+# Demonstrates how to implement conversation summarization using existing
+# sherma features: call_llm, set_state, conditional edges, and interrupt.
+#
+# Pattern (dual-cursor):
+#   Two cursors track summarization progress independently:
+#     - summarized_until:         how far into `messages` we have summarized
+#     - summary_summarized_until: how far into `summary_messages` we have
+#                                 re-summarized (to keep summaries bounded)
+#
+# Graph flow:
+#   agent → check_summaries
+#     → [summary overflow]  → resummarize → update_summary_cursor → check_messages
+#     → [no overflow]       → check_messages
+#   check_messages
+#     → [message overflow]  → summarize → update_message_cursor → ask_user
+#     → [no overflow]       → ask_user
+#   ask_user → agent  (loop)
+#
+# Limitations (addressed by a future built-in `summarize` node type):
+#   - call_llm always appends its response to `messages`, so summary
+#     responses appear in the conversation history.
+#   - CEL has no list slicing, so the summarize LLM receives ALL messages
+#     rather than just the unsummarized window.
+#   - Thresholds are message-count based (CEL cannot count tokens).
+
+manifest_version: 1
+
+prompts:
+  - id: agent-system
+    version: "1.0.0"
+    instructions: >
+      You are a helpful assistant having a multi-turn conversation.
+      ${summary_context}
+      Be concise and helpful.
+
+  - id: summarize-messages
+    version: "1.0.0"
+    instructions: >
+      Summarize the conversation below into a concise paragraph.
+      Capture key topics, decisions, facts, and pending questions.
+      ${previous_summaries}
+      Write ONLY the summary paragraph — no preamble, no formatting.
+
+  - id: resummarize
+    version: "1.0.0"
+    instructions: >
+      Below are multiple conversation summaries accumulated over time.
+      Condense ALL of them into a single concise summary that preserves
+      the most important information.
+      Write ONLY the condensed summary — no preamble, no formatting.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+agents:
+  chat-with-summarization:
+    langgraph_config:
+      recursion_limit: 100
+
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        # Accumulated list of summary strings.
+        # Non-messages list fields are replaced (not appended) on each
+        # state update, so we rebuild the full list in set_state.
+        - name: summary_messages
+          type: list
+          default: []
+        # Message cursor: index into `messages` up to which we have
+        # already summarized.
+        - name: summarized_until
+          type: int
+          default: 0
+        # Summary cursor: index into `summary_messages` up to which
+        # we have already re-summarized.
+        - name: summary_summarized_until
+          type: int
+          default: 0
+
+    graph:
+      entry_point: agent
+
+      nodes:
+        # ── Main agent ──────────────────────────────────────────────
+        # Responds to the user. Injects accumulated summaries into the
+        # system prompt so the LLM has context from earlier turns even
+        # though we cannot slice the messages list.
+        - name: agent
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini }
+            prompt:
+              - role: system
+                content: >-
+                  template(
+                    prompts["agent-system"]["instructions"],
+                    {"summary_context":
+                      size(state.summary_messages) > 0
+                      ? "Here is a summary of the earlier conversation:\n"
+                        + state.summary_messages.join("\n")
+                        + "\n\nContinue the conversation naturally."
+                      : ""
+                    }
+                  )
+              - role: messages
+                content: 'state.messages'
+
+        # ── Phase 1: check if summaries need re-summarization ───────
+        # No-op node used purely as a routing point.
+        - name: check_summaries
+          type: data_transform
+          args:
+            expression: '{}'
+
+        # Re-summarize: condense accumulated summaries into one.
+        - name: resummarize
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini }
+            prompt:
+              - role: system
+                content: 'prompts["resummarize"]["instructions"]'
+              - role: human
+                content: 'state.summary_messages.join("\n---\n")'
+
+        # After re-summarization: replace summary_messages with the
+        # single condensed summary and reset the summary cursor.
+        - name: update_summary_cursor
+          type: set_state
+          args:
+            values:
+              summary_messages: '[state.messages[size(state.messages) - 1].content]'
+              summary_summarized_until: '0'
+
+        # ── Phase 2: check if messages need summarization ───────────
+        - name: check_messages
+          type: data_transform
+          args:
+            expression: '{}'
+
+        # Summarize messages: create a summary of the conversation.
+        # Includes previous summaries for continuity.
+        - name: summarize_conversation
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini }
+            prompt:
+              - role: system
+                content: >-
+                  template(
+                    prompts["summarize-messages"]["instructions"],
+                    {"previous_summaries":
+                      size(state.summary_messages) > 0
+                      ? "Previous summaries:\n" + state.summary_messages.join("\n---\n")
+                      : "No previous summaries."
+                    }
+                  )
+              - role: messages
+                content: 'state.messages'
+
+        # After summarization: append new summary to the list and
+        # advance the message cursor.
+        - name: update_message_cursor
+          type: set_state
+          args:
+            values:
+              summary_messages: 'state.summary_messages + [state.messages[size(state.messages) - 1].content]'
+              summarized_until: 'size(state.messages)'
+
+        # Pause for user input.
+        - name: ask_user
+          type: interrupt
+          args:
+            value: 'state.messages[size(state.messages) - 1].content'
+
+      edges:
+        - source: agent
+          target: check_summaries
+
+        # Phase 1: re-summarize summaries if > 5 have accumulated
+        - source: check_summaries
+          branches:
+            - condition: 'size(state.summary_messages) - state.summary_summarized_until > 5'
+              target: resummarize
+          default: check_messages
+
+        - source: resummarize
+          target: update_summary_cursor
+
+        - source: update_summary_cursor
+          target: check_messages
+
+        # Phase 2: summarize messages if > 10 unsummarized
+        - source: check_messages
+          branches:
+            - condition: 'size(state.messages) - state.summarized_until > 10'
+              target: summarize_conversation
+          default: ask_user
+
+        - source: summarize_conversation
+          target: update_message_cursor
+
+        - source: update_message_cursor
+          target: ask_user
+
+        - source: ask_user
+          target: agent
