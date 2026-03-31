@@ -696,6 +696,23 @@ Aligned with the [cel-go strings extension](https://pkg.go.dev/github.com/google
 'json(state.data.trim())["name"].lowerAscii()'
 ```
 
+#### List Functions
+
+| Function | Description | Example |
+| --- | --- | --- |
+| `slice(list, start, end)` | Extract sub-list (start inclusive, end exclusive) | `state.messages.slice(0, 5)` |
+
+```yaml
+# Get messages from cursor to end
+'state.messages.slice(state.cursor, size(state.messages))'
+
+# Keep only the last 6 messages
+'state.messages.slice(size(state.messages) - 6, size(state.messages))'
+
+# Get unsummarized window (between cursor and end minus keep count)
+'state.messages.slice(state.summarized_until, size(state.messages) - 6)'
+```
+
 #### Templating
 
 | Function | Description | Example |

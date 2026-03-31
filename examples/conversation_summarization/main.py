@@ -36,7 +36,9 @@ async def main() -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
     if len(sys.argv) < 2:
-        print("Usage: uv run python examples/conversation_summarization/main.py <message>")
+        print(
+            "Usage: uv run python examples/conversation_summarization/main.py <message>"
+        )
         sys.exit(1)
 
     secrets_path = Path(__file__).resolve().parent.parent.parent / "secrets.json"

@@ -1,7 +1,8 @@
 # Conversation Summarization Example
 #
-# Demonstrates how to implement conversation summarization using existing
-# sherma features: call_llm, set_state, conditional edges, and interrupt.
+# Demonstrates how to implement conversation summarization using
+# sherma's declarative features: call_llm with state_updates, set_state,
+# slice(), filter(), conditional edges, and interrupt.
 #
 # Pattern (dual-cursor):
 #   Two cursors track summarization progress independently:
@@ -18,12 +19,14 @@
 #     → [no overflow]       → ask_user
 #   ask_user → agent  (loop)
 #
-# Limitations (addressed by a future built-in `summarize` node type):
-#   - call_llm always appends its response to `messages`, so summary
-#     responses appear in the conversation history.
-#   - CEL has no list slicing, so the summarize LLM receives ALL messages
-#     rather than just the unsummarized window.
-#   - Thresholds are message-count based (CEL cannot count tokens).
+# Key techniques:
+#   - state_updates to write summaries directly to summary_messages
+#     (NOT polluting the conversation messages)
+#   - slice() to pass only unsummarized messages to the summarize LLM
+#   - slice() to pass only recent messages to the main agent
+#   - filter() to exclude tool-call messages from summarization
+#   - summary_messages.join() to inject summaries into system prompts
+#   - Dual cursors to independently track message and summary progress
 
 manifest_version: 1
 
@@ -89,9 +92,9 @@ agents:
 
       nodes:
         # ── Main agent ──────────────────────────────────────────────
-        # Responds to the user. Injects accumulated summaries into the
-        # system prompt so the LLM has context from earlier turns even
-        # though we cannot slice the messages list.
+        # Responds to the user. Injects summaries into system prompt
+        # and only passes recent messages (from cursor onward) using
+        # slice() to keep the context window bounded.
         - name: agent
           type: call_llm
           args:
@@ -110,7 +113,9 @@ agents:
                     }
                   )
               - role: messages
-                content: 'state.messages'
+                content: 'state.messages.slice(state.summarized_until, size(state.messages))'
+            state_updates:
+              messages: '[llm_response]'
 
         # ── Phase 1: check if summaries need re-summarization ───────
         # No-op node used purely as a routing point.
@@ -120,6 +125,8 @@ agents:
             expression: '{}'
 
         # Re-summarize: condense accumulated summaries into one.
+        # Uses state_updates to write ONLY to summary_messages,
+        # keeping the conversation messages clean.
         - name: resummarize
           type: call_llm
           args:
@@ -129,14 +136,8 @@ agents:
                 content: 'prompts["resummarize"]["instructions"]'
               - role: human
                 content: 'state.summary_messages.join("\n---\n")'
-
-        # After re-summarization: replace summary_messages with the
-        # single condensed summary and reset the summary cursor.
-        - name: update_summary_cursor
-          type: set_state
-          args:
-            values:
-              summary_messages: '[state.messages[size(state.messages) - 1].content]'
+            state_updates:
+              summary_messages: '[llm_response.content]'
               summary_summarized_until: '0'
 
         # ── Phase 2: check if messages need summarization ───────────
@@ -145,8 +146,11 @@ agents:
           args:
             expression: '{}'
 
-        # Summarize messages: create a summary of the conversation.
-        # Includes previous summaries for continuity.
+        # Summarize messages: create a summary of the unsummarized
+        # message window. Uses slice() to pass only unsummarized
+        # messages and filter() to exclude tool-call messages.
+        # state_updates writes the summary to summary_messages
+        # without polluting the conversation.
         - name: summarize_conversation
           type: call_llm
           args:
@@ -163,16 +167,10 @@ agents:
                     }
                   )
               - role: messages
-                content: 'state.messages'
-
-        # After summarization: append new summary to the list and
-        # advance the message cursor.
-        - name: update_message_cursor
-          type: set_state
-          args:
-            values:
-              summary_messages: 'state.summary_messages + [state.messages[size(state.messages) - 1].content]'
-              summarized_until: 'size(state.messages)'
+                content: 'state.messages.slice(state.summarized_until, size(state.messages))'
+            state_updates:
+              summary_messages: 'state.summary_messages + [llm_response.content]'
+              summarized_until: 'size(state.messages) - 6'
 
         # Pause for user input.
         - name: ask_user
@@ -192,9 +190,6 @@ agents:
           default: check_messages
 
         - source: resummarize
-          target: update_summary_cursor
-
-        - source: update_summary_cursor
           target: check_messages
 
         # Phase 2: summarize messages if > 10 unsummarized
@@ -205,9 +200,6 @@ agents:
           default: ask_user
 
         - source: summarize_conversation
-          target: update_message_cursor
-
-        - source: update_message_cursor
           target: ask_user
 
         - source: ask_user

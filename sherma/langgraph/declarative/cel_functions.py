@@ -205,6 +205,29 @@ def cel_template(
 
 
 # ---------------------------------------------------------------------------
+# Tier 5: List functions
+# ---------------------------------------------------------------------------
+
+
+def cel_slice(
+    items: celtypes.ListType,
+    start: celtypes.IntType,
+    end: celtypes.IntType,
+) -> celtypes.ListType:
+    """Extract a sub-list by start (inclusive) and end (exclusive) indices.
+
+    Follows Python-like slicing conventions.
+
+    Usage in CEL::
+
+        [1, 2, 3, 4, 5].slice(1, 3)                     // [2, 3]
+        state.messages.slice(0, 5)                        // first 5 messages
+        state.messages.slice(state.cursor, size(state.messages))  // from cursor to end
+    """
+    return celtypes.ListType(list(items)[int(start) : int(end)])
+
+
+# ---------------------------------------------------------------------------
 # Registry of all custom functions
 # ---------------------------------------------------------------------------
 
@@ -227,4 +250,5 @@ CUSTOM_FUNCTIONS: dict[str, Any] = {
     "template": cel_template,
     # Tier 5: List utilities
     "last": cel_last,
+    "slice": cel_slice,
 }
