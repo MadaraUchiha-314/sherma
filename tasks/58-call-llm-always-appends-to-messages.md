@@ -16,4 +16,6 @@
 
 ## Chat Iterations
 
-_(none yet)_
+### Iteration 1 (2026-03-31)
+- **Naming**: Owner chose `state_updates` over `output` — makes the intent explicit.
+- **Tool call safety**: Owner confirmed: emit a warning (not error) when `state_updates` omits `messages` on a `call_llm` node with tools bound.
