@@ -1,0 +1,19 @@
+# Task: call_llm always appends to messages
+
+**GitHub Issue:** https://github.com/MadaraUchiha-314/sherma/issues/58
+
+## Problem
+
+- `call_llm` always returns `{"messages": [response]}`, hardcoding the LLM response into the `messages` state field.
+- Users cannot control what happens with the LLM response (e.g., store it in a different field, transform it, skip appending to messages).
+- Users cannot append the LLM response to arbitrary state attributes beyond `messages`.
+
+## Requirements
+
+1. Users should be able to control what the `call_llm` node does with the LLM response.
+2. Users should be able to map the LLM response (or parts of it) to any state field, not just `messages`.
+3. The default behavior (appending to `messages`) should be preserved for backward compatibility.
+
+## Chat Iterations
+
+_(none yet)_
