@@ -1059,3 +1059,84 @@ agents:
 ```
 
 The `ApprovalTaggingHook` sets `additional_kwargs["decision"]` on the human message during `node_exit` of the interrupt node. You can also route on the message `type` field — for example, `state.messages[0]["type"] == "human"` returns `true` for `HumanMessage` objects.
+
+## Complete Example: Custom Output with `state_updates`
+
+A summarization agent that calls the LLM but stores the response in a `summary` field instead of appending to `messages`. This is useful when you want to process the LLM output without polluting the conversation history:
+
+```yaml
+manifest_version: 1
+
+prompts:
+  - id: summarize-prompt
+    version: "1.0.0"
+    instructions: >
+      Summarize the conversation so far in 2-3 sentences.
+
+  - id: agent-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful assistant. Use the conversation summary for context.
+      Summary: ${summary}
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+default_llm:
+  id: openai-gpt-4o-mini
+
+agents:
+  summarizing-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        - name: summary
+          type: str
+          default: ""
+        - name: turn_count
+          type: int
+          default: 0
+
+    graph:
+      entry_point: agent
+
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'template(prompts["agent-prompt"]["instructions"], {"summary": state.summary})'
+              - role: messages
+                content: 'state.messages'
+
+        # Summarize every few turns — store in summary field, not messages
+        - name: summarize
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'prompts["summarize-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            state_updates:
+              summary: 'llm_response.content'
+              turn_count: 'state.turn_count + 1'
+
+      edges:
+        - source: agent
+          branches:
+            - condition: 'state.turn_count > 0 && state.turn_count % 5 == 0'
+              target: summarize
+          default: __end__
+
+        - source: summarize
+          target: __end__
+```
+
+In this example, the `summarize` node uses `state_updates` to write the LLM response to `summary` and increment `turn_count`, without appending an extra AI message to the conversation history. The `agent` node uses the default behavior (no `state_updates`) so its responses are appended to `messages` as usual.
