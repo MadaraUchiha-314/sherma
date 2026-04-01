@@ -57,6 +57,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: load_skills

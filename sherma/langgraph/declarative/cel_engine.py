@@ -132,36 +132,58 @@ class CelEngine:
         self._env = celpy.Environment()
         self._extra_vars = extra_vars or {}
 
-    def _build_activation(self, state: dict[str, Any]) -> dict[str, Any]:
+    def _build_activation(
+        self,
+        state: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Build a CEL activation from state and extra variables.
 
         State fields are nested under a ``state`` key so that CEL
         expressions access them via ``state.field`` or ``state["field"]``.
         Extra variables (prompts, llms, …) remain at the top level.
+        *extra* provides additional one-shot variables (e.g. ``llm_response``)
+        that are merged at the top level alongside ``_extra_vars``.
         """
         activation: dict[str, Any] = {}
         activation["state"] = _python_to_cel(state)
         for key, value in self._extra_vars.items():
             activation[key] = _python_to_cel(value)
+        if extra:
+            for key, value in extra.items():
+                activation[key] = _python_to_cel(value)
         return activation
 
-    def _evaluate_raw(self, expression: str, state: dict[str, Any]) -> Any:
+    def _evaluate_raw(
+        self,
+        expression: str,
+        state: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> Any:
         """Compile, run, and return the raw CEL result (no Python conversion)."""
         ast = self._env.compile(expression)
         prog = self._env.program(ast, functions=CUSTOM_FUNCTIONS)
-        activation = self._build_activation(state)
+        activation = self._build_activation(state, extra)
         return prog.evaluate(activation)
 
-    def evaluate(self, expression: str, state: dict[str, Any]) -> Any:
+    def evaluate(
+        self,
+        expression: str,
+        state: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> Any:
         """Evaluate a CEL expression against state and return a Python value.
+
+        *extra* provides additional top-level variables available in the
+        expression (e.g. ``llm_response``).
 
         Supports a special ``default(expr, fallback)`` wrapper that returns
         *fallback* when *expr* raises an evaluation error.
         """
         try:
             if _DEFAULT_RE.match(expression):
-                return self._evaluate_default(expression, state)
-            return _cel_to_python(self._evaluate_raw(expression, state))
+                return self._evaluate_default(expression, state, extra)
+            return _cel_to_python(self._evaluate_raw(expression, state, extra))
         except celpy.CELEvalError as exc:  # type: ignore[attr-defined]
             raise CelEvaluationError(
                 f"CEL evaluation failed for '{expression}': {exc}"
@@ -171,17 +193,22 @@ class CelEngine:
                 f"CEL parse error for '{expression}': {exc}"
             ) from exc
 
-    def _evaluate_default(self, expression: str, state: dict[str, Any]) -> Any:
+    def _evaluate_default(
+        self,
+        expression: str,
+        state: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> Any:
         """Handle ``default(expr, fallback)`` by trying *expr* first."""
         expr_str, fallback_str = _split_default_args(expression)
         try:
-            return _cel_to_python(self._evaluate_raw(expr_str, state))
+            return _cel_to_python(self._evaluate_raw(expr_str, state, extra))
         except (
             celpy.CELEvalError,  # type: ignore[attr-defined]
             celpy.CELParseError,  # type: ignore[attr-defined]
             CelEvaluationError,
         ):
-            return _cel_to_python(self._evaluate_raw(fallback_str, state))
+            return _cel_to_python(self._evaluate_raw(fallback_str, state, extra))
 
     def evaluate_bool(self, expression: str, state: dict[str, Any]) -> bool:
         """Evaluate a CEL expression that must return a boolean."""

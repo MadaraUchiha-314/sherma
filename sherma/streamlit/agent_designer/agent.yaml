@@ -175,6 +175,8 @@ agents:
               - {id: save_file, version: "1.0.0"}
               - {id: get_generated_files, version: "1.0.0"}
               - {id: validate_agent_yaml, version: "1.0.0"}
+            state_updates:
+              messages: '[llm_response]'
 
         - name: reflect
           type: call_llm
@@ -185,6 +187,8 @@ agents:
                 content: 'prompts["reflect-system-prompt"]["instructions"]'
               - role: messages
                 content: 'messages'
+            state_updates:
+              messages: '[llm_response]'
 
         - name: ask_feedback
           type: interrupt

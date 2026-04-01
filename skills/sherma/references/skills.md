@@ -183,6 +183,8 @@ nodes:
       tools:
         - id: load_skill_md
         - id: unload_skill
+      state_updates:
+        messages: '[llm_response]'
 ```
 
 The `skills` variable is a map keyed by skill id. Each entry contains `id`, `version`, `name`, and `description` from the resolved skill card.
@@ -199,6 +201,8 @@ nodes:
       llm: { id: my-llm, version: "1.0.0" }
       prompt: 'prompts["execute"]["instructions"]'
       use_tools_from_loaded_skills: true
+      state_updates:
+        messages: '[llm_response]'
 ```
 
 sherma tracks which tools were loaded by which skills in an internal state key (`__sherma__`). When `use_tools_from_loaded_skills` is true, only tools associated with loaded skills are bound to the LLM.
@@ -258,6 +262,8 @@ nodes:
                   version: { type: string }
                 required: [id]
           required: [skills]
+      state_updates:
+        messages: '[llm_response]'
 
   - name: load_selected_skills
     type: load_skills
@@ -273,6 +279,8 @@ nodes:
         - role: messages
           content: 'state.messages'
       use_tools_from_loaded_skills: true
+      state_updates:
+        messages: '[llm_response]'
 ```
 
 The `load_skills` node:

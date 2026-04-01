@@ -105,6 +105,8 @@ agents:
               version: "1.0.0"
             prompt: 'prompts["supervisor-prompt"]["instructions"]'
             use_sub_agents_as_tools: true
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: planner

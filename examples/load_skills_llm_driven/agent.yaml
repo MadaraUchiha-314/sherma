@@ -78,6 +78,8 @@ agents:
                         - id
                 required:
                   - skills
+            state_updates:
+              messages: '[llm_response]'
 
         # Step 2: Programmatically load the skills the LLM selected.
         # The CEL expression extracts the skills list from the structured
@@ -100,6 +102,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: select_skills

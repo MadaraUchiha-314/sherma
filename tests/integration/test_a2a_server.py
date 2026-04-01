@@ -53,6 +53,8 @@ agents:
                 content: 'prompts["sys"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges:
         - source: agent
           target: __end__

@@ -86,6 +86,7 @@ class TestNodeDefOnError:
             args=CallLLMArgs(
                 llm=RegistryRef(id="gpt-4"),
                 prompt=[PromptMessageDef(role="system", content='"hi"')],
+                state_updates={"messages": "[llm_response]"},
             ),
             on_error=OnErrorDef(
                 retry=RetryPolicy(max_attempts=3),
@@ -103,6 +104,7 @@ class TestNodeDefOnError:
             args=CallLLMArgs(
                 llm=RegistryRef(id="gpt-4"),
                 prompt=[PromptMessageDef(role="system", content='"hi"')],
+                state_updates={"messages": "[llm_response]"},
             ),
         )
         assert n.on_error is None
@@ -173,6 +175,7 @@ class TestInterruptSafety:
                     PromptMessageDef(role="system", content='"hi"'),
                     PromptMessageDef(role="messages", content="state.messages"),
                 ],
+                state_updates={"messages": "[llm_response]"},
             ),
             on_error=OnErrorDef(
                 retry=RetryPolicy(max_attempts=3),
@@ -233,6 +236,7 @@ class TestCallLLMRetry:
                     PromptMessageDef(role="system", content='"hi"'),
                     PromptMessageDef(role="messages", content="state.messages"),
                 ],
+                state_updates={"messages": "[llm_response]"},
             ),
             on_error=OnErrorDef(
                 retry=RetryPolicy(max_attempts=3, delay=0.01, strategy="fixed"),
@@ -251,7 +255,7 @@ class TestCallLLMRetry:
         fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
         result = await fn({"messages": []})
 
-        assert result["messages"][0].content == "success"
+        assert result["messages"][0]["content"] == "success"
         assert chat_model.ainvoke.call_count == 3
 
     @pytest.mark.asyncio
@@ -265,6 +269,7 @@ class TestCallLLMRetry:
                     PromptMessageDef(role="system", content='"hi"'),
                     PromptMessageDef(role="messages", content="state.messages"),
                 ],
+                state_updates={"messages": "[llm_response]"},
             ),
             on_error=OnErrorDef(
                 retry=RetryPolicy(max_attempts=2, delay=0.01, strategy="fixed"),
@@ -291,6 +296,7 @@ class TestCallLLMRetry:
                     PromptMessageDef(role="system", content='"hi"'),
                     PromptMessageDef(role="messages", content="state.messages"),
                 ],
+                state_updates={"messages": "[llm_response]"},
             ),
             on_error=OnErrorDef(
                 retry=RetryPolicy(max_attempts=2, delay=0.01, strategy="fixed"),
@@ -321,6 +327,7 @@ class TestCallLLMRetry:
                     PromptMessageDef(role="system", content='"hi"'),
                     PromptMessageDef(role="messages", content="state.messages"),
                 ],
+                state_updates={"messages": "[llm_response]"},
             ),
         )
         chat_model = AsyncMock()
@@ -408,6 +415,8 @@ class TestInjectFallbackEdges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             fallback: handler
         - name: handler
@@ -445,6 +454,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             fallback: handler
         - name: handler
@@ -486,7 +497,9 @@ edges:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'state.messages'""",
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: agent
@@ -512,6 +525,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             fallback: nonexistent""",
             """\
@@ -594,6 +609,8 @@ class TestOnErrorValidation:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
           args: {}
@@ -632,7 +649,9 @@ edges:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'state.messages'""",
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: transform
@@ -665,7 +684,9 @@ edges:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'state.messages'""",
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: init
@@ -692,6 +713,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
         - name: pause
           type: interrupt
           args:
@@ -724,6 +747,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               max_attempts: 0""",
@@ -748,6 +773,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               delay: -1""",
@@ -772,6 +799,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               delay: 5
@@ -800,6 +829,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             fallback: nonexistent""",
             """\
@@ -826,6 +857,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               max_attempts: 3
@@ -859,6 +892,8 @@ edges:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
           args: {}
@@ -908,6 +943,8 @@ agents:
                 content: '"hi"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               max_attempts: 5

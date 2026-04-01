@@ -59,7 +59,7 @@ agents:        # Agent graph definitions
 
 | Type | Purpose | Key args |
 | --- | --- | --- |
-| `call_llm` | Call an LLM with prompt + optional tools | `llm`, `prompt`, `tools`, `use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools` |
+| `call_llm` | Call an LLM with prompt + optional tools | `llm`, `prompt`, `tools`, `use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools`, `state_updates` |
 | `tool_node` | Execute tool calls from last AIMessage | `tools` (optional, restrict to specific tools) |
 | `call_agent` | Invoke another registered agent | `agent` (id+version), `input` (CEL expression) |
 | `data_transform` | Transform state via CEL → dict | `expression` (CEL returning a dict) |
@@ -133,6 +133,8 @@ Roles: `system`, `human`, `ai`, `messages`. The `messages` role splices conversa
 Dynamic flags are mutually exclusive with each other, but an explicit `tools` list can combine with any single flag.
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma auto-injects a `tool_node` after it with conditional edges. You do NOT wire this manually.
+
+**`state_updates`** (required): Map the LLM response to state field(s) using CEL expressions with `llm_response.content` and `llm_response.tool_calls`. Values are **deltas** passed to LangGraph reducers. The standard pattern is `messages: '[llm_response]'`. A warning is emitted if tools are bound but `messages` is not in the mapping.
 
 ## Quick Reference: Programmatic Agent
 
@@ -208,6 +210,8 @@ agents:
                 content: 'prompts["system-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: agent
@@ -259,6 +263,8 @@ agents:
             tools:
               - id: my_tool
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: agent
@@ -308,6 +314,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_sub_agents_as_tools: true
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: planner
@@ -374,6 +382,8 @@ agents:
             tools:
               - id: load_skill_md
               - id: unload_skill
+            state_updates:
+              messages: '[llm_response]'
 
         - name: execute
           type: call_llm
@@ -385,6 +395,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
 
         - name: reflect
           type: call_llm
@@ -395,6 +407,8 @@ agents:
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: discover_skills
@@ -449,6 +463,8 @@ agents:
                 content: 'prompts["system-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: agent
@@ -512,6 +528,8 @@ agents:
                 content: 'prompts["draft-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
         # Pause for human review — pass the draft as interrupt value
         - name: get_approval
@@ -531,6 +549,8 @@ agents:
                 content: 'prompts["revise-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: draft

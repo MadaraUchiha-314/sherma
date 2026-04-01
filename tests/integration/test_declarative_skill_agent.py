@@ -96,6 +96,8 @@ agents:
             tools:
               - id: load_skill_md
               - id: unload_skill
+            state_updates:
+              messages: '[llm_response]'
 
         - name: execute
           type: call_llm
@@ -109,6 +111,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
 
         - name: reflect
           type: call_llm
@@ -121,6 +125,8 @@ agents:
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
         - name: summarize
           type: call_llm
@@ -133,6 +139,8 @@ agents:
                 content: 'prompts["summarize"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: discover_skills

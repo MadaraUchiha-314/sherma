@@ -73,6 +73,8 @@ agents:
             tools:
               - id: get_weather
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
 
         - name: update_stats
           type: data_transform
@@ -82,7 +84,7 @@ agents:
         - name: ask_next_place
           type: interrupt
           args:
-            value: 'state.messages[size(state.messages) - 1].content'
+            value: 'state.messages[size(state.messages) - 1]["content"]'
 
       edges:
         - source: init

@@ -177,6 +177,8 @@ agents:
                 content: '"You are helpful."'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 ```
 
@@ -204,7 +206,9 @@ agents:
       nodes:
         - name: first_node
           type: call_llm
-          args: ...
+          args:
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: first_node
@@ -240,6 +244,8 @@ Calls an LLM with a prompt and optional tool bindings. The `llm` field can be om
     tools:                          # Optional: bind specific tools
       - id: get_weather
         version: "1.0.0"
+    state_updates:
+      messages: '[llm_response]'
     # use_tools_from_registry: true       # Or: bind ALL registered tools
     # use_tools_from_loaded_skills: true   # Or: bind tools from loaded skills
     # use_sub_agents_as_tools: true        # Or: bind all sub-agents as tools
@@ -305,6 +311,46 @@ prompt:
 The dynamic flags (`use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools`) are mutually exclusive with each other. However, an explicit `tools` list can be combined with any single dynamic flag -- the tools are merged additively and deduplicated by name.
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma automatically injects a `tool_node` after it with the correct conditional edges. If the LLM responds with tool calls, execution routes to the tool node; otherwise it continues to the next edge. You don't need to wire this manually.
+
+#### `state_updates`
+
+The `state_updates` field maps the LLM response (or parts of it) to state fields:
+
+```yaml
+- name: summarizer
+  type: call_llm
+  args:
+    llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+    prompt:
+      - role: system
+        content: '"Summarize the conversation."'
+      - role: messages
+        content: 'state.messages'
+    state_updates:
+      summary: 'llm_response.content'
+```
+
+Each key is a state field name and each value is a CEL expression. The LLM response is available as `llm_response` with two properties:
+
+| Variable | Type | Description |
+| --- | --- | --- |
+| `llm_response.content` | `string` | The text content of the response |
+| `llm_response.tool_calls` | `list` | Tool calls made by the LLM (if any) |
+
+**Reducer-aware semantics**: `state_updates` values are **deltas** passed to LangGraph's field reducers, the same as any node return value. For `messages` (which uses the `add_messages` reducer), write `'[llm_response]'` to append -- not `'state.messages + [llm_response]'` which would cause duplication.
+
+```yaml
+# Append to messages AND store content separately
+state_updates:
+  messages: '[llm_response]'               # delta for add_messages reducer
+  last_response: 'llm_response.content'    # plain field: replaces value
+
+# Store only in a custom field (messages unchanged)
+state_updates:
+  summary: 'llm_response.content'
+```
+
+> **Warning**: If a `call_llm` node has tools bound and `state_updates` does not include `messages`, sherma emits a warning. The tool execution loop requires the AIMessage in `messages` to function correctly.
 
 ### `tool_node`
 
@@ -458,6 +504,8 @@ Nodes can declare an `on_error` block for retry and fallback routing:
         content: '"You are helpful."'
       - role: messages
         content: state.messages
+    state_updates:
+      messages: '[llm_response]'
   on_error:
     retry:
       max_attempts: 3       # total attempts (1 initial + 2 retries)
@@ -899,6 +947,8 @@ agents:
             tools:
               - id: load_skill_md
               - id: unload_skill
+            state_updates:
+              messages: '[llm_response]'
 
         - name: execute
           type: call_llm
@@ -909,6 +959,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
 
         - name: reflect
           type: call_llm
@@ -918,6 +970,8 @@ agents:
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: discover_skills
@@ -982,6 +1036,8 @@ agents:
                 content: 'prompts["draft-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
         # Pause for human review
         - name: get_approval
@@ -998,6 +1054,8 @@ agents:
                 content: 'prompts["revise-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: draft
@@ -1017,3 +1075,86 @@ agents:
 ```
 
 The `ApprovalTaggingHook` sets `additional_kwargs["decision"]` on the human message during `node_exit` of the interrupt node. You can also route on the message `type` field — for example, `state.messages[0]["type"] == "human"` returns `true` for `HumanMessage` objects.
+
+## Complete Example: Custom Output with `state_updates`
+
+A summarization agent that calls the LLM but stores the response in a `summary` field instead of appending to `messages`. This is useful when you want to process the LLM output without polluting the conversation history:
+
+```yaml
+manifest_version: 1
+
+prompts:
+  - id: summarize-prompt
+    version: "1.0.0"
+    instructions: >
+      Summarize the conversation so far in 2-3 sentences.
+
+  - id: agent-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful assistant. Use the conversation summary for context.
+      Summary: ${summary}
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+default_llm:
+  id: openai-gpt-4o-mini
+
+agents:
+  summarizing-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        - name: summary
+          type: str
+          default: ""
+        - name: turn_count
+          type: int
+          default: 0
+
+    graph:
+      entry_point: agent
+
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'template(prompts["agent-prompt"]["instructions"], {"summary": state.summary})'
+              - role: messages
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
+
+        # Summarize every few turns — store in summary field, not messages
+        - name: summarize
+          type: call_llm
+          args:
+            prompt:
+              - role: system
+                content: 'prompts["summarize-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            state_updates:
+              summary: 'llm_response.content'
+              turn_count: 'state.turn_count + 1'
+
+      edges:
+        - source: agent
+          branches:
+            - condition: 'state.turn_count > 0 && state.turn_count % 5 == 0'
+              target: summarize
+          default: __end__
+
+        - source: summarize
+          target: __end__
+```
+
+In this example, the `summarize` node uses `state_updates` to write the LLM response to `summary` and increment `turn_count`, without appending an extra AI message to the conversation history. The `agent` node uses the standard `state_updates` pattern to append responses to `messages`.

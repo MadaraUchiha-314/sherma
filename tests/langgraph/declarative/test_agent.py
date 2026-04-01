@@ -141,6 +141,8 @@ agents:
                 content: 'prompts["sys"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
     mock_model = AsyncMock()
@@ -551,6 +553,8 @@ agents:
                 content: 'prompts["sys"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
 
@@ -588,6 +592,8 @@ agents:
             prompt:
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
 
@@ -610,6 +616,8 @@ agents:
             prompt:
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
 
@@ -711,12 +719,16 @@ agents:
             prompt:
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
         - name: node_b
           type: call_llm
           args:
             prompt:
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges:
         - source: node_a
           target: node_b
