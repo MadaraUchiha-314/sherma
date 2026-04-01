@@ -61,6 +61,7 @@ async def test_build_call_llm_node():
                 PromptMessageDef(role="system", content='"You are helpful"'),
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -72,7 +73,7 @@ async def test_build_call_llm_node():
 
     assert "messages" in result
     assert len(result["messages"]) == 1
-    assert result["messages"][0].content == "Hello!"
+    assert result["messages"][0]["content"] == "Hello!"
     chat_model.ainvoke.assert_called_once()
 
 
@@ -95,6 +96,7 @@ async def test_build_call_llm_node_with_tools():
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
             tools=[RegistryRef(id="my-tool", version="1.0.0")],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     bound_model = AsyncMock()
@@ -122,7 +124,7 @@ async def test_build_call_llm_node_with_tools():
 
     chat_model.bind_tools.assert_called_once()
     assert len(chat_model.bind_tools.call_args[0][0]) == 1
-    assert result["messages"][0].content == "Using tool"
+    assert result["messages"][0]["content"] == "Using tool"
 
 
 @pytest.mark.asyncio
@@ -324,6 +326,7 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills():
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_loaded_skills=True,
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -360,7 +363,7 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills():
     bound_tools = chat_model.bind_tools.call_args[0][0]
     assert len(bound_tools) == 1
     assert bound_tools[0].name == "skill-tool"
-    assert result["messages"][0].content == "Using skill tool"
+    assert result["messages"][0]["content"] == "Using skill tool"
 
 
 @pytest.mark.asyncio
@@ -383,6 +386,7 @@ async def test_build_call_llm_node_loaded_skills_plus_explicit_tools():
             ],
             use_tools_from_loaded_skills=True,
             tools=[RegistryRef(id="explicit-tool", version="1.0.0")],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -431,7 +435,7 @@ async def test_build_call_llm_node_loaded_skills_plus_explicit_tools():
     names = {t.name for t in bound_tools}
     assert names == {"skill-tool", "explicit-tool"}
     assert len(bound_tools) == 2  # no duplicates
-    assert result["messages"][0].content == "merged"
+    assert result["messages"][0]["content"] == "merged"
 
 
 @pytest.mark.asyncio
@@ -449,6 +453,7 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills_empty():
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_loaded_skills=True,
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -468,7 +473,7 @@ async def test_build_call_llm_node_use_tools_from_loaded_skills_empty():
         }
     )
 
-    assert result["messages"][0].content == "No tools"
+    assert result["messages"][0]["content"] == "No tools"
     chat_model.bind_tools.assert_not_called()
 
 
@@ -491,6 +496,7 @@ async def test_build_call_llm_node_use_tools_from_registry():
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_tools_from_registry=True,
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -524,7 +530,7 @@ async def test_build_call_llm_node_use_tools_from_registry():
     chat_model.bind_tools.assert_called_once()
     bound_tools = chat_model.bind_tools.call_args[0][0]
     assert len(bound_tools) == 2
-    assert result["messages"][0].content == "Using registry tools"
+    assert result["messages"][0]["content"] == "Using registry tools"
 
 
 @pytest.mark.asyncio
@@ -844,6 +850,7 @@ async def test_call_llm_fires_hooks():
                 PromptMessageDef(role="system", content='"You are helpful"'),
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -881,6 +888,7 @@ async def test_before_llm_call_hook_modifies_prompt():
                 PromptMessageDef(role="system", content='"Original prompt"'),
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -946,6 +954,7 @@ async def test_build_call_llm_node_with_response_format():
                     }
                 },
             ),
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -964,13 +973,13 @@ async def test_build_call_llm_node_with_response_format():
     assert schema_arg["name"] == "UserInfo"
     assert schema_arg["schema"]["required"] == ["name"]
 
-    # Dict response should be wrapped as AIMessage with JSON content
+    # Dict response should be wrapped as AIMessage with JSON content, then
+    # CEL round-trips it to a dict with a "content" key containing JSON.
     assert len(result["messages"]) == 1
     msg = result["messages"][0]
-    assert isinstance(msg, AIMessage)
     import json
 
-    assert json.loads(msg.content) == {"name": "Alice"}
+    assert json.loads(msg["content"]) == {"name": "Alice"}
 
 
 @pytest.mark.asyncio
@@ -991,6 +1000,7 @@ async def test_build_call_llm_node_response_format_aimessage_passthrough():
                 name="Info",
                 **{"schema": {"type": "object", "properties": {}}},
             ),
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -1006,8 +1016,8 @@ async def test_build_call_llm_node_response_format_aimessage_passthrough():
     fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
     result = await fn({"messages": []})
 
-    # AIMessage response should pass through without wrapping
-    assert result["messages"][0] is ai_response
+    # AIMessage response passes through CEL, round-tripped to a dict
+    assert result["messages"][0]["content"] == '{"name": "Bob"}'
 
 
 @pytest.mark.asyncio
@@ -1022,6 +1032,7 @@ async def test_no_hooks_when_manager_is_none():
                 PromptMessageDef(role="system", content='"You are helpful"'),
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -1030,7 +1041,7 @@ async def test_no_hooks_when_manager_is_none():
 
     fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
     result = await fn({"messages": []})
-    assert result["messages"][0].content == "Hello!"
+    assert result["messages"][0]["content"] == "Hello!"
 
 
 # --- Array prompt tests ---
@@ -1051,6 +1062,7 @@ async def test_array_prompt_with_splice():
                 PromptMessageDef(role="messages", content="state.messages"),
                 PromptMessageDef(role="human", content='"Summarize the above"'),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -1089,6 +1101,7 @@ async def test_array_prompt_no_auto_messages():
             prompt=[
                 PromptMessageDef(role="system", content='"System only"'),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -1121,6 +1134,7 @@ async def test_array_prompt_mixed_roles():
                 PromptMessageDef(role="ai", content='"4"'),
                 PromptMessageDef(role="human", content='"And 3+3?"'),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     chat_model = AsyncMock()
@@ -1160,6 +1174,7 @@ async def test_build_call_llm_node_sub_agents_all():
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_sub_agents_as_tools="all",
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -1192,7 +1207,7 @@ async def test_build_call_llm_node_sub_agents_all():
     bound_tools = chat_model.bind_tools.call_args[0][0]
     assert len(bound_tools) == 2
     assert {t.name for t in bound_tools} == {"weather-agent", "search-agent"}
-    assert result["messages"][0].content == "Using sub-agents"
+    assert result["messages"][0]["content"] == "Using sub-agents"
 
 
 @pytest.mark.asyncio
@@ -1216,6 +1231,7 @@ async def test_build_call_llm_node_sub_agents_list():
             use_sub_agents_as_tools=[
                 RegistryRef(id="weather-agent", version="1.0.0"),
             ],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -1248,7 +1264,7 @@ async def test_build_call_llm_node_sub_agents_list():
     bound_tools = chat_model.bind_tools.call_args[0][0]
     assert len(bound_tools) == 1
     assert bound_tools[0].name == "weather-agent"
-    assert result["messages"][0].content == "Subset"
+    assert result["messages"][0]["content"] == "Subset"
 
 
 @pytest.mark.asyncio
@@ -1264,6 +1280,7 @@ async def test_build_call_llm_node_sub_agents_false():
                 PromptMessageDef(role="messages", content="state.messages"),
             ],
             use_sub_agents_as_tools=False,
+            state_updates={"messages": "[llm_response]"},
         ),
     )
 
@@ -1277,7 +1294,7 @@ async def test_build_call_llm_node_sub_agents_false():
 
     result = await fn({"messages": []})
 
-    assert result["messages"][0].content == "No tools"
+    assert result["messages"][0]["content"] == "No tools"
     # bind_tools should NOT have been called since it's an AsyncMock (no bind_tools)
     chat_model.ainvoke.assert_called_once()
 
@@ -1810,32 +1827,6 @@ async def test_call_llm_state_updates_multiple_fields():
     result = await fn({"messages": [], "last_response": "", "call_count": 0})
 
     assert result == {"last_response": "Hi there", "call_count": 1}
-
-
-@pytest.mark.asyncio
-async def test_call_llm_no_state_updates_default_behavior():
-    """Without state_updates, call_llm still appends to messages (backward compat)."""
-    node_def = NodeDef(
-        name="agent",
-        type="call_llm",
-        args=CallLLMArgs(
-            llm=RegistryRef(id="gpt-4"),
-            prompt=[
-                PromptMessageDef(role="system", content='"You are helpful"'),
-                PromptMessageDef(role="messages", content="state.messages"),
-            ],
-        ),
-    )
-    chat_model = AsyncMock()
-    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
-    cel = CelEngine()
-
-    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
-    result = await fn({"messages": []})
-
-    assert "messages" in result
-    assert len(result["messages"]) == 1
-    assert result["messages"][0].content == "Hello!"
 
 
 @pytest.mark.asyncio

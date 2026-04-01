@@ -60,6 +60,8 @@ agents:
             tools:
               - id: get_weather
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
       edges:
         - source: agent
           target: __end__
@@ -119,6 +121,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_sub_agents_as_tools: true
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: planner

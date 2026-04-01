@@ -50,7 +50,9 @@ class TestInjectToolNodesExplicitTools:
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: some-tool""",
+              - id: some-tool
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: agent
@@ -102,7 +104,9 @@ class TestInjectToolNodesRegistryTools:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
-            use_tools_from_registry: true""",
+            use_tools_from_registry: true
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: agent
@@ -131,7 +135,9 @@ class TestInjectToolNodesLoadedSkills:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
-            use_tools_from_loaded_skills: true""",
+            use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: agent
@@ -162,6 +168,8 @@ class TestBackwardCompat:
                 content: 'state.messages'
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: my_tools
           type: tool_node
           args: {}""",
@@ -199,6 +207,8 @@ edges:
                 content: 'state.messages'
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: other
           type: set_state
           args:
@@ -234,7 +244,9 @@ class TestNoTools:
               - role: system
                 content: '"hello"'
               - role: messages
-                content: 'state.messages'""",
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: agent
@@ -281,6 +293,8 @@ agents:
                 content: 'state.messages'
             tools:
               - id: tool-a
+            state_updates:
+              messages: '[llm_response]'
         - name: second
           type: call_llm
           args:
@@ -292,6 +306,8 @@ agents:
                 content: 'state.messages'
             tools:
               - id: tool-b
+            state_updates:
+              messages: '[llm_response]'
       edges:
         - source: first
           target: second
@@ -336,6 +352,8 @@ class TestNameCollision:
                 content: 'state.messages'
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: agent_tools
           type: set_state
           args:
@@ -370,7 +388,9 @@ class TestNoOutgoingEdge:
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: some-tool""",
+              - id: some-tool
+            state_updates:
+              messages: '[llm_response]'""",
         )
         config = load_declarative_config(yaml_content=yaml)
         result = inject_tool_nodes(config)
@@ -399,6 +419,8 @@ class TestEdgeTargetPreserved:
                 content: 'state.messages'
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: next_step
           type: set_state
           args:
@@ -443,7 +465,9 @@ class TestOriginalConfigUnmodified:
               - role: messages
                 content: 'state.messages'
             tools:
-              - id: some-tool""",
+              - id: some-tool
+            state_updates:
+              messages: '[llm_response]'""",
             """\
 edges:
         - source: agent

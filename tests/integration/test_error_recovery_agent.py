@@ -50,6 +50,8 @@ agents:
                 content: '"You are helpful."'
               - role: messages
                 content: state.messages
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               max_attempts: 3
@@ -108,6 +110,8 @@ agents:
                 content: '"You are helpful."'
               - role: messages
                 content: state.messages
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               max_attempts: 3
@@ -159,6 +163,8 @@ agents:
                 content: state.messages
             tools:
               - id: failing_tool
+            state_updates:
+              messages: '[llm_response]'
 
         - name: agent_tools
           type: tool_node
@@ -310,6 +316,8 @@ agents:
                 content: '"You are helpful."'
               - role: messages
                 content: state.messages
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: agent

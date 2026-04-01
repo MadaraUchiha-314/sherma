@@ -47,6 +47,8 @@ agents:
                 content: 'state.messages'
             tools:
               - id: get_weather
+            state_updates:
+              messages: '[llm_response]'
           on_error:
             retry:
               max_attempts: 3

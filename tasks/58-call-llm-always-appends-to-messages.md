@@ -12,7 +12,7 @@
 
 1. Users should be able to control what the `call_llm` node does with the LLM response.
 2. Users should be able to map the LLM response (or parts of it) to any state field, not just `messages`.
-3. The default behavior (appending to `messages`) should be preserved for backward compatibility.
+3. No implicit behavior — `state_updates` is required and explicit.
 
 ## Chat Iterations
 
@@ -22,3 +22,6 @@
 
 ### Iteration 2 (2026-03-31)
 - **Reducer semantics**: Owner flagged that `state_updates` values go through LangGraph's field reducers (e.g., `add_messages` for `messages`). Clarified that values are **deltas**, not final state — consistent with how all LangGraph node returns work. Fixed examples: `'[llm_response]'` (delta) instead of `'state.messages + [llm_response]'` (would duplicate).
+
+### Iteration 3 (2026-04-01)
+- **Breaking change**: Owner requested making `state_updates` required (not optional). No implicit append-to-messages behavior. All existing examples and tests updated with explicit `state_updates: { messages: '[llm_response]' }`.

@@ -90,6 +90,8 @@ agents:
             tools:
               - id: get_weather
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
           args: {}  # auto-inherits tools from call_llm
@@ -246,6 +248,8 @@ agents:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -287,6 +291,8 @@ agents:
                 content: '"hello"'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -325,6 +331,8 @@ agents:
                 content: 'state.messages'
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -552,6 +560,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_registry: true
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges:
@@ -609,6 +619,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -656,6 +668,8 @@ agents:
             use_tools_from_registry: true
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -697,6 +711,8 @@ agents:
             use_tools_from_loaded_skills: true
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -737,6 +753,8 @@ agents:
                 content: 'state.messages'
             use_tools_from_registry: true
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -785,6 +803,8 @@ agents:
                     type: string
             tools:
               - id: some-tool
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -832,6 +852,8 @@ agents:
                   name:
                     type: string
             use_tools_from_registry: true
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -878,6 +900,8 @@ agents:
                 properties:
                   name:
                     type: string
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -915,6 +939,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_registry: true
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 """
     config = load_declarative_config(yaml_content=yaml_content)
@@ -1416,6 +1442,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_sub_agents_as_tools: true
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -1465,6 +1493,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_sub_agents_as_tools: all
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -1519,6 +1549,8 @@ agents:
             use_sub_agents_as_tools:
               - id: weather-agent
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []
@@ -1571,6 +1603,8 @@ agents:
             use_sub_agents_as_tools:
               - id: nonexistent-agent
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
         - name: tools
           type: tool_node
       edges: []

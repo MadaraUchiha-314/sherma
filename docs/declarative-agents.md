@@ -177,6 +177,8 @@ agents:
                 content: '"You are helpful."'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
       edges: []
 ```
 
@@ -204,7 +206,9 @@ agents:
       nodes:
         - name: first_node
           type: call_llm
-          args: ...
+          args:
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: first_node
@@ -240,6 +244,8 @@ Calls an LLM with a prompt and optional tool bindings. The `llm` field can be om
     tools:                          # Optional: bind specific tools
       - id: get_weather
         version: "1.0.0"
+    state_updates:
+      messages: '[llm_response]'
     # use_tools_from_registry: true       # Or: bind ALL registered tools
     # use_tools_from_loaded_skills: true   # Or: bind tools from loaded skills
     # use_sub_agents_as_tools: true        # Or: bind all sub-agents as tools
@@ -308,7 +314,7 @@ The dynamic flags (`use_tools_from_registry`, `use_tools_from_loaded_skills`, `u
 
 #### `state_updates`
 
-By default, `call_llm` appends the LLM response to `state.messages`. The optional `state_updates` field overrides this behavior, letting you map the response (or parts of it) to any state field:
+The `state_updates` field maps the LLM response (or parts of it) to state fields:
 
 ```yaml
 - name: summarizer
@@ -343,8 +349,6 @@ state_updates:
 state_updates:
   summary: 'llm_response.content'
 ```
-
-When `state_updates` is omitted, the default behavior is preserved: `{"messages": [response]}`.
 
 > **Warning**: If a `call_llm` node has tools bound and `state_updates` does not include `messages`, sherma emits a warning. The tool execution loop requires the AIMessage in `messages` to function correctly.
 
@@ -500,6 +504,8 @@ Nodes can declare an `on_error` block for retry and fallback routing:
         content: '"You are helpful."'
       - role: messages
         content: state.messages
+    state_updates:
+      messages: '[llm_response]'
   on_error:
     retry:
       max_attempts: 3       # total attempts (1 initial + 2 retries)
@@ -941,6 +947,8 @@ agents:
             tools:
               - id: load_skill_md
               - id: unload_skill
+            state_updates:
+              messages: '[llm_response]'
 
         - name: execute
           type: call_llm
@@ -951,6 +959,8 @@ agents:
               - role: messages
                 content: 'state.messages'
             use_tools_from_loaded_skills: true
+            state_updates:
+              messages: '[llm_response]'
 
         - name: reflect
           type: call_llm
@@ -960,6 +970,8 @@ agents:
                 content: 'prompts["reflect"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: discover_skills
@@ -1024,6 +1036,8 @@ agents:
                 content: 'prompts["draft-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
         # Pause for human review
         - name: get_approval
@@ -1040,6 +1054,8 @@ agents:
                 content: 'prompts["revise-prompt"]["instructions"]'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: draft
@@ -1114,6 +1130,8 @@ agents:
                 content: 'template(prompts["agent-prompt"]["instructions"], {"summary": state.summary})'
               - role: messages
                 content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
 
         # Summarize every few turns — store in summary field, not messages
         - name: summarize
@@ -1139,4 +1157,4 @@ agents:
           target: __end__
 ```
 
-In this example, the `summarize` node uses `state_updates` to write the LLM response to `summary` and increment `turn_count`, without appending an extra AI message to the conversation history. The `agent` node uses the default behavior (no `state_updates`) so its responses are appended to `messages` as usual.
+In this example, the `summarize` node uses `state_updates` to write the LLM response to `summary` and increment `turn_count`, without appending an extra AI message to the conversation history. The `agent` node uses the standard `state_updates` pattern to append responses to `messages`.

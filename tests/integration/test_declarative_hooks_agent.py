@@ -68,6 +68,8 @@ agents:
             tools:
               - id: get_weather
                 version: "1.0.0"
+            state_updates:
+              messages: '[llm_response]'
 
       edges:
         - source: agent

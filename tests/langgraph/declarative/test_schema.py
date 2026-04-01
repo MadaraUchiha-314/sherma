@@ -49,6 +49,7 @@ def test_call_llm_args():
             PromptMessageDef(role="system", content='prompts["sys"].instructions'),
         ],
         tools=[RegistryRef(id="get_weather", version="1.0.0")],
+        state_updates={"messages": "[llm_response]"},
     )
     assert args.llm.id == "gpt-4"
     assert args.tools is not None
@@ -79,6 +80,7 @@ def test_node_def():
         args=CallLLMArgs(
             llm=RegistryRef(id="gpt-4"),
             prompt=[PromptMessageDef(role="system", content='"hello"')],
+            state_updates={"messages": "[llm_response]"},
         ),
     )
     assert node.name == "agent"
@@ -216,6 +218,7 @@ def test_call_llm_args_array_prompt():
             PromptMessageDef(role="messages", content="state.messages"),
             PromptMessageDef(role="human", content='"Summarize"'),
         ],
+        state_updates={"messages": "[llm_response]"},
     )
     assert len(args.prompt) == 3
     assert args.prompt[0].role == "system"
@@ -229,6 +232,7 @@ def test_call_llm_args_with_response_format():
     args = CallLLMArgs(
         llm=RegistryRef(id="gpt-4"),
         prompt=[PromptMessageDef(role="system", content='"Extract info"')],
+        state_updates={"messages": "[llm_response]"},
         response_format=ResponseFormatDef(
             name="UserInfo",
             **{
@@ -249,6 +253,7 @@ def test_call_llm_args_response_format_default_none():
     args = CallLLMArgs(
         llm=RegistryRef(id="gpt-4"),
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
     )
     assert args.response_format is None
 
@@ -257,6 +262,7 @@ def test_call_llm_args_without_llm():
     """CallLLMArgs.llm defaults to None when omitted."""
     args = CallLLMArgs(
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
     )
     assert args.llm is None
 
@@ -319,6 +325,7 @@ def test_use_sub_agents_as_tools_true_becomes_all():
     """YAML `true` is normalized to `"all"`."""
     args = CallLLMArgs(
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
         use_sub_agents_as_tools=True,
     )
     assert args.use_sub_agents_as_tools == "all"
@@ -327,6 +334,7 @@ def test_use_sub_agents_as_tools_true_becomes_all():
 def test_use_sub_agents_as_tools_false_stays_false():
     args = CallLLMArgs(
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
         use_sub_agents_as_tools=False,
     )
     assert args.use_sub_agents_as_tools is False
@@ -335,6 +343,7 @@ def test_use_sub_agents_as_tools_false_stays_false():
 def test_use_sub_agents_as_tools_all_string():
     args = CallLLMArgs(
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
         use_sub_agents_as_tools="all",
     )
     assert args.use_sub_agents_as_tools == "all"
@@ -343,6 +352,7 @@ def test_use_sub_agents_as_tools_all_string():
 def test_use_sub_agents_as_tools_list_of_refs():
     args = CallLLMArgs(
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
         use_sub_agents_as_tools=[
             {"id": "weather-agent", "version": "1.0.0"},
             {"id": "search-agent", "version": "1.0.0"},
@@ -358,6 +368,7 @@ def test_use_sub_agents_as_tools_invalid_value():
     with pytest.raises(ValidationError):
         CallLLMArgs(
             prompt=[PromptMessageDef(role="system", content='"hello"')],
+            state_updates={"messages": "[llm_response]"},
             use_sub_agents_as_tools="invalid",
         )
 
@@ -365,6 +376,7 @@ def test_use_sub_agents_as_tools_invalid_value():
 def test_use_sub_agents_as_tools_default_is_false():
     args = CallLLMArgs(
         prompt=[PromptMessageDef(role="system", content='"hello"')],
+        state_updates={"messages": "[llm_response]"},
     )
     assert args.use_sub_agents_as_tools is False
 

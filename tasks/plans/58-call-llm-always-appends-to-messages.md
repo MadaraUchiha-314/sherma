@@ -104,12 +104,13 @@ state_updates:
 ## 3. Implementation Steps
 
 ### Step 1: Schema changes (`sherma/langgraph/declarative/schema.py`)
-- Add `state_updates: dict[str, str] | None = None` to `CallLLMArgs`.
+- Make `state_updates: dict[str, str]` a required field on `CallLLMArgs` (no default).
 
 ### Step 2: Node builder changes (`sherma/langgraph/declarative/nodes.py`)
 - In `build_call_llm_node` / `call_llm_fn`, after obtaining the `response`:
-  - If `args.state_updates` is `None`: keep current behavior (`{"messages": [response]}`).
-  - If `args.state_updates` is set: build a CEL context that includes the current state plus `llm_response` (the AIMessage serialized to a dict-like). Evaluate each key-value pair in `args.state_updates` and construct the result dict from those evaluations.
+  - Always evaluate `state_updates` CEL expressions with `llm_response` in context.
+  - No fallback to implicit `{"messages": [response]}`.
+- Serialize AIMessage as `{"role": "ai", "content": ..., "tool_calls": ...}` so `add_messages` reducer can reconstruct messages from dict.
 - The `after_llm_call` hook still fires before output mapping (so it can modify `response`).
 - The `node_exit` hook still fires after output mapping (so it can modify the final `result`).
 
@@ -118,18 +119,16 @@ state_updates:
 - Serialize the AIMessage to a dict for CEL consumption (content, tool_calls, etc.).
 
 ### Step 4: Tests
-- Default behavior (no `state_updates` field) -- verify backward compat.
 - `state_updates` mapping to a single custom field.
 - `state_updates` mapping to multiple fields.
-- `state_updates` that explicitly includes `messages` (append + custom field).
 - `state_updates` with `llm_response.content` extraction.
 - `state_updates` with `llm_response.tool_calls` extraction.
-- Verify `after_llm_call` and `node_exit` hooks still work with output mapping.
+- Warning emitted for tooled nodes missing `messages`.
+- Update ALL existing tests to include explicit `state_updates`.
 
-### Step 5: Update docs and skill references
-- Update `docs/declarative-agents.md` with the `state_updates` field documentation under the `call_llm` section.
-- Update `skills/sherma/references/` (copies of docs).
-- Update `skills/sherma/SKILL.md` if it covers `call_llm` args.
+### Step 5: Update ALL examples, docs, and skill references
+- Add `state_updates` to every `call_llm` node across all YAML examples, integration tests, docs, and skill references.
+- Update `docs/declarative-agents.md`, `skills/sherma/references/`, and `skills/sherma/SKILL.md`.
 
 ---
 
@@ -144,3 +143,4 @@ state_updates:
 
 - **2026-03-31**: Renamed `output` → `state_updates` per owner feedback. Resolved tool call safety question: emit a warning (not error) when `state_updates` omits `messages` on a tooled node.
 - **2026-03-31**: Added reducer-aware semantics section. `state_updates` values are deltas passed to LangGraph reducers, not final state values. Fixed examples to use `'[llm_response]'` instead of `'state.messages + [llm_response]'`.
+- **2026-04-01**: Made `state_updates` required (breaking change). Removed default `{"messages": [response]}` behavior. Updated all examples, tests, docs, and YAML files across the codebase. Added `role: "ai"` to serialized response dict so `add_messages` reducer can reconstruct messages.
