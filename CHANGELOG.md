@@ -1,3 +1,11 @@
+## v1.0.0 (2026-04-01)
+
+### BREAKING CHANGE
+
+- call_llm no longer implicitly appends the LLM response
+to messages. The state_updates field is now required — users must
+explicitly declare which state fields to update.
+
 ## v0.21.0 (2026-03-30)
 
 ### Feat
