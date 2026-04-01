@@ -59,7 +59,7 @@ agents:        # Agent graph definitions
 
 | Type | Purpose | Key args |
 | --- | --- | --- |
-| `call_llm` | Call an LLM with prompt + optional tools | `llm`, `prompt`, `tools`, `use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools` |
+| `call_llm` | Call an LLM with prompt + optional tools | `llm`, `prompt`, `tools`, `use_tools_from_registry`, `use_tools_from_loaded_skills`, `use_sub_agents_as_tools`, `state_updates` |
 | `tool_node` | Execute tool calls from last AIMessage | `tools` (optional, restrict to specific tools) |
 | `call_agent` | Invoke another registered agent | `agent` (id+version), `input` (CEL expression) |
 | `data_transform` | Transform state via CEL → dict | `expression` (CEL returning a dict) |
@@ -133,6 +133,8 @@ Roles: `system`, `human`, `ai`, `messages`. The `messages` role splices conversa
 Dynamic flags are mutually exclusive with each other, but an explicit `tools` list can combine with any single flag.
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma auto-injects a `tool_node` after it with conditional edges. You do NOT wire this manually.
+
+**`state_updates`** (optional): Override the default behavior of appending the LLM response to `messages`. Map the response to any state field(s) using CEL expressions with `llm_response.content` and `llm_response.tool_calls`. Values are **deltas** passed to LangGraph reducers. When omitted, defaults to `{"messages": [response]}`. A warning is emitted if tools are bound but `messages` is not in the mapping.
 
 ## Quick Reference: Programmatic Agent
 

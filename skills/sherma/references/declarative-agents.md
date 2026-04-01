@@ -306,6 +306,48 @@ The dynamic flags (`use_tools_from_registry`, `use_tools_from_loaded_skills`, `u
 
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma automatically injects a `tool_node` after it with the correct conditional edges. If the LLM responds with tool calls, execution routes to the tool node; otherwise it continues to the next edge. You don't need to wire this manually.
 
+#### `state_updates`
+
+By default, `call_llm` appends the LLM response to `state.messages`. The optional `state_updates` field overrides this behavior, letting you map the response (or parts of it) to any state field:
+
+```yaml
+- name: summarizer
+  type: call_llm
+  args:
+    llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+    prompt:
+      - role: system
+        content: '"Summarize the conversation."'
+      - role: messages
+        content: 'state.messages'
+    state_updates:
+      summary: 'llm_response.content'
+```
+
+Each key is a state field name and each value is a CEL expression. The LLM response is available as `llm_response` with two properties:
+
+| Variable | Type | Description |
+| --- | --- | --- |
+| `llm_response.content` | `string` | The text content of the response |
+| `llm_response.tool_calls` | `list` | Tool calls made by the LLM (if any) |
+
+**Reducer-aware semantics**: `state_updates` values are **deltas** passed to LangGraph's field reducers, the same as any node return value. For `messages` (which uses the `add_messages` reducer), write `'[llm_response]'` to append -- not `'state.messages + [llm_response]'` which would cause duplication.
+
+```yaml
+# Append to messages AND store content separately
+state_updates:
+  messages: '[llm_response]'               # delta for add_messages reducer
+  last_response: 'llm_response.content'    # plain field: replaces value
+
+# Store only in a custom field (messages unchanged)
+state_updates:
+  summary: 'llm_response.content'
+```
+
+When `state_updates` is omitted, the default behavior is preserved: `{"messages": [response]}`.
+
+> **Warning**: If a `call_llm` node has tools bound and `state_updates` does not include `messages`, sherma emits a warning. The tool execution loop requires the AIMessage in `messages` to function correctly.
+
 ### `tool_node`
 
 Executes tool calls from the last `AIMessage`. Usually auto-injected, but can be declared explicitly:

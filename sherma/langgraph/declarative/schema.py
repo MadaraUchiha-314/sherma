@@ -53,6 +53,7 @@ class CallLLMArgs(BaseModel):
     use_tools_from_loaded_skills: bool = False
     use_sub_agents_as_tools: Literal[False, "all"] | list[RegistryRef] = False
     response_format: ResponseFormatDef | None = None
+    state_updates: dict[str, str] | None = None
 
     @field_validator("use_sub_agents_as_tools", mode="before")
     @classmethod

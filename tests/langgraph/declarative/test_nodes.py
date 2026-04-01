@@ -1751,3 +1751,172 @@ async def test_custom_node_error_handling():
     fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
     result = await fn({})
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# state_updates for call_llm
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_call_llm_state_updates_content_to_custom_field():
+    """state_updates maps llm_response.content to a custom state field."""
+    node_def = NodeDef(
+        name="summarizer",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"Summarize"'),
+                PromptMessageDef(role="messages", content="state.messages"),
+            ],
+            state_updates={"summary": "llm_response.content"},
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="This is a summary."))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    result = await fn({"messages": [], "summary": ""})
+
+    assert result == {"summary": "This is a summary."}
+    assert "messages" not in result
+
+
+@pytest.mark.asyncio
+async def test_call_llm_state_updates_multiple_fields():
+    """state_updates can map to multiple state fields at once."""
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"Be helpful"'),
+                PromptMessageDef(role="messages", content="state.messages"),
+            ],
+            state_updates={
+                "last_response": "llm_response.content",
+                "call_count": "state.call_count + 1",
+            },
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hi there"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    result = await fn({"messages": [], "last_response": "", "call_count": 0})
+
+    assert result == {"last_response": "Hi there", "call_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_call_llm_no_state_updates_default_behavior():
+    """Without state_updates, call_llm still appends to messages (backward compat)."""
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"You are helpful"'),
+                PromptMessageDef(role="messages", content="state.messages"),
+            ],
+        ),
+    )
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="Hello!"))
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    result = await fn({"messages": []})
+
+    assert "messages" in result
+    assert len(result["messages"]) == 1
+    assert result["messages"][0].content == "Hello!"
+
+
+@pytest.mark.asyncio
+async def test_call_llm_state_updates_tool_calls_extraction():
+    """state_updates can extract tool_calls from the LLM response."""
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"Be helpful"'),
+                PromptMessageDef(role="messages", content="state.messages"),
+            ],
+            state_updates={
+                "last_tool_calls": "llm_response.tool_calls",
+            },
+        ),
+    )
+    tool_calls = [{"name": "get_weather", "args": {"city": "NYC"}, "id": "tc1"}]
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(
+        return_value=AIMessage(content="", tool_calls=tool_calls)
+    )
+    cel = CelEngine()
+
+    fn = build_call_llm_node(_make_ctx(node_def), chat_model, cel)
+    result = await fn({"messages": [], "last_tool_calls": []})
+
+    assert len(result["last_tool_calls"]) == 1
+    assert result["last_tool_calls"][0]["name"] == "get_weather"
+
+
+@pytest.mark.asyncio
+async def test_call_llm_state_updates_warns_tooled_node_missing_messages(caplog):
+    """Emit a warning when state_updates omits messages on a tooled call_llm."""
+    import logging
+
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.tool import ToolRegistry
+
+    node_def = NodeDef(
+        name="agent",
+        type="call_llm",
+        args=CallLLMArgs(
+            llm=RegistryRef(id="gpt-4"),
+            prompt=[
+                PromptMessageDef(role="system", content='"Be helpful"'),
+                PromptMessageDef(role="messages", content="state.messages"),
+            ],
+            tools=[RegistryRef(id="my-tool", version="1.0.0")],
+            state_updates={"summary": "llm_response.content"},
+        ),
+    )
+    bound_model = AsyncMock()
+    bound_model.ainvoke = AsyncMock(return_value=AIMessage(content="Result"))
+    chat_model = MagicMock()
+    chat_model.bind_tools = MagicMock(return_value=bound_model)
+
+    registry = ToolRegistry()
+    real_tool = StructuredTool.from_function(
+        func=lambda x: x, name="my-tool", description="test"
+    )
+    await registry.add(
+        RegistryEntry(
+            id="my-tool",
+            version="1.0.0",
+            instance=Tool(id="my-tool", version="1.0.0", function=real_tool),
+        )
+    )
+
+    cel = CelEngine()
+    fn = build_call_llm_node(
+        _make_ctx(node_def), chat_model, cel, tool_registry=registry
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await fn({"messages": [], "summary": ""})
+
+    assert result == {"summary": "Result"}
+    assert "does not include 'messages'" in caplog.text

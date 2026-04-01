@@ -401,7 +401,26 @@ def build_call_llm_node(
                         tc.get("name", "?"),
                         tc.get("args", {}),
                     )
-            result: dict[str, Any] = {"messages": [response]}
+            result: dict[str, Any]
+            if args.state_updates is not None:
+                # Serialize AIMessage for CEL consumption
+                response_dict: dict[str, Any] = {
+                    "content": getattr(response, "content", ""),
+                    "tool_calls": getattr(response, "tool_calls", []),
+                }
+                cel_extra = {"llm_response": response_dict}
+                result = {}
+                for key, expr in args.state_updates.items():
+                    result[key] = cel.evaluate(expr, state, extra=cel_extra)
+                if current_tools and "messages" not in args.state_updates:
+                    logger.warning(
+                        "[%s] call_llm has tools bound but state_updates "
+                        "does not include 'messages'. The tool execution "
+                        "loop requires the AIMessage in messages to work.",
+                        _ctx.node_def.name,
+                    )
+            else:
+                result = {"messages": [response]}
 
             # node_exit
             if hooks:
