@@ -357,7 +357,7 @@ class DeclarativeAgent(LangGraphAgent):
 
         prompts: dict[str, dict[str, str]] = {}
         for p in config.prompts:
-            prompts[p.id] = {"instructions": p.instructions}
+            prompts[p.id] = {"instructions": p.instructions or ""}
         if prompts:
             extra["prompts"] = prompts
 

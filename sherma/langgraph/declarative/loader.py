@@ -344,6 +344,7 @@ async def populate_registries(
                     f"Prompt instructions file not found: {path}"
                 )
             instructions = path.read_text()
+            prompt_def.instructions = instructions
         else:
             assert prompt_def.instructions is not None
             instructions = prompt_def.instructions
