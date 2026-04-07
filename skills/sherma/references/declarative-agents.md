@@ -46,6 +46,25 @@ prompts:
 
 Prompts are accessible in CEL expressions via `prompts["my-prompt"]["instructions"]`.
 
+#### Loading instructions from a file
+
+For long prompts, use `instructions_path` to load the prompt body from an
+external file instead of inlining it. Relative paths are resolved against
+the YAML's `base_path` (the directory of the YAML file when loaded via
+`yaml_path`):
+
+```yaml
+prompts:
+  - id: my-prompt
+    version: "1.0.0"
+    instructions_path: "prompts/my_prompt.md"
+```
+
+Provide exactly one of `instructions` or `instructions_path`. Relative
+`instructions_path` values require a `base_path`; absolute paths work
+without one. The file's contents are read as UTF-8 text and used verbatim
+as the prompt instructions.
+
 ### LLMs
 
 ```yaml

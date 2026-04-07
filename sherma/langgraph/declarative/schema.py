@@ -286,11 +286,30 @@ class ToolDef(BaseModel):
 
 
 class PromptDef(BaseModel):
-    """A prompt declaration in the YAML."""
+    """A prompt declaration in the YAML.
+
+    Provide exactly one of ``instructions`` (inline string) or
+    ``instructions_path`` (path to a file whose contents become the
+    prompt instructions). Relative ``instructions_path`` values are
+    resolved against the YAML's ``base_path``.
+    """
 
     id: str
     version: str = "*"
-    instructions: str
+    instructions: str | None = None
+    instructions_path: str | None = None
+
+    @model_validator(mode="after")
+    def _check_one_source(self) -> Self:
+        if self.instructions is None and self.instructions_path is None:
+            raise ValueError(
+                "PromptDef requires either 'instructions' or 'instructions_path'"
+            )
+        if self.instructions is not None and self.instructions_path is not None:
+            raise ValueError(
+                "PromptDef cannot have both 'instructions' and 'instructions_path'"
+            )
+        return self
 
 
 class SkillDef(BaseModel):

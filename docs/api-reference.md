@@ -390,6 +390,22 @@ class DeclarativeConfig(BaseModel):
 
 `default_llm` is an optional `RegistryRef` that `call_llm` nodes inherit when they omit the step-level `llm` field. A step-level `llm` always takes precedence.
 
+### `PromptDef`
+
+```python
+class PromptDef(BaseModel):
+    id: str
+    version: str = "*"
+    instructions: str | None = None       # Inline prompt body
+    instructions_path: str | None = None  # Path to a file containing the prompt body
+```
+
+Exactly one of `instructions` or `instructions_path` must be provided.
+Relative `instructions_path` values are resolved against the YAML's
+`base_path` (see `populate_registries`); absolute paths are used as-is.
+The file contents are read as UTF-8 text and used verbatim as the prompt
+instructions.
+
 ### `HookDef`
 
 ```python

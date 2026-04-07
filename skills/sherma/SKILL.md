@@ -44,7 +44,7 @@ When the user describes what they want, gather information in **at most 2 rounds
 ### Top-level keys
 
 ```yaml
-prompts:       # Prompt definitions (id, version, instructions)
+prompts:       # Prompt definitions (id, version, instructions | instructions_path)
 llms:          # LLM declarations (id, version, provider, model_name)
 tools:         # Tool imports (id, version, import_path)
 skills:        # Skill card references (id, version, skill_card_path or url)
@@ -181,6 +181,8 @@ prompts:
     version: "1.0.0"
     instructions: >
       You are a helpful assistant.
+    # Alternatively, load from a file (relative to the YAML's base_path):
+    # instructions_path: "prompts/system-prompt.md"
 
 llms:
   - id: openai-gpt-4o-mini
