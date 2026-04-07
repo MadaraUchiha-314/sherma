@@ -1,3 +1,9 @@
+## v1.1.0 (2026-04-07)
+
+### Feat
+
+- file-based prompt loading via instructions_path (#69)
+
 ## v1.0.0 (2026-04-01)
 
 ### BREAKING CHANGE
