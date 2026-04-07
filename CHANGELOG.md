@@ -1,3 +1,9 @@
+## v1.2.0 (2026-04-07)
+
+### Feat
+
+- allow conditional routing from __start__ (#70)
+
 ## v1.1.0 (2026-04-07)
 
 ### Feat
