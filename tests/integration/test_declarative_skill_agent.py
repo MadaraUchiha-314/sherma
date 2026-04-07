@@ -209,6 +209,14 @@ async def test_skill_discovery_and_execution(monkeypatch):
         lambda provider, kwargs: fake_model,
     )
 
+    import examples.tools as example_tools
+
+    monkeypatch.setattr(
+        example_tools.get_weather,
+        "func",
+        lambda city: f"{city}: 20C, clear skies.",
+    )
+
     agent = DeclarativeAgent(
         id="skill-agent",
         version="1.0.0",
