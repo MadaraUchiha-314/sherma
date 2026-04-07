@@ -450,7 +450,13 @@ The CEL expression can reference state, enabling structured metadata:
     value: '{"type": "approval", "draft": state.messages[size(state.messages) - 1].content, "actions": ["approve", "reject"]}'
 ```
 
-When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
+When the user responds, execution resumes from this node. The response is appended to `state.messages`:
+
+- If the resume value is a `BaseMessage`, it is preserved as-is.
+- If it is a list of `BaseMessage` objects, the list is preserved as-is.
+- Otherwise, the value is wrapped as `HumanMessage(content=str(response))`.
+
+Preserving message objects allows clients to pass structured metadata via `additional_kwargs` (e.g., approval decisions, action tags) that downstream CEL routing can access without a hook workaround.
 
 ### `load_skills`
 
