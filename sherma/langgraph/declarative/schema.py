@@ -236,11 +236,35 @@ class EdgeDef(BaseModel):
 
 
 class GraphDef(BaseModel):
-    """Graph definition with nodes, edges, and entry point."""
+    """Graph definition with nodes, edges, and entry point.
 
-    entry_point: str
+    Exactly one of the following must be provided:
+
+    * ``entry_point`` — name of the node that `__start__` unconditionally
+      routes to.
+    * one or more edges in ``edges`` whose ``source`` is ``"__start__"``.
+      Such edges may be either static or conditional, enabling branching
+      directly at graph entry.
+    """
+
+    entry_point: str | None = None
     nodes: list[NodeDef]
     edges: list[EdgeDef]
+
+    @model_validator(mode="after")
+    def _check_entry(self) -> Self:
+        has_start_edge = any(e.source == "__start__" for e in self.edges)
+        if self.entry_point is None and not has_start_edge:
+            raise ValueError(
+                "GraphDef requires either 'entry_point' or at least one "
+                "edge with source '__start__'"
+            )
+        if self.entry_point is not None and has_start_edge:
+            raise ValueError(
+                "GraphDef cannot have both 'entry_point' and edges with "
+                "source '__start__'"
+            )
+        return self
 
 
 class LangGraphConfigDef(BaseModel):

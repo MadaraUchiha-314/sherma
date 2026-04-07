@@ -120,6 +120,76 @@ def test_graph_def():
     assert len(graph.nodes) == 1
 
 
+def test_graph_def_start_edge_without_entry_point():
+    graph = GraphDef(
+        nodes=[
+            NodeDef(
+                name="agent",
+                type="set_state",
+                args=SetStateArgs(values={"x": '"hello"'}),
+            )
+        ],
+        edges=[EdgeDef(source="__start__", target="agent")],
+    )
+    assert graph.entry_point is None
+    assert graph.edges[0].source == "__start__"
+
+
+def test_graph_def_conditional_start_edge():
+    graph = GraphDef(
+        nodes=[
+            NodeDef(
+                name="a",
+                type="set_state",
+                args=SetStateArgs(values={"x": '"a"'}),
+            ),
+            NodeDef(
+                name="b",
+                type="set_state",
+                args=SetStateArgs(values={"x": '"b"'}),
+            ),
+        ],
+        edges=[
+            EdgeDef(
+                source="__start__",
+                branches=[BranchDef(condition="true", target="a")],
+                default="b",
+            )
+        ],
+    )
+    assert graph.entry_point is None
+    assert graph.edges[0].branches is not None
+
+
+def test_graph_def_requires_entry_or_start_edge():
+    with pytest.raises(ValidationError, match="entry_point"):
+        GraphDef(
+            nodes=[
+                NodeDef(
+                    name="a",
+                    type="set_state",
+                    args=SetStateArgs(values={"x": '"a"'}),
+                )
+            ],
+            edges=[EdgeDef(source="a", target="__end__")],
+        )
+
+
+def test_graph_def_rejects_both_entry_and_start_edge():
+    with pytest.raises(ValidationError, match="cannot have both"):
+        GraphDef(
+            entry_point="a",
+            nodes=[
+                NodeDef(
+                    name="a",
+                    type="set_state",
+                    args=SetStateArgs(values={"x": '"a"'}),
+                )
+            ],
+            edges=[EdgeDef(source="__start__", target="a")],
+        )
+
+
 def test_declarative_config():
     config = DeclarativeConfig(
         manifest_version=1,

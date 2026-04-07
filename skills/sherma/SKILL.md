@@ -104,6 +104,15 @@ edges:
       - condition: 'state.retry_count < 3'
         target: retry
     default: fallback_node  # If no branch matches
+
+# Branching at entry: use `__start__` as source (static or conditional).
+# When used, omit the top-level `entry_point` (setting both is an error).
+edges:
+  - source: __start__
+    branches:
+      - condition: 'state.mode == "new"'
+        target: handle_new
+    default: passthrough
 ```
 
 ### Prompt format in call_llm

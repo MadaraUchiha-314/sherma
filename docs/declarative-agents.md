@@ -604,6 +604,38 @@ edges:
 
 Branches are evaluated in order. The first matching condition determines the target. If no branch matches and no `default` is set, the graph ends.
 
+### Branching at entry
+
+Edges may use `__start__` as their `source` to route directly from graph
+entry. When any edge uses `__start__`, the top-level `entry_point` field
+becomes optional and must be omitted (setting both is a validation error).
+Both static and conditional edges are supported:
+
+```yaml
+graph:
+  # no entry_point -- the __start__ edge takes its place
+  nodes:
+    - name: handle_new
+      type: set_state
+      args: { values: { result: '"new"' } }
+    - name: passthrough
+      type: set_state
+      args: { values: { result: '"passthrough"' } }
+  edges:
+    - source: __start__
+      branches:
+        - condition: 'state.messages[size(state.messages) - 1].type == "human"'
+          target: handle_new
+      default: passthrough
+    - source: handle_new
+      target: __end__
+    - source: passthrough
+      target: __end__
+```
+
+This removes the need for a no-op `set_state` node whose only job was to
+host conditional edges.
+
 ## CEL Expressions
 
 [CEL](https://cel.dev/) is used throughout the YAML for dynamic behavior. Expressions have access to:

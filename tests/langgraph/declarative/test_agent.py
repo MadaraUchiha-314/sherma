@@ -93,6 +93,108 @@ async def test_declarative_agent_data_transform():
     assert result["count"] == 1
 
 
+START_EDGE_STATIC_YAML = """\
+manifest_version: 1
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: result
+          type: str
+          default: ""
+    graph:
+      nodes:
+        - name: setter
+          type: set_state
+          args:
+            values:
+              result: '"from-start-edge"'
+      edges:
+        - source: __start__
+          target: setter
+        - source: setter
+          target: __end__
+"""
+
+
+START_EDGE_CONDITIONAL_YAML = """\
+manifest_version: 1
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: route
+          type: str
+          default: ""
+        - name: result
+          type: str
+          default: ""
+    graph:
+      nodes:
+        - name: a
+          type: set_state
+          args:
+            values:
+              result: '"took-a"'
+        - name: b
+          type: set_state
+          args:
+            values:
+              result: '"took-b"'
+      edges:
+        - source: __start__
+          branches:
+            - condition: 'state.route == "a"'
+              target: a
+          default: b
+        - source: a
+          target: __end__
+        - source: b
+          target: __end__
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_static_start_edge():
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=START_EDGE_STATIC_YAML,
+    )
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"result": ""}, config)
+    assert result["result"] == "from-start-edge"
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_conditional_start_edge_a():
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=START_EDGE_CONDITIONAL_YAML,
+    )
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke({"route": "a", "result": ""}, config)
+    assert result["result"] == "took-a"
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_conditional_start_edge_default():
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=START_EDGE_CONDITIONAL_YAML,
+    )
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t2"}}
+    result = await graph.ainvoke({"route": "other", "result": ""}, config)
+    assert result["result"] == "took-b"
+
+
 @pytest.mark.asyncio
 async def test_declarative_agent_caches_graph():
     agent = DeclarativeAgent(

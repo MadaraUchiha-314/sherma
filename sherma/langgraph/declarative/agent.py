@@ -250,25 +250,29 @@ class DeclarativeAgent(LangGraphAgent):
             )
             graph.add_node(node_def.name, node_fn)
 
-        # Add entry edge
-        graph.add_edge(START, agent_def.graph.entry_point)
+        # Add entry edge (only when entry_point is explicitly set; when
+        # edges with source "__start__" are used instead, they are wired
+        # below in the edges loop).
+        if agent_def.graph.entry_point is not None:
+            graph.add_edge(START, agent_def.graph.entry_point)
 
         # Add edges
+        from langgraph.graph import END
+
         for edge_def in agent_def.graph.edges:
+            source: Any = START if edge_def.source == "__start__" else edge_def.source
             if edge_def.branches:
                 router, path_map = build_conditional_router(edge_def, cel)
                 graph.add_conditional_edges(
-                    edge_def.source,
+                    source,
                     router,
                     path_map,  # type: ignore[arg-type]
                 )
             elif edge_def.target is not None:
                 target = edge_def.target
                 if target == "__end__":
-                    from langgraph.graph import END
-
                     target = END
-                graph.add_edge(edge_def.source, target)
+                graph.add_edge(source, target)
 
         return graph.compile(checkpointer=checkpointer)
 
