@@ -587,15 +587,15 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
     graph = agent_def.graph
     node_names = {n.name for n in graph.nodes}
 
-    # Entry point must exist
-    if graph.entry_point not in node_names:
+    # Entry point must exist (when explicitly set)
+    if graph.entry_point is not None and graph.entry_point not in node_names:
         raise DeclarativeConfigError(
             f"Entry point '{graph.entry_point}' not found in nodes"
         )
 
     # All edge references must exist
     for edge in graph.edges:
-        if edge.source not in node_names:
+        if edge.source != "__start__" and edge.source not in node_names:
             raise DeclarativeConfigError(
                 f"Edge source '{edge.source}' not found in nodes"
             )
