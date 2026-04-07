@@ -30,4 +30,9 @@ structured human-in-the-loop payloads survive the resume.
 
 ## Plan Revisions
 
-_None._
+- **Add a runnable example to existing examples.** Extended scope to add
+  `examples/approval_agent/main_structured_resume.py`, which exercises
+  the new behavior end-to-end without an `ApprovalTaggingHook` (the
+  client passes a structured `HumanMessage` directly into
+  `Command(resume=...)`). Also updated the YAML header comment, docs,
+  and skill reference to mention the new variant.

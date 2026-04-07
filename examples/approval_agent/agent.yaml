@@ -2,11 +2,20 @@
 #
 # Demonstrates routing based on message `additional_kwargs` in CEL.
 #
+# Two client variants live alongside this YAML:
+#   - main.py: uses ApprovalTaggingHook (node_exit) to attach the
+#     decision metadata after the interrupt resumes.
+#   - main_structured_resume.py: passes a HumanMessage with
+#     additional_kwargs={"decision": ...} directly to Command(resume=...);
+#     the interrupt node preserves the message verbatim, so no hook is
+#     needed.
+#
 # Flow:
 #   1. LLM drafts a response
 #   2. Interrupt pauses for human approval
-#   3. ApprovalTaggingHook (in node_exit) parses the user's reply and tags
-#      the HumanMessage with additional_kwargs["decision"]
+#   3. The decision metadata lands on the resumed HumanMessage (via the
+#      hook in main.py, or directly from the client in
+#      main_structured_resume.py)
 #   4. CEL edge inspects additional_kwargs to approve or loop back for revision
 #
 # The message `type` field ("ai", "human") is also accessible in CEL:

@@ -1133,6 +1133,21 @@ agents:
 
 The `ApprovalTaggingHook` sets `additional_kwargs["decision"]` on the human message during `node_exit` of the interrupt node. You can also route on the message `type` field — for example, `state.messages[0]["type"] == "human"` returns `true` for `HumanMessage` objects.
 
+**Skipping the hook with structured resume.** Because the `interrupt` node preserves `BaseMessage` resume values verbatim, the hook is optional. A client driving the graph directly can pass the metadata up front:
+
+```python
+from langchain_core.messages import HumanMessage
+from langgraph.types import Command
+
+resume_msg = HumanMessage(
+    content="approve",
+    additional_kwargs={"decision": "approve"},
+)
+await graph.ainvoke(Command(resume=[resume_msg]), config=config)
+```
+
+The same CEL edge (`...["additional_kwargs"]["decision"] == "approve"`) routes correctly without an `after_interrupt` or `node_exit` hook. See `examples/approval_agent/main_structured_resume.py` for a runnable variant.
+
 ## Complete Example: Custom Output with `state_updates`
 
 A summarization agent that calls the LLM but stores the response in a `summary` field instead of appending to `messages`. This is useful when you want to process the LLM output without polluting the conversation history:

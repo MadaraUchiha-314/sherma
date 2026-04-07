@@ -26,3 +26,14 @@ On interrupt resume:
 
 - Issue: MadaraUchiha-314/sherma#63
 - `sherma/langgraph/declarative/nodes.py:964`
+
+## Chat Iterations
+
+- **Add a runnable example.** Added
+  `examples/approval_agent/main_structured_resume.py` — a variant of the
+  approval-agent client that drives the graph directly and passes a
+  `HumanMessage` with `additional_kwargs={"decision": ...}` straight into
+  `Command(resume=...)`. The same `agent.yaml` is reused; no
+  `ApprovalTaggingHook` is needed because the interrupt node now
+  preserves the message verbatim. Updated the YAML header comment, the
+  docs, and the skill reference to point at the new variant.
