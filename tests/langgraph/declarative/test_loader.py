@@ -1612,3 +1612,167 @@ agents:
     config = load_declarative_config(yaml_content=yaml_content)
     with pytest.raises(DeclarativeConfigError, match="nonexistent-agent"):
         validate_config(config, "agent")
+
+
+@pytest.mark.asyncio
+async def test_populate_prompt_instructions_path_relative(tmp_path):
+    """Relative instructions_path is resolved against base_path."""
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "sys.md").write_text("You are a test prompt.")
+    yaml_content = """\
+manifest_version: 1
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+    instructions_path: "prompts/sys.md"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    await populate_registries(config, registries, base_path=tmp_path)
+
+    prompt = await registries.prompt_registry.get("sys", "==1.0.0")
+    assert prompt.instructions == "You are a test prompt."
+
+
+@pytest.mark.asyncio
+async def test_populate_prompt_instructions_path_absolute(tmp_path):
+    """Absolute instructions_path is loaded without base_path."""
+    prompt_file = tmp_path / "abs.md"
+    prompt_file.write_text("Absolute prompt body.")
+    yaml_content = f"""\
+manifest_version: 1
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+    instructions_path: "{prompt_file}"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    await populate_registries(config, registries)
+
+    prompt = await registries.prompt_registry.get("sys", "==1.0.0")
+    assert prompt.instructions == "Absolute prompt body."
+
+
+@pytest.mark.asyncio
+async def test_populate_prompt_instructions_path_missing_file(tmp_path):
+    """Missing instructions_path file raises DeclarativeConfigError."""
+    yaml_content = """\
+manifest_version: 1
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+    instructions_path: "prompts/missing.md"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    with pytest.raises(DeclarativeConfigError, match="instructions file not found"):
+        await populate_registries(config, registries, base_path=tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_populate_prompt_relative_instructions_path_without_base_path():
+    """Relative instructions_path without base_path raises DeclarativeConfigError."""
+    yaml_content = """\
+manifest_version: 1
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+    instructions_path: "prompts/sys.md"
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    registries = RegistryBundle()
+    with pytest.raises(DeclarativeConfigError, match="requires a base_path"):
+        await populate_registries(config, registries)
+
+
+def test_prompt_def_requires_instructions_or_path():
+    """PromptDef with neither instructions nor instructions_path raises."""
+    yaml_content = """\
+manifest_version: 1
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+
+agents: {}
+"""
+    with pytest.raises(Exception, match="instructions"):
+        load_declarative_config(yaml_content=yaml_content)
+
+
+def test_prompt_def_rejects_both_instructions_and_path():
+    """PromptDef with both instructions and instructions_path raises."""
+    yaml_content = """\
+manifest_version: 1
+
+prompts:
+  - id: sys
+    version: "1.0.0"
+    instructions: "inline"
+    instructions_path: "file.md"
+
+agents: {}
+"""
+    with pytest.raises(Exception, match="cannot have both"):
+        load_declarative_config(yaml_content=yaml_content)

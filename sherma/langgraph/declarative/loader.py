@@ -329,6 +329,24 @@ async def populate_registries(
                 )
 
     for prompt_def in config.prompts:
+        if prompt_def.instructions_path is not None:
+            path = Path(prompt_def.instructions_path)
+            if not path.is_absolute():
+                if base_path is None:
+                    raise DeclarativeConfigError(
+                        f"Relative instructions_path '{prompt_def.instructions_path}' "
+                        f"requires a base_path. Provide base_path or use "
+                        f"an absolute path."
+                    )
+                path = (base_path / path).resolve()
+            if not path.exists():
+                raise DeclarativeConfigError(
+                    f"Prompt instructions file not found: {path}"
+                )
+            instructions = path.read_text()
+        else:
+            assert prompt_def.instructions is not None
+            instructions = prompt_def.instructions
         await registries.prompt_registry.add(
             RegistryEntry(
                 id=prompt_def.id,
@@ -338,7 +356,7 @@ async def populate_registries(
                     id=prompt_def.id,
                     version=prompt_def.version,
                     tenant_id=tenant_id,
-                    instructions=prompt_def.instructions,
+                    instructions=instructions,
                 ),
             )
         )
