@@ -1,3 +1,9 @@
+## v1.3.0 (2026-04-08)
+
+### Feat
+
+- expose registries in NodeExecuteContext (#72)
+
 ## v1.2.1 (2026-04-08)
 
 ### Fix
