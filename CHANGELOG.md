@@ -1,3 +1,9 @@
+## v1.2.1 (2026-04-08)
+
+### Fix
+
+- preserve BaseMessage objects on interrupt resume (#71)
+
 ## v1.2.0 (2026-04-07)
 
 ### Feat
