@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sherma.langgraph.declarative.nodes import NodeContext
+    from sherma.registry.bundle import RegistryBundle
 
 
 class HookType(Enum):
@@ -224,12 +225,21 @@ class NodeExecuteContext:
 
     ``result`` starts as an empty dict.  The hook populates it with
     the state updates the custom node should produce.
+
+    ``registries`` is the per-tenant :class:`RegistryBundle` built for
+    the agent, giving custom-node hooks direct access to chat models,
+    tools, prompts, skills, and sub-agents at execution time (e.g. to
+    invoke an LLM for summarisation or resolve a tool dynamically).
+    It is ``None`` only in isolated unit tests that construct the
+    context directly.  Remote (JSON-RPC) hooks never receive this
+    field because it contains live Python objects.
     """
 
     node_context: NodeContext
     node_name: str
     state: dict[str, Any]
     result: dict[str, Any] = field(default_factory=dict)
+    registries: RegistryBundle | None = None
 
 
 @dataclass

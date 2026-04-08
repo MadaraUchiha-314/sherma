@@ -76,6 +76,7 @@ if TYPE_CHECKING:
         SetStateArgs,
         ToolNodeArgs,
     )
+    from sherma.registry.bundle import RegistryBundle
     from sherma.registry.skill import SkillRegistry
     from sherma.registry.tool import ToolRegistry
 
@@ -88,12 +89,19 @@ class NodeContext:
     (bound via ``functools.partial``).  This gives nodes access to the
     full declarative config and their own node definition without
     polluting the LangGraph state.
+
+    ``registries`` is the per-tenant :class:`RegistryBundle` built for
+    the agent.  It is populated by the agent builder and exposed so
+    that node builders (and, for ``custom`` nodes, ``node_execute``
+    hooks) can look up chat models, tools, prompts, skills, and
+    sub-agents at execution time.
     """
 
     config: DeclarativeConfig
     node_def: NodeDef
     extra: dict[str, Any] = field(default_factory=dict)
     hook_manager: HookManager | None = None
+    registries: RegistryBundle | None = None
 
 
 async def _run_node_error_hook(
@@ -1196,6 +1204,7 @@ def build_custom_node(
                         node_context=_ctx,
                         node_name=_ctx.node_def.name,
                         state=state,
+                        registries=_ctx.registries,
                     ),
                 )
                 result = exec_ctx.result

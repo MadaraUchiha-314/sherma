@@ -1770,6 +1770,156 @@ async def test_custom_node_error_handling():
     assert result == {}
 
 
+@pytest.mark.asyncio
+async def test_custom_node_registries_exposed_on_exec_ctx():
+    """registries supplied via NodeContext are forwarded to NodeExecuteContext."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+    from sherma.registry.bundle import RegistryBundle
+
+    seen: dict[str, RegistryBundle | None] = {"registries": None}
+
+    class CaptureHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            seen["registries"] = ctx.registries
+            ctx.result = {"ok": True}
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(CaptureHook())
+
+    registries = RegistryBundle(tenant_id="test-tenant")
+    node_def = NodeDef(name="capture", type="custom", args=CustomArgs())
+    ctx = NodeContext(
+        config=DeclarativeConfig(manifest_version=1),
+        node_def=node_def,
+        hook_manager=hook_manager,
+        registries=registries,
+    )
+    fn = build_custom_node(ctx)
+    result = await fn({})
+
+    assert result == {"ok": True}
+    assert seen["registries"] is registries
+
+
+@pytest.mark.asyncio
+async def test_custom_node_registries_default_none_when_unset():
+    """registries defaults to None when the NodeContext omits it."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+
+    seen: dict[str, object] = {"registries": "sentinel"}
+
+    class CaptureHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            seen["registries"] = ctx.registries
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(CaptureHook())
+
+    node_def = NodeDef(name="no_reg", type="custom", args=CustomArgs())
+    fn = build_custom_node(_make_ctx(node_def, hook_manager=hook_manager))
+    await fn({})
+
+    assert seen["registries"] is None
+
+
+@pytest.mark.asyncio
+async def test_custom_node_hook_uses_chat_model_via_registries():
+    """node_execute hook resolves a chat model through ctx.registries."""
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+    from sherma.registry.bundle import RegistryBundle
+
+    chat_model = AsyncMock()
+    chat_model.ainvoke = AsyncMock(return_value=AIMessage(content="summarised"))
+
+    class SummarizeHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            assert ctx.registries is not None
+            model = ctx.registries.chat_models["summarizer"]
+            response = await model.ainvoke(ctx.state["messages"])
+            ctx.result = {"summary": response.content}
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(SummarizeHook())
+
+    registries = RegistryBundle(chat_models={"summarizer": chat_model})
+    node_def = NodeDef(name="summarize", type="custom", args=CustomArgs())
+    ctx = NodeContext(
+        config=DeclarativeConfig(manifest_version=1),
+        node_def=node_def,
+        hook_manager=hook_manager,
+        registries=registries,
+    )
+    fn = build_custom_node(ctx)
+    result = await fn({"messages": ["hi", "there"]})
+
+    assert result == {"summary": "summarised"}
+    chat_model.ainvoke.assert_awaited_once_with(["hi", "there"])
+
+
+@pytest.mark.asyncio
+async def test_custom_node_hook_uses_tool_registry_via_registries():
+    """node_execute hook resolves a tool through ctx.registries.tool_registry."""
+    from langchain_core.tools import StructuredTool
+
+    from sherma.entities.tool import Tool
+    from sherma.hooks.types import NodeExecuteContext
+    from sherma.langgraph.declarative.nodes import build_custom_node
+    from sherma.langgraph.declarative.schema import CustomArgs
+    from sherma.registry.base import RegistryEntry
+    from sherma.registry.bundle import RegistryBundle
+
+    def echo(text: str) -> str:
+        """Echo the input."""
+        return text
+
+    lc_tool = StructuredTool.from_function(func=echo, name="echo")
+    tool_entity = Tool(id="echo", version="1.0.0", function=lc_tool)
+
+    class LookupHook(BaseHookExecutor):
+        async def node_execute(
+            self, ctx: NodeExecuteContext
+        ) -> NodeExecuteContext | None:
+            assert ctx.registries is not None
+            tool = await ctx.registries.tool_registry.get("echo", "==1.0.0")
+            ctx.result = {"tool_id": tool.id, "tool_version": tool.version}
+            return ctx
+
+    hook_manager = HookManager()
+    hook_manager.register(LookupHook())
+
+    registries = RegistryBundle()
+    await registries.tool_registry.add(
+        RegistryEntry(id="echo", version="1.0.0", instance=tool_entity)
+    )
+
+    node_def = NodeDef(name="lookup", type="custom", args=CustomArgs())
+    ctx = NodeContext(
+        config=DeclarativeConfig(manifest_version=1),
+        node_def=node_def,
+        hook_manager=hook_manager,
+        registries=registries,
+    )
+    fn = build_custom_node(ctx)
+    result = await fn({})
+
+    assert result == {"tool_id": "echo", "tool_version": "1.0.0"}
+
+
 # ---------------------------------------------------------------------------
 # state_updates for call_llm
 # ---------------------------------------------------------------------------

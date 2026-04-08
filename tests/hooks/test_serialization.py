@@ -13,6 +13,7 @@ from sherma.hooks.types import (
     BeforeSkillLoadContext,
     GraphInvokeContext,
     NodeEnterContext,
+    NodeExecuteContext,
     OnErrorContext,
     OnNodeErrorContext,
 )
@@ -98,6 +99,23 @@ class TestSerializeContext:
         result = serialize_context(ctx)
         assert "node_context" not in result
         assert result == {"skill_id": "s1", "version": "1.0"}
+
+    def test_node_execute_strips_registries(self):
+        nc = MagicMock()
+        registries = MagicMock()
+        ctx = NodeExecuteContext(
+            node_context=nc,
+            node_name="custom",
+            state={"k": 1},
+            result={"v": 2},
+            registries=registries,
+        )
+        result = serialize_context(ctx)
+        assert "node_context" not in result
+        assert "registries" not in result
+        assert result["node_name"] == "custom"
+        assert result["state"] == {"k": 1}
+        assert result["result"] == {"v": 2}
 
 
 class TestDeserializeIntoContext:
@@ -209,3 +227,20 @@ class TestDeserializeIntoContext:
         assert result.node_context is nc
         assert result.result == {"output": "new"}
         assert result.state == {"k": 2}
+
+    def test_node_execute_reattaches_registries(self):
+        nc = MagicMock()
+        registries = MagicMock()
+        original = NodeExecuteContext(
+            node_context=nc,
+            node_name="custom",
+            state={"k": 1},
+            result={"v": 2},
+            registries=registries,
+        )
+        data = {"node_name": "custom", "state": {"k": 3}, "result": {"v": 99}}
+        result = deserialize_into_context(NodeExecuteContext, data, original)
+        assert result.node_context is nc
+        assert result.registries is registries
+        assert result.state == {"k": 3}
+        assert result.result == {"v": 99}
