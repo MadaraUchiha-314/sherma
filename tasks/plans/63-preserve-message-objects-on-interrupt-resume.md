@@ -36,3 +36,13 @@ structured human-in-the-loop payloads survive the resume.
   client passes a structured `HumanMessage` directly into
   `Command(resume=...)`). Also updated the YAML header comment, docs,
   and skill reference to mention the new variant.
+
+- **Add unit and integration tests for the dispatch.** The original plan
+  omitted tests. Added:
+  - Unit tests in `tests/langgraph/declarative/test_agent.py` covering
+    all three dispatch branches (single `BaseMessage`, `list[BaseMessage]`,
+    non-message fallback) and a hookless CEL-routing case.
+  - Integration test `tests/integration/test_approval_agent.py` that
+    loads the real `examples/approval_agent/agent.yaml` with a
+    `FakeChatModel` and mirrors `main_structured_resume.py`, covering
+    both the direct-approve and revise → approve flows.
