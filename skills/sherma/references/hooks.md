@@ -125,7 +125,8 @@ class NodeExecuteContext:
     node_context: NodeContext
     node_name: str
     state: dict[str, Any]
-    result: dict[str, Any]     # Starts as {}, hook populates it
+    result: dict[str, Any]            # Starts as {}, hook populates it
+    registries: RegistryBundle | None  # Live registries (chat models, tools, …)
 
 @dataclass
 class NodeExitContext:
@@ -135,6 +136,14 @@ class NodeExitContext:
     result: dict[str, Any]     # Node output
     state: dict[str, Any]
 ```
+
+`NodeExecuteContext.registries` exposes the per-tenant
+[`RegistryBundle`](./api-reference.md#registrybundle) so `node_execute`
+hooks can reach chat models (`ctx.registries.chat_models[...]`), the
+tool registry, the prompt registry, the skill registry, and the
+sub-agent registry without capturing them at agent-initialisation
+time. This field is stripped from the JSON-RPC payload sent to
+remote hooks — remote executors receive `registries=None`.
 
 ### `BeforeInterruptContext` / `AfterInterruptContext`
 

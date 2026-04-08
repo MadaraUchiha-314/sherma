@@ -292,6 +292,7 @@ class DeclarativeAgent(LangGraphAgent):
             node_def=node_def,
             hook_manager=self.hook_manager if self.hook_manager._executors else None,
             extra={"sub_agent_tool_ids": self._sub_agent_tool_ids},
+            registries=self._registries,
         )
 
         if node_def.type == "call_llm":

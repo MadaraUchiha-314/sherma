@@ -515,6 +515,35 @@ class SummarizationHook(BaseHookExecutor):
 
 The returned `result` dict is merged into state (same semantics as `data_transform`). Hook metadata is accessible via `ctx.node_context.node_def.args.metadata`.
 
+#### Accessing registries from `node_execute`
+
+`NodeExecuteContext` exposes the per-tenant `RegistryBundle` on `ctx.registries`, so `custom` node hooks can reach chat models, tools, prompts, skills, and sub-agents without smuggling them in via closures captured at agent-initialisation time. The classic example is a token-counting node that summarises conversation history when the context window is about to overflow:
+
+```python
+from sherma.hooks import BaseHookExecutor, NodeExecuteContext
+
+
+class SummarizeIfNeededHook(BaseHookExecutor):
+    async def node_execute(self, ctx: NodeExecuteContext) -> NodeExecuteContext | None:
+        if ctx.node_name != "summarize_if_needed":
+            return None
+        assert ctx.registries is not None  # always set for real agents
+
+        messages = ctx.state["messages"]
+        if len(messages) < 20:
+            return ctx  # nothing to do
+
+        # Resolve the chat model by id from the bundled registries.
+        chat_model = ctx.registries.chat_models["summarizer"]
+        response = await chat_model.ainvoke(
+            [*messages, ("human", "Summarise the conversation so far.")]
+        )
+        ctx.result = {"summary": response.content, "messages": messages[-5:]}
+        return ctx
+```
+
+`ctx.registries` gives you `tool_registry`, `llm_registry`, `prompt_registry`, `skill_registry`, `agent_registry`, `skill_card_registry`, and the pre-built `chat_models` dict. It is `None` only in isolated unit tests that construct `NodeExecuteContext` directly, and it is not forwarded to remote (JSON-RPC) hooks because it contains live Python objects.
+
 ## Error Handling (`on_error`)
 
 Nodes can declare an `on_error` block for retry and fallback routing:

@@ -6,7 +6,12 @@ import dataclasses
 from typing import Any
 
 # Fields that are Python objects and cannot be serialized to JSON.
-_NON_SERIALIZABLE_FIELDS: set[str] = {"node_context", "agent", "chat_model"}
+_NON_SERIALIZABLE_FIELDS: set[str] = {
+    "node_context",
+    "agent",
+    "chat_model",
+    "registries",
+}
 
 # Fields containing BaseException instances.
 _ERROR_FIELDS: set[str] = {"error"}

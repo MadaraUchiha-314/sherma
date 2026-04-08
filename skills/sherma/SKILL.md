@@ -790,6 +790,8 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 8. **`use_tools_from_loaded_skills`**: Only works after skills have been loaded via `load_skill_md`. Put the discovery node before the execution node.
 
+9. **`custom` node hooks can access registries**: `NodeExecuteContext` exposes `ctx.registries` (a `RegistryBundle`) so `node_execute` hooks can call chat models (`ctx.registries.chat_models[llm_id]`), resolve tools, render prompts, etc. without wiring dependencies at agent-init time. Remote (JSON-RPC) hooks receive `registries=None` because it contains live Python objects.
+
 ## Process
 
 Follow these steps when building an agent:
