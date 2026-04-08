@@ -450,7 +450,13 @@ The CEL expression can reference state, enabling structured metadata:
     value: '{"type": "approval", "draft": state.messages[size(state.messages) - 1].content, "actions": ["approve", "reject"]}'
 ```
 
-When the user responds, execution resumes from this node. The user's response is wrapped as a `HumanMessage` and appended to state.
+When the user responds, execution resumes from this node. The response is appended to `state.messages`:
+
+- If the resume value is a `BaseMessage`, it is preserved as-is.
+- If it is a list of `BaseMessage` objects, the list is preserved as-is.
+- Otherwise, the value is wrapped as `HumanMessage(content=str(response))`.
+
+Preserving message objects allows clients to pass structured metadata via `additional_kwargs` (e.g., approval decisions, action tags) that downstream CEL routing can access without a hook workaround.
 
 ### `load_skills`
 
@@ -1126,6 +1132,21 @@ agents:
 ```
 
 The `ApprovalTaggingHook` sets `additional_kwargs["decision"]` on the human message during `node_exit` of the interrupt node. You can also route on the message `type` field — for example, `state.messages[0]["type"] == "human"` returns `true` for `HumanMessage` objects.
+
+**Skipping the hook with structured resume.** Because the `interrupt` node preserves `BaseMessage` resume values verbatim, the hook is optional. A client driving the graph directly can pass the metadata up front:
+
+```python
+from langchain_core.messages import HumanMessage
+from langgraph.types import Command
+
+resume_msg = HumanMessage(
+    content="approve",
+    additional_kwargs={"decision": "approve"},
+)
+await graph.ainvoke(Command(resume=[resume_msg]), config=config)
+```
+
+The same CEL edge (`...["additional_kwargs"]["decision"] == "approve"`) routes correctly without an `after_interrupt` or `node_exit` hook. See `examples/approval_agent/main_structured_resume.py` for a runnable variant.
 
 ## Complete Example: Custom Output with `state_updates`
 

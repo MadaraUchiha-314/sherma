@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -51,8 +54,6 @@ class HookFastAPIApplication:
         rpc_url: str = "/hooks",
     ) -> None:
         """Add hook routes to an existing FastAPI application."""
-        from starlette.requests import Request
-        from starlette.responses import JSONResponse
 
         @app.post(rpc_url)
         async def hooks_endpoint(request: Request) -> JSONResponse:

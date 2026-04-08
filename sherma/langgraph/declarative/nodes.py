@@ -10,7 +10,13 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
@@ -961,7 +967,15 @@ def build_interrupt_node(
                 )
                 response = after_ctx.response
 
-            result: dict[str, Any] = {"messages": [HumanMessage(content=str(response))]}
+            result: dict[str, Any]
+            if isinstance(response, list) and all(
+                isinstance(m, BaseMessage) for m in response
+            ):
+                result = {"messages": response}
+            elif isinstance(response, BaseMessage):
+                result = {"messages": [response]}
+            else:
+                result = {"messages": [HumanMessage(content=str(response))]}
 
             # node_exit
             if hooks:

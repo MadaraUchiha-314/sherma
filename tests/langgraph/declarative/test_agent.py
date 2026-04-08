@@ -584,6 +584,121 @@ async def test_declarative_agent_additional_kwargs_routing_reject():
 
 
 @pytest.mark.asyncio
+async def test_declarative_agent_interrupt_preserves_base_message():
+    """Resuming an interrupt with a single BaseMessage preserves it verbatim."""
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.types import Command
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=INTERRUPT_YAML,
+    )
+    compiled = await agent.get_graph()
+    config = {"configurable": {"thread_id": "single-msg"}}
+    await compiled.ainvoke({"messages": []}, config)
+
+    resume_msg = HumanMessage(
+        content="approve",
+        additional_kwargs={"decision": "approve", "reviewer": "alice"},
+    )
+    result = await compiled.ainvoke(Command(resume=resume_msg), config)
+
+    human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
+    assert len(human_msgs) == 1
+    # The exact object is preserved — no str() conversion, metadata intact.
+    assert human_msgs[0].content == "approve"
+    assert human_msgs[0].additional_kwargs == {
+        "decision": "approve",
+        "reviewer": "alice",
+    }
+    # Sanity: an AIMessage on resume would also be preserved (not wrapped).
+    assert not any(isinstance(m, AIMessage) for m in result["messages"])
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_interrupt_preserves_list_of_base_messages():
+    """Resuming with a list[BaseMessage] preserves every element verbatim."""
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.types import Command
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=INTERRUPT_YAML,
+    )
+    compiled = await agent.get_graph()
+    config = {"configurable": {"thread_id": "list-msg"}}
+    await compiled.ainvoke({"messages": []}, config)
+
+    resume_msgs = [
+        HumanMessage(content="approve", additional_kwargs={"decision": "approve"}),
+        AIMessage(content="auto-ack", additional_kwargs={"source": "client"}),
+    ]
+    result = await compiled.ainvoke(Command(resume=resume_msgs), config)
+
+    # Both messages land in state in order, with metadata intact.
+    human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
+    ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+    assert len(human_msgs) == 1
+    assert human_msgs[0].additional_kwargs == {"decision": "approve"}
+    assert len(ai_msgs) == 1
+    assert ai_msgs[0].content == "auto-ack"
+    assert ai_msgs[0].additional_kwargs == {"source": "client"}
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_interrupt_non_message_falls_back_to_str():
+    """Non-message resume values still get wrapped as HumanMessage(str(...))."""
+    from langchain_core.messages import HumanMessage
+    from langgraph.types import Command
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=INTERRUPT_YAML,
+    )
+    compiled = await agent.get_graph()
+    config = {"configurable": {"thread_id": "non-msg"}}
+    await compiled.ainvoke({"messages": []}, config)
+
+    # A plain dict — not a BaseMessage — should fall through to str() wrapping.
+    result = await compiled.ainvoke(
+        Command(resume={"action": "approve", "note": "lgtm"}),
+        config,
+    )
+    human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
+    assert len(human_msgs) == 1
+    # Content is the str() of the dict; no additional_kwargs.
+    assert "approve" in str(human_msgs[0].content)
+    assert human_msgs[0].additional_kwargs == {}
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_structured_resume_routes_without_hook():
+    """With a structured resume, CEL routes on additional_kwargs with no hook."""
+    from langchain_core.messages import HumanMessage
+    from langgraph.types import Command
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=APPROVAL_ROUTING_YAML,
+        # Note: no TagDecisionHook — the client supplies the metadata.
+    )
+    compiled = await agent.get_graph()
+    config = {"configurable": {"thread_id": "structured-approve"}}
+    await compiled.ainvoke({"messages": []}, config)
+
+    resume_msg = HumanMessage(
+        content="approve",
+        additional_kwargs={"decision": "approve"},
+    )
+    result = await compiled.ainvoke(Command(resume=[resume_msg]), config)
+    assert result["outcome"] == "approved"
+
+
+@pytest.mark.asyncio
 async def test_declarative_agent_with_config_object():
     """DeclarativeAgent accepts a pre-built DeclarativeConfig."""
     config = DeclarativeConfig(
