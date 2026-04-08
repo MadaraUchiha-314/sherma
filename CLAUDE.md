@@ -14,7 +14,7 @@
 
 ## Pull Requests
 
-- PR titles must use conventional commit format (e.g., `feat: add weather skill`, `fix: correct JSON parsing`, `ci: update devcontainer`).
+- PR titles **must** use conventional commit format (e.g., `feat: add weather skill`, `fix: correct JSON parsing`, `ci: update devcontainer`). PRs are merged with squash-and-merge, so the PR title becomes the commit message on `main` — a non-conventional title breaks the conventional-commit history.
 - When follow-up commits are pushed to a branch that already has an open PR, the PR description must be updated to reflect the latest state of the changes.
 - Use `gh pr edit` to update the PR title and body after pushing additional commits.
 
