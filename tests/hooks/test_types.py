@@ -15,6 +15,7 @@ from sherma.hooks.types import (
     BeforeLLMCallContext,
     BeforeSkillLoadContext,
     BeforeToolCallContext,
+    CheckpointerCreateContext,
     GraphInvokeContext,
     HookType,
     NodeEnterContext,
@@ -32,7 +33,8 @@ def test_hook_type_enum_values():
     assert HookType.NODE_ENTER.value == "node_enter"
     assert HookType.NODE_EXIT.value == "node_exit"
     assert HookType.NODE_EXECUTE.value == "node_execute"
-    assert len(HookType) == 20
+    assert HookType.ON_CHECKPOINTER_CREATE.value == "on_checkpointer_create"
+    assert len(HookType) == 21
 
 
 def test_before_llm_call_context():
@@ -185,3 +187,18 @@ def test_graph_invoke_context():
     assert ctx.thread_id == "t1"
     assert ctx.config["recursion_limit"] == 25
     assert ctx.input == {"messages": []}
+
+
+def test_checkpointer_create_context_defaults():
+    ctx = CheckpointerCreateContext(definition=None)
+    assert ctx.definition is None
+    assert ctx.checkpointer is None
+
+
+def test_checkpointer_create_context_with_definition():
+    from sherma.langgraph.declarative.schema import MemoryCheckpointerDef
+
+    defn = MemoryCheckpointerDef()
+    ctx = CheckpointerCreateContext(definition=defn)
+    assert ctx.definition is defn
+    assert ctx.checkpointer is None

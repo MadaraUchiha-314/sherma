@@ -19,6 +19,7 @@ from sherma.hooks.types import (
     BeforeSkillUnloadContext,
     BeforeToolCallContext,
     ChatModelCreateContext,
+    CheckpointerCreateContext,
     GraphInvokeContext,
     NodeEnterContext,
     NodeExecuteContext,
@@ -96,6 +97,10 @@ class HookExecutor(Protocol):
     async def on_chat_model_create(
         self, ctx: ChatModelCreateContext
     ) -> ChatModelCreateContext | None: ...
+
+    async def on_checkpointer_create(
+        self, ctx: CheckpointerCreateContext
+    ) -> CheckpointerCreateContext | None: ...
 
     async def before_graph_invoke(
         self, ctx: GraphInvokeContext
@@ -190,6 +195,11 @@ class BaseHookExecutor:
     async def on_chat_model_create(
         self, ctx: ChatModelCreateContext
     ) -> ChatModelCreateContext | None:
+        return None
+
+    async def on_checkpointer_create(
+        self, ctx: CheckpointerCreateContext
+    ) -> CheckpointerCreateContext | None:
         return None
 
     async def before_graph_invoke(

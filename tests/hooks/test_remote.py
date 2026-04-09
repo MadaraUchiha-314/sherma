@@ -12,6 +12,7 @@ from sherma.hooks.types import (
     AfterGraphInvokeContext,
     BeforeLLMCallContext,
     ChatModelCreateContext,
+    CheckpointerCreateContext,
     GraphInvokeContext,
     NodeEnterContext,
     OnErrorContext,
@@ -85,6 +86,14 @@ async def test_on_chat_model_create_is_noop(executor):
         llm_id="llm1", provider="openai", model_name="gpt-4", kwargs={}
     )
     result = await executor.on_chat_model_create(ctx)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_on_checkpointer_create_is_noop(executor):
+    """on_checkpointer_create always returns None for remote hooks."""
+    ctx = CheckpointerCreateContext(definition=None)
+    result = await executor.on_checkpointer_create(ctx)
     assert result is None
 
 

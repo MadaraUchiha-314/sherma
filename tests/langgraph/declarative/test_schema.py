@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from sherma.exceptions import DeclarativeConfigError
 from sherma.langgraph.declarative.schema import (
     AgentDef,
     BranchDef,
@@ -17,9 +18,12 @@ from sherma.langgraph.declarative.schema import (
     InterruptArgs,
     LLMDef,
     LoadSkillsArgs,
+    MemoryCheckpointerDef,
     NodeDef,
+    PostgresCheckpointerDef,
     PromptDef,
     PromptMessageDef,
+    RedisCheckpointerDef,
     RegistryRef,
     SetStateArgs,
     StateDef,
@@ -465,3 +469,136 @@ def test_load_skills_node_def_parsing():
     )
     assert isinstance(node.args, LoadSkillsArgs)
     assert node.args.skill_ids == "state.selected_skills"
+
+
+# -- CheckpointerDef discriminated union --------------------------------
+
+
+def test_checkpointer_memory_default():
+    """MemoryCheckpointerDef has ``type='memory'`` by default."""
+    cp = MemoryCheckpointerDef()
+    assert cp.type == "memory"
+
+
+def test_checkpointer_memory_via_config():
+    """DeclarativeConfig parses ``checkpointer: {type: memory}``."""
+    config = DeclarativeConfig(
+        manifest_version=1,
+        checkpointer={"type": "memory"},  # type: ignore[arg-type]
+    )
+    assert isinstance(config.checkpointer, MemoryCheckpointerDef)
+
+
+def test_checkpointer_redis_basic():
+    cp = RedisCheckpointerDef(type="redis", url="redis://localhost:6379")
+    assert cp.type == "redis"
+    assert cp.url == "redis://localhost:6379"
+    assert cp.ttl_minutes is None
+
+
+def test_checkpointer_redis_with_ttl():
+    cp = RedisCheckpointerDef(
+        type="redis", url="redis://localhost:6379", ttl_minutes=60
+    )
+    assert cp.ttl_minutes == 60
+
+
+def test_checkpointer_redis_via_config():
+    config = DeclarativeConfig(
+        manifest_version=1,
+        checkpointer={  # type: ignore[arg-type]
+            "type": "redis",
+            "url": "redis://localhost:6379",
+        },
+    )
+    assert isinstance(config.checkpointer, RedisCheckpointerDef)
+    assert config.checkpointer.url == "redis://localhost:6379"
+
+
+def test_checkpointer_postgres_basic():
+    cp = PostgresCheckpointerDef(
+        type="postgres",
+        url="postgresql://user@localhost:5432/app",
+    )
+    assert cp.type == "postgres"
+    assert cp.url == "postgresql://user@localhost:5432/app"
+
+
+def test_checkpointer_postgres_via_config():
+    config = DeclarativeConfig(
+        manifest_version=1,
+        checkpointer={  # type: ignore[arg-type]
+            "type": "postgres",
+            "url": "postgresql://user@localhost:5432/app",
+        },
+    )
+    assert isinstance(config.checkpointer, PostgresCheckpointerDef)
+
+
+def test_checkpointer_unknown_type_rejected():
+    with pytest.raises(ValidationError):
+        DeclarativeConfig(
+            manifest_version=1,
+            checkpointer={"type": "sqlite", "url": "foo"},  # type: ignore[arg-type]
+        )
+
+
+def test_checkpointer_redis_url_required():
+    with pytest.raises(ValidationError):
+        RedisCheckpointerDef(type="redis")  # type: ignore[call-arg]
+
+
+def test_checkpointer_postgres_url_required():
+    with pytest.raises(ValidationError):
+        PostgresCheckpointerDef(type="postgres")  # type: ignore[call-arg]
+
+
+def test_checkpointer_redis_empty_url_rejected():
+    with pytest.raises(ValidationError):
+        RedisCheckpointerDef(type="redis", url="")
+
+
+def test_checkpointer_postgres_empty_url_rejected():
+    with pytest.raises(ValidationError):
+        PostgresCheckpointerDef(type="postgres", url="")
+
+
+def test_checkpointer_redis_url_env_expansion(monkeypatch: pytest.MonkeyPatch):
+    """``${VAR}`` in the URL is substituted during validation."""
+    monkeypatch.setenv("SHERMA_TEST_REDIS_PW", "topsecret")
+    cp = RedisCheckpointerDef(
+        type="redis",
+        url="redis://user:${SHERMA_TEST_REDIS_PW}@redis.example.com:6379",
+    )
+    assert cp.url == "redis://user:topsecret@redis.example.com:6379"
+
+
+def test_checkpointer_redis_url_env_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("SHERMA_TEST_REDIS_URL", raising=False)
+    cp = RedisCheckpointerDef(
+        type="redis",
+        url="${SHERMA_TEST_REDIS_URL:-redis://localhost:6379}",
+    )
+    assert cp.url == "redis://localhost:6379"
+
+
+def test_checkpointer_redis_url_env_missing_raises(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("SHERMA_TEST_MISSING_PW", raising=False)
+    with pytest.raises((ValidationError, DeclarativeConfigError)):
+        RedisCheckpointerDef(
+            type="redis",
+            url="redis://user:${SHERMA_TEST_MISSING_PW}@host:6379",
+        )
+
+
+def test_checkpointer_postgres_url_env_expansion(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("SHERMA_TEST_PG_PW", "pgsecret")
+    cp = PostgresCheckpointerDef(
+        type="postgres",
+        url="postgresql://user:${SHERMA_TEST_PG_PW}@db.example.com:5432/app",
+    )
+    assert cp.url == "postgresql://user:pgsecret@db.example.com:5432/app"

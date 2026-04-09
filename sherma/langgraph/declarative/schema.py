@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from sherma.langgraph.declarative.env import expand_env_vars
 
 
 class RegistryRef(BaseModel):
@@ -380,10 +382,69 @@ class SubAgentDef(BaseModel):
     yaml_path: str | None = None
 
 
-class CheckpointerDef(BaseModel):
-    """Checkpointer configuration."""
+class MemoryCheckpointerDef(BaseModel):
+    """In-memory checkpointer configuration.
+
+    Wraps LangGraph's ``MemorySaver``.  Stateless — nothing persists
+    across process restarts.
+    """
 
     type: Literal["memory"] = "memory"
+
+
+class RedisCheckpointerDef(BaseModel):
+    """Redis-backed checkpointer configuration.
+
+    Wraps ``langgraph-checkpoint-redis``'s ``AsyncRedisSaver``.  The
+    optional ``sherma[redis]`` extra must be installed.
+
+    ``url`` is an ordinary Redis URL
+    (``redis://[:password@]host:port[/db]``) and supports
+    ``${VAR}`` / ``${VAR:-default}`` environment-variable
+    interpolation.
+    """
+
+    type: Literal["redis"]
+    url: str
+    ttl_minutes: int | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _expand_url(cls, v: str) -> str:
+        expanded = expand_env_vars(v)
+        if not expanded:
+            raise ValueError("Redis checkpointer 'url' must not be empty")
+        return expanded
+
+
+class PostgresCheckpointerDef(BaseModel):
+    """PostgreSQL-backed checkpointer configuration.
+
+    Wraps ``langgraph-checkpoint-postgres``'s ``AsyncPostgresSaver``.
+    The optional ``sherma[postgres]`` extra must be installed.
+
+    ``url`` is an ordinary Postgres URL
+    (``postgresql://user:password@host:port/db``) and supports
+    ``${VAR}`` / ``${VAR:-default}`` environment-variable
+    interpolation.
+    """
+
+    type: Literal["postgres"]
+    url: str
+
+    @field_validator("url")
+    @classmethod
+    def _expand_url(cls, v: str) -> str:
+        expanded = expand_env_vars(v)
+        if not expanded:
+            raise ValueError("Postgres checkpointer 'url' must not be empty")
+        return expanded
+
+
+CheckpointerDef = Annotated[
+    MemoryCheckpointerDef | RedisCheckpointerDef | PostgresCheckpointerDef,
+    Field(discriminator="type"),
+]
 
 
 class DeclarativeConfig(BaseModel):

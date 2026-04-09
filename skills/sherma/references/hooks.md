@@ -4,7 +4,7 @@ Hooks give you programmatic control over the agent lifecycle. They let you obser
 
 ## Hook Types
 
-sherma provides 20 lifecycle hook points:
+sherma provides 21 lifecycle hook points:
 
 | Hook | When it fires |
 | --- | --- |
@@ -24,6 +24,7 @@ sherma provides 20 lifecycle hook points:
 | `before_interrupt` | Before an interrupt pauses graph execution |
 | `after_interrupt` | After an interrupt resumes with user input |
 | `on_chat_model_create` | When a chat model is being instantiated |
+| `on_checkpointer_create` | When a checkpointer is being built from YAML |
 | `before_graph_invoke` | Before the LangGraph state graph is invoked |
 | `after_graph_invoke` | After the LangGraph state graph completes |
 | `on_node_error` | When a declarative node function raises an exception |
@@ -280,6 +281,58 @@ class LazyModelHook(BaseHookExecutor):
 ```
 
 The `LazyChatModel` proxy is transparent -- it forwards all attribute access and method calls to the real model once constructed. After the first access, the factory is never called again.
+
+### `CheckpointerCreateContext`
+
+```python
+@dataclass
+class CheckpointerCreateContext:
+    definition: CheckpointerDef | None    # The parsed YAML definition (mutable)
+    checkpointer: Any | None = None       # BaseCheckpointSaver to install
+```
+
+The `on_checkpointer_create` hook fires when `DeclarativeAgent` is resolving its checkpointer from the YAML `checkpointer:` block. Use it when credentials can't be supplied via `${VAR}` env-var interpolation -- for example, when they come from Vault, AWS Secrets Manager, or a per-tenant store.
+
+Hooks can:
+
+- **Rewrite `ctx.definition`** to mutate the checkpointer config before the default builder runs (e.g., inject a fetched password into the `url`).
+- **Set `ctx.checkpointer`** to a ready-built `BaseCheckpointSaver` to short-circuit the default `from_conn_string` path entirely.
+
+`ctx.definition` is `None` when the YAML has no `checkpointer:` block — hooks may still install a custom checkpointer in that case.
+
+**Example: fetch a Redis password from Vault at agent-creation time**
+
+```python
+from sherma import BaseHookExecutor
+from sherma.hooks.types import CheckpointerCreateContext
+from sherma.langgraph.declarative.schema import RedisCheckpointerDef
+
+class VaultCheckpointerHook(BaseHookExecutor):
+    async def on_checkpointer_create(
+        self, ctx: CheckpointerCreateContext
+    ) -> CheckpointerCreateContext | None:
+        password = await vault_client.read("secret/data/redis")
+        ctx.definition = RedisCheckpointerDef(
+            type="redis",
+            url=f"redis://default:{password}@redis.example.com:6379/0",
+        )
+        return ctx
+```
+
+**Example: supply a pre-built saver**
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+class InProcessCheckpointerHook(BaseHookExecutor):
+    async def on_checkpointer_create(
+        self, ctx: CheckpointerCreateContext
+    ) -> CheckpointerCreateContext | None:
+        ctx.checkpointer = MemorySaver()
+        return ctx
+```
+
+Like `on_chat_model_create`, `on_checkpointer_create` returns live Python objects and is therefore **not available** over the remote JSON-RPC hook server (it silently becomes a no-op for `RemoteHookExecutor`).
 
 ### `GraphInvokeContext`
 
@@ -639,7 +692,7 @@ class MyHooks(HookHandler):
         return None  # Observation only, no modification
 ```
 
-`HookHandler` mirrors the `BaseHookExecutor` interface but works with JSON-serializable dicts instead of Python dataclasses. The `on_chat_model_create` hook is intentionally absent since it cannot work over JSON-RPC.
+`HookHandler` mirrors the `BaseHookExecutor` interface but works with JSON-serializable dicts instead of Python dataclasses. The `on_chat_model_create` and `on_checkpointer_create` hooks are intentionally absent since they return live Python objects and cannot work over JSON-RPC.
 
 ### HookFastAPIApplication / HookStarletteApplication
 
@@ -790,9 +843,9 @@ Not all fields from the hook context are sent over JSON-RPC. Some fields are Pyt
 
 ### Unsupported hooks
 
-The `on_chat_model_create` hook is **not called** for remote hooks because it requires returning a Python object (a chat model instance or factory callable). It silently becomes a no-op.
+The `on_chat_model_create` and `on_checkpointer_create` hooks are **not called** for remote hooks because they require returning a Python object (a chat model / `BaseCheckpointSaver` instance or a factory callable). They silently become no-ops.
 
-All other 16 hooks work over JSON-RPC.
+All other 19 hooks work over JSON-RPC.
 
 ### Error handling
 

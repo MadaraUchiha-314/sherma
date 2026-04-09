@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import AIMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from sherma.langgraph.declarative.agent import (
     DeclarativeAgent,
@@ -1025,3 +1027,171 @@ async def test_declarative_agent_yaml_checkpointer():
 
     human_msgs = [m for m in result["messages"] if isinstance(m, HumanMessage)]
     assert any(m.content == "Bob" for m in human_msgs)
+
+
+REDIS_CHECKPOINTER_YAML = """\
+manifest_version: 1
+
+checkpointer:
+  type: redis
+  url: redis://localhost:6379
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        - name: result
+          type: str
+          default: ""
+    graph:
+      entry_point: setter
+      nodes:
+        - name: setter
+          type: set_state
+          args:
+            values:
+              result: '"done"'
+      edges: []
+"""
+
+
+class _FakeAsyncRedisSaverForAgent(BaseCheckpointSaver):
+    """Fake AsyncRedisSaver used to drive DeclarativeAgent tests.
+
+    Instances track open / close via the ``events`` class attribute so
+    tests can assert ``aclose`` actually releases the underlying
+    connection pool via the exit stack.  Subclasses
+    :class:`BaseCheckpointSaver` so LangGraph's ``compile`` accepts it.
+    """
+
+    events: ClassVar[list[str]] = []
+
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self.url = url
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.events = []
+
+    @classmethod
+    def from_conn_string(cls, url: str) -> _FakeAsyncRedisSaverForAgent:
+        cls.events.append(f"open:{url}")
+        return cls(url)
+
+    async def __aenter__(self) -> _FakeAsyncRedisSaverForAgent:
+        type(self).events.append("enter")
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        type(self).events.append("exit")
+
+    async def asetup(self) -> None:
+        type(self).events.append("asetup")
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_redis_checkpointer_uses_builder(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Redis checkpointer flows through build_checkpointer and aclose."""
+    _FakeAsyncRedisSaverForAgent.reset()
+    from sherma.langgraph.declarative import loader
+
+    monkeypatch.setattr(
+        loader, "_import_redis_saver", lambda: _FakeAsyncRedisSaverForAgent
+    )
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=REDIS_CHECKPOINTER_YAML,
+    )
+    compiled = await agent.get_graph()
+
+    # Compiled graph received the fake saver.
+    assert isinstance(compiled.checkpointer, _FakeAsyncRedisSaverForAgent)
+    # Open + enter + asetup have all run.
+    assert "open:redis://localhost:6379" in (_FakeAsyncRedisSaverForAgent.events)
+    assert "enter" in _FakeAsyncRedisSaverForAgent.events
+    assert "asetup" in _FakeAsyncRedisSaverForAgent.events
+    # Not yet closed.
+    assert "exit" not in _FakeAsyncRedisSaverForAgent.events
+    # Exit stack retained for cleanup.
+    assert agent._checkpointer_exit_stack is not None
+
+    await agent.aclose()
+    assert "exit" in _FakeAsyncRedisSaverForAgent.events
+    assert agent._checkpointer_exit_stack is None
+    assert agent._compiled_graph is None
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_async_context_manager(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """``async with DeclarativeAgent(...)`` auto-closes the exit stack."""
+    _FakeAsyncRedisSaverForAgent.reset()
+    from sherma.langgraph.declarative import loader
+
+    monkeypatch.setattr(
+        loader, "_import_redis_saver", lambda: _FakeAsyncRedisSaverForAgent
+    )
+
+    async with DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=REDIS_CHECKPOINTER_YAML,
+    ) as agent:
+        assert agent._compiled_graph is not None
+        assert "enter" in _FakeAsyncRedisSaverForAgent.events
+        assert "exit" not in _FakeAsyncRedisSaverForAgent.events
+
+    # On __aexit__ the exit stack is closed.
+    assert "exit" in _FakeAsyncRedisSaverForAgent.events
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_aclose_idempotent():
+    """Calling aclose on a memory-only agent is a no-op."""
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=CHECKPOINTER_YAML,
+    )
+    await agent.get_graph()
+    await agent.aclose()
+    # Second call is safe even after state was reset.
+    await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_on_checkpointer_create_hook():
+    """An ``on_checkpointer_create`` hook can inject a custom saver."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from sherma.hooks.executor import BaseHookExecutor
+    from sherma.hooks.types import CheckpointerCreateContext
+
+    custom = MemorySaver()
+
+    class _Hook(BaseHookExecutor):
+        async def on_checkpointer_create(
+            self, ctx: CheckpointerCreateContext
+        ) -> CheckpointerCreateContext | None:
+            ctx.checkpointer = custom
+            return ctx
+
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=REDIS_CHECKPOINTER_YAML,
+        hooks=[_Hook()],
+    )
+    compiled = await agent.get_graph()
+    # Hook-supplied saver short-circuited the redis builder.
+    assert compiled.checkpointer is custom
+    assert agent._checkpointer_exit_stack is None

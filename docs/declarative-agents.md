@@ -139,14 +139,54 @@ sub_agents:
 
 The checkpointer enables state persistence across graph invocations, which is required for features like `interrupt` nodes (human-in-the-loop). By default, `DeclarativeAgent` uses an in-memory checkpointer (`MemorySaver`), so you don't need to configure anything for basic usage.
 
-To explicitly declare a checkpointer in YAML:
+Three checkpointer types are supported in YAML: `memory`, `redis`, and `postgres`.
+
+#### Memory (default)
 
 ```yaml
 checkpointer:
-  type: memory    # In-memory checkpointer (currently the only supported type)
+  type: memory    # In-memory — nothing persists across process restarts
 ```
 
-You can also pass a checkpointer programmatically via the constructor:
+#### Redis
+
+Requires the `sherma[redis]` optional extra (`pip install 'sherma[redis]'`), which pulls in `langgraph-checkpoint-redis`.
+
+```yaml
+checkpointer:
+  type: redis
+  url: "redis://default:${REDIS_PASSWORD}@redis.example.com:6379/0"
+  ttl_minutes: 60            # Optional — TTL for checkpoint entries
+```
+
+#### Postgres
+
+Requires the `sherma[postgres]` optional extra (`pip install 'sherma[postgres]'`), which pulls in `langgraph-checkpoint-postgres` and `psycopg[binary]`.
+
+```yaml
+checkpointer:
+  type: postgres
+  url: "postgresql://app:${PG_PASSWORD}@db.example.com:5432/sherma"
+```
+
+On first use, `DeclarativeAgent` calls `asetup()` on the saver so tables / indexes are created automatically.
+
+#### Environment-variable interpolation
+
+String fields on `CheckpointerDef` support `${VAR}` and `${VAR:-default}` placeholders that are resolved from `os.environ` at YAML parse time. **Never hard-code credentials in YAML** — always inject them via env vars or the `on_checkpointer_create` hook.
+
+- `${VAR}` — required; raises `DeclarativeConfigError` if the variable is unset.
+- `${VAR:-fallback}` — optional; substitutes `fallback` when `VAR` is unset or empty.
+
+```yaml
+checkpointer:
+  type: postgres
+  url: "${SHERMA_PG_URL:-postgresql://localhost:5432/app}"
+```
+
+#### Programmatic override
+
+You can still pass a checkpointer programmatically via the constructor — it's used whenever the YAML has no `checkpointer:` block and no `on_checkpointer_create` hook installs one:
 
 ```python
 from langgraph.checkpoint.memory import MemorySaver
@@ -158,6 +198,64 @@ agent = DeclarativeAgent(
     checkpointer=MemorySaver(),
 )
 ```
+
+#### Runtime credential injection with `on_checkpointer_create`
+
+When credentials come from a secrets manager (Vault, AWS Secrets Manager, per-tenant stores, etc.) rather than plain env vars, register an `on_checkpointer_create` hook. The hook can either rewrite the definition or return a ready-built `BaseCheckpointSaver`:
+
+```python
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import CheckpointerCreateContext
+from sherma.langgraph.declarative.schema import RedisCheckpointerDef
+
+class VaultCheckpointerHook(BaseHookExecutor):
+    async def on_checkpointer_create(
+        self, ctx: CheckpointerCreateContext
+    ) -> CheckpointerCreateContext | None:
+        password = await fetch_from_vault("redis/password")
+        ctx.definition = RedisCheckpointerDef(
+            type="redis",
+            url=f"redis://default:{password}@redis.example.com:6379/0",
+        )
+        return ctx
+
+agent = DeclarativeAgent(
+    id="my-agent",
+    version="1.0.0",
+    yaml_path="agent.yaml",
+    hooks=[VaultCheckpointerHook()],
+)
+```
+
+Like `on_chat_model_create`, `on_checkpointer_create` returns live Python objects and is therefore **not** available over the remote JSON-RPC hook server.
+
+#### Cleanup — `aclose` and `async with`
+
+Redis- and Postgres-backed checkpointers open connection pools that must be released explicitly. `DeclarativeAgent` is an async context manager and also exposes `aclose()`:
+
+```python
+async with DeclarativeAgent(
+    id="my-agent", version="1.0.0", yaml_path="agent.yaml"
+) as agent:
+    await agent.send_message(...)
+# ← connection pool is closed on exit
+```
+
+Or, if you need explicit control:
+
+```python
+agent = DeclarativeAgent(
+    id="my-agent", version="1.0.0", yaml_path="agent.yaml"
+)
+try:
+    await agent.send_message(...)
+finally:
+    await agent.aclose()
+```
+
+`aclose()` closes the underlying `AsyncExitStack` and clears the cached compiled graph so the agent can be re-initialised if needed. It's safe to call multiple times, and it's a no-op for memory-only agents.
+
+#### Thread IDs
 
 When a checkpointer is active, all graph invocations require a `thread_id` in the config to identify the conversation thread. The `send_message` method handles this automatically using `context_id`, `task_id`, or a generated UUID.
 
