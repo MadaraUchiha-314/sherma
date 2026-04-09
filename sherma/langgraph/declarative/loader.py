@@ -5,11 +5,14 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Callable
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
 import yaml
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from sherma.entities.llm import LLM
 from sherma.entities.prompt import Prompt
@@ -18,9 +21,13 @@ from sherma.entities.skill_card import SkillCard
 from sherma.exceptions import DeclarativeConfigError
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.manager import HookManager
+from sherma.hooks.types import CheckpointerCreateContext
 from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DeclarativeConfig,
+    MemoryCheckpointerDef,
+    PostgresCheckpointerDef,
+    RedisCheckpointerDef,
 )
 from sherma.langgraph.tools import agent_to_langgraph_tool, from_langgraph_tool
 from sherma.registry.base import RegistryEntry
@@ -268,6 +275,99 @@ def create_chat_model(
     """
     kwargs = _build_chat_model_kwargs(provider, model_name, http_async_client)
     return _construct_chat_model(provider, kwargs)
+
+
+def _import_redis_saver() -> Any:
+    """Lazy-import :class:`AsyncRedisSaver`.
+
+    Raised :class:`DeclarativeConfigError` points at the ``sherma[redis]``
+    extra so users know exactly what to install.
+    """
+    try:
+        from langgraph.checkpoint.redis.aio import (  # type: ignore[import-not-found]
+            AsyncRedisSaver,
+        )
+    except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+        raise DeclarativeConfigError(
+            "Redis checkpointer requires the 'sherma[redis]' extra. "
+            "Install it with: pip install 'sherma[redis]'"
+        ) from exc
+    return AsyncRedisSaver
+
+
+def _import_postgres_saver() -> Any:
+    """Lazy-import :class:`AsyncPostgresSaver`."""
+    try:
+        from langgraph.checkpoint.postgres.aio import (  # type: ignore[import-not-found]
+            AsyncPostgresSaver,
+        )
+    except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+        raise DeclarativeConfigError(
+            "Postgres checkpointer requires the 'sherma[postgres]' extra. "
+            "Install it with: pip install 'sherma[postgres]'"
+        ) from exc
+    return AsyncPostgresSaver
+
+
+async def build_checkpointer(
+    definition: Any | None,
+    *,
+    hook_manager: HookManager | None = None,
+) -> tuple[BaseCheckpointSaver | None, AsyncExitStack | None]:
+    """Build a :class:`BaseCheckpointSaver` from a ``CheckpointerDef``.
+
+    Returns ``(saver, exit_stack)``.  The ``exit_stack`` owns any async
+    context managers (Redis / Postgres connection pools) opened during
+    construction — callers must ``await exit_stack.aclose()`` when the
+    agent is torn down.  It is ``None`` for memory checkpointers.
+
+    When ``definition`` is ``None`` and no hook overrides it, returns
+    ``(None, None)`` so the caller can fall back to its programmatic
+    default checkpointer (preserving historical behaviour).
+
+    If ``hook_manager`` is provided and at least one executor implements
+    :meth:`on_checkpointer_create`, the hook runs first.  A hook may:
+
+    * rewrite ``ctx.definition`` to change the config before the
+      default builder runs, or
+    * return a ready-built ``BaseCheckpointSaver`` via
+      ``ctx.checkpointer`` to short-circuit the default path entirely
+      (useful for fetching credentials from Vault / Secrets Manager).
+    """
+    if hook_manager is not None and hook_manager._executors:
+        ctx = CheckpointerCreateContext(definition=definition)
+        ctx = await hook_manager.run_hook("on_checkpointer_create", ctx)
+        if ctx.checkpointer is not None:
+            return ctx.checkpointer, None
+        definition = ctx.definition
+
+    if definition is None:
+        return None, None
+
+    if isinstance(definition, MemoryCheckpointerDef):
+        return MemorySaver(), None
+
+    if isinstance(definition, RedisCheckpointerDef):
+        saver_cls = _import_redis_saver()
+        stack = AsyncExitStack()
+        saver = await stack.enter_async_context(
+            saver_cls.from_conn_string(definition.url)
+        )
+        await saver.asetup()
+        return saver, stack
+
+    if isinstance(definition, PostgresCheckpointerDef):
+        saver_cls = _import_postgres_saver()
+        stack = AsyncExitStack()
+        saver = await stack.enter_async_context(
+            saver_cls.from_conn_string(definition.url)
+        )
+        await saver.asetup()
+        return saver, stack
+
+    raise DeclarativeConfigError(
+        f"Unknown checkpointer definition type: {type(definition).__name__}"
+    )
 
 
 async def populate_registries(

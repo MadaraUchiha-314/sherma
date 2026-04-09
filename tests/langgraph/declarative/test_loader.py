@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from sherma.exceptions import DeclarativeConfigError
+from sherma.hooks.executor import BaseHookExecutor
 from sherma.hooks.manager import HookManager
 from sherma.hooks.remote import RemoteHookExecutor
+from sherma.hooks.types import CheckpointerCreateContext
 from sherma.langgraph.declarative.loader import (
     RegistryBundle,
+    build_checkpointer,
     import_tool,
     load_declarative_config,
     populate_hooks,
     populate_registries,
     validate_config,
+)
+from sherma.langgraph.declarative.schema import (
+    MemoryCheckpointerDef,
+    PostgresCheckpointerDef,
+    RedisCheckpointerDef,
 )
 
 MINIMAL_YAML = """\
@@ -1776,3 +1785,220 @@ agents: {}
 """
     with pytest.raises(Exception, match="cannot have both"):
         load_declarative_config(yaml_content=yaml_content)
+
+
+# -- build_checkpointer tests -------------------------------------------
+
+
+class _FakeAsyncSaver:
+    """Minimal fake async checkpointer.
+
+    Acts as both the ``from_conn_string`` async context manager and the
+    saver instance yielded from it.  Records the URL it was opened with
+    and whether ``asetup``/``aclose`` were invoked.
+    """
+
+    opened_urls: ClassVar[list[str]] = []
+    entered_count: ClassVar[int] = 0
+    exited_count: ClassVar[int] = 0
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.asetup_calls = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.opened_urls = []
+        cls.entered_count = 0
+        cls.exited_count = 0
+
+    @classmethod
+    def from_conn_string(cls, url: str) -> _FakeAsyncSaver:
+        cls.opened_urls.append(url)
+        return cls(url)
+
+    async def __aenter__(self) -> _FakeAsyncSaver:
+        type(self).entered_count += 1
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        type(self).exited_count += 1
+
+    async def asetup(self) -> None:
+        self.asetup_calls += 1
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_none_returns_none_none():
+    saver, stack = await build_checkpointer(None)
+    assert saver is None
+    assert stack is None
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_memory_returns_memory_saver():
+    from langgraph.checkpoint.memory import MemorySaver
+
+    saver, stack = await build_checkpointer(MemoryCheckpointerDef())
+    assert isinstance(saver, MemorySaver)
+    assert stack is None
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_redis(monkeypatch: pytest.MonkeyPatch):
+    _FakeAsyncSaver.reset()
+    from sherma.langgraph.declarative import loader
+
+    monkeypatch.setattr(loader, "_import_redis_saver", lambda: _FakeAsyncSaver)
+
+    defn = RedisCheckpointerDef(type="redis", url="redis://localhost:6379")
+    saver, stack = await build_checkpointer(defn)
+
+    assert _FakeAsyncSaver.opened_urls == ["redis://localhost:6379"]
+    assert _FakeAsyncSaver.entered_count == 1
+    assert _FakeAsyncSaver.exited_count == 0
+    assert isinstance(saver, _FakeAsyncSaver)
+    assert saver.asetup_calls == 1
+    assert stack is not None
+
+    await stack.aclose()
+    assert _FakeAsyncSaver.exited_count == 1
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_postgres(monkeypatch: pytest.MonkeyPatch):
+    _FakeAsyncSaver.reset()
+    from sherma.langgraph.declarative import loader
+
+    monkeypatch.setattr(loader, "_import_postgres_saver", lambda: _FakeAsyncSaver)
+
+    defn = PostgresCheckpointerDef(
+        type="postgres",
+        url="postgresql://user@localhost:5432/app",
+    )
+    saver, stack = await build_checkpointer(defn)
+
+    assert _FakeAsyncSaver.opened_urls == ["postgresql://user@localhost:5432/app"]
+    assert isinstance(saver, _FakeAsyncSaver)
+    assert saver.asetup_calls == 1
+    assert stack is not None
+    await stack.aclose()
+    assert _FakeAsyncSaver.exited_count == 1
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_redis_missing_package(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from sherma.langgraph.declarative import loader
+
+    def _raise() -> type:
+        raise DeclarativeConfigError(
+            "Redis checkpointer requires the 'sherma[redis]' extra."
+        )
+
+    monkeypatch.setattr(loader, "_import_redis_saver", _raise)
+
+    defn = RedisCheckpointerDef(type="redis", url="redis://localhost:6379")
+    with pytest.raises(DeclarativeConfigError, match="sherma\\[redis\\]"):
+        await build_checkpointer(defn)
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_postgres_missing_package(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from sherma.langgraph.declarative import loader
+
+    def _raise() -> type:
+        raise DeclarativeConfigError(
+            "Postgres checkpointer requires the 'sherma[postgres]' extra."
+        )
+
+    monkeypatch.setattr(loader, "_import_postgres_saver", _raise)
+
+    defn = PostgresCheckpointerDef(
+        type="postgres", url="postgresql://user@host:5432/db"
+    )
+    with pytest.raises(DeclarativeConfigError, match="sherma\\[postgres\\]"):
+        await build_checkpointer(defn)
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_hook_returns_instance():
+    """Hook returning a pre-built saver short-circuits the builder."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    custom_saver = MemorySaver()
+
+    class _HookExec(BaseHookExecutor):
+        async def on_checkpointer_create(
+            self, ctx: CheckpointerCreateContext
+        ) -> CheckpointerCreateContext | None:
+            ctx.checkpointer = custom_saver
+            return ctx
+
+    hm = HookManager()
+    hm.register(_HookExec())
+
+    defn = RedisCheckpointerDef(type="redis", url="redis://localhost:6379")
+    saver, stack = await build_checkpointer(defn, hook_manager=hm)
+
+    # Hook returned saver is used; default redis path was never invoked.
+    assert saver is custom_saver
+    assert stack is None
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_hook_rewrites_definition(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Hook leaving ``checkpointer=None`` falls through to default builder."""
+    _FakeAsyncSaver.reset()
+    from sherma.langgraph.declarative import loader
+
+    monkeypatch.setattr(loader, "_import_redis_saver", lambda: _FakeAsyncSaver)
+
+    class _HookExec(BaseHookExecutor):
+        async def on_checkpointer_create(
+            self, ctx: CheckpointerCreateContext
+        ) -> CheckpointerCreateContext | None:
+            # Rewrite the definition to a different URL.
+            ctx.definition = RedisCheckpointerDef(
+                type="redis", url="redis://rewritten:6379"
+            )
+            return ctx
+
+    hm = HookManager()
+    hm.register(_HookExec())
+
+    defn = RedisCheckpointerDef(type="redis", url="redis://localhost:6379")
+    saver, stack = await build_checkpointer(defn, hook_manager=hm)
+
+    assert _FakeAsyncSaver.opened_urls == ["redis://rewritten:6379"]
+    assert isinstance(saver, _FakeAsyncSaver)
+    assert stack is not None
+    await stack.aclose()
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_hook_can_install_from_none():
+    """Hook can install a saver even when YAML has no checkpointer block."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    custom_saver = MemorySaver()
+
+    class _HookExec(BaseHookExecutor):
+        async def on_checkpointer_create(
+            self, ctx: CheckpointerCreateContext
+        ) -> CheckpointerCreateContext | None:
+            assert ctx.definition is None
+            ctx.checkpointer = custom_saver
+            return ctx
+
+    hm = HookManager()
+    hm.register(_HookExec())
+
+    saver, stack = await build_checkpointer(None, hook_manager=hm)
+    assert saver is custom_saver
+    assert stack is None

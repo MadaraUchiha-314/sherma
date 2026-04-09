@@ -57,3 +57,13 @@ async def test_subclass_override():
 def test_no_on_chat_model_create():
     """HookHandler does not have on_chat_model_create."""
     assert not hasattr(HookHandler, "on_chat_model_create")
+
+
+def test_no_on_checkpointer_create():
+    """HookHandler does not have on_checkpointer_create.
+
+    Like ``on_chat_model_create`` it returns live Python objects that
+    can't cross the JSON-RPC boundary, so it's intentionally absent
+    from the remote handler surface.
+    """
+    assert not hasattr(HookHandler, "on_checkpointer_create")

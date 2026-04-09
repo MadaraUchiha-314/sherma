@@ -39,14 +39,18 @@ class RemoteHookExecutor(BaseHookExecutor):
     """Hook executor that delegates to a remote JSON-RPC 2.0 server.
 
     Each hook is sent as a JSON-RPC method call.  The ``on_chat_model_create``
-    hook is a no-op because it requires returning a Python object.
+    and ``on_checkpointer_create`` hooks are no-ops because they require
+    returning a live Python object.
 
     On any network or protocol error the executor logs a warning and returns
     ``None`` (pass-through) so the agent is never blocked by a failing hook
     server.
     """
 
-    _UNSUPPORTED_HOOKS: ClassVar[set[str]] = {"on_chat_model_create"}
+    _UNSUPPORTED_HOOKS: ClassVar[set[str]] = {
+        "on_chat_model_create",
+        "on_checkpointer_create",
+    }
 
     def __init__(self, url: str, timeout: float = 30.0) -> None:
         self._url = url
@@ -178,7 +182,9 @@ class RemoteHookExecutor(BaseHookExecutor):
     ) -> AfterInterruptContext | None:
         return await self._execute_hook("after_interrupt", ctx)
 
-    # on_chat_model_create: inherits no-op from BaseHookExecutor
+    # on_chat_model_create / on_checkpointer_create: inherit no-op from
+    # BaseHookExecutor — both return live Python objects that cannot
+    # cross the JSON-RPC boundary.
 
     async def before_graph_invoke(
         self, ctx: GraphInvokeContext

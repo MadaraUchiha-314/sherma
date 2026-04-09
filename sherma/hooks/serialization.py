@@ -10,6 +10,7 @@ _NON_SERIALIZABLE_FIELDS: set[str] = {
     "node_context",
     "agent",
     "chat_model",
+    "checkpointer",
     "registries",
 }
 

@@ -166,6 +166,19 @@ Provide one of `yaml_path`, `yaml_content`, or `config`.
 
 When `yaml_path` is provided, `base_path` is automatically derived from the YAML file's parent directory. When using `yaml_content` or `config`, set `base_path` explicitly to resolve relative file paths (skill card paths, sub-agent YAML paths).
 
+#### Lifecycle methods
+
+```python
+async def get_graph(self) -> CompiledStateGraph
+async def aclose(self) -> None
+async def __aenter__(self) -> DeclarativeAgent
+async def __aexit__(self, exc_type, exc, tb) -> None
+```
+
+- `get_graph` builds and caches the compiled LangGraph from the YAML config on first call. Subsequent calls return the cached graph.
+- `aclose` releases any connection pools opened by redis/postgres checkpointers (via an internal `AsyncExitStack`) and clears the cached compiled graph so the agent can be re-initialised. Safe to call multiple times; a no-op for memory-only agents.
+- `DeclarativeAgent` is an **async context manager** — `async with agent:` calls `get_graph` on entry and `aclose` on exit. Always use this form (or an explicit `try/finally` with `aclose`) for redis/postgres-backed agents.
+
 ## Registries
 
 ### `RegistryEntry`
@@ -418,10 +431,48 @@ Exactly one of `import_path` or `url` must be provided.
 
 ### `CheckpointerDef`
 
+`CheckpointerDef` is a pydantic v2 discriminated union over the `type` field. Three variants are supported:
+
 ```python
-class CheckpointerDef(BaseModel):
+class MemoryCheckpointerDef(BaseModel):
     type: Literal["memory"] = "memory"
+
+class RedisCheckpointerDef(BaseModel):
+    type: Literal["redis"]
+    url: str
+    ttl_minutes: int | None = None
+
+class PostgresCheckpointerDef(BaseModel):
+    type: Literal["postgres"]
+    url: str
+
+CheckpointerDef = Annotated[
+    Union[MemoryCheckpointerDef, RedisCheckpointerDef, PostgresCheckpointerDef],
+    Field(discriminator="type"),
+]
 ```
+
+- **memory** — wraps `langgraph.checkpoint.memory.MemorySaver`. Nothing persists across process restarts.
+- **redis** — wraps `langgraph.checkpoint.redis.aio.AsyncRedisSaver`. Requires the `sherma[redis]` extra.
+- **postgres** — wraps `langgraph.checkpoint.postgres.aio.AsyncPostgresSaver`. Requires the `sherma[postgres]` extra.
+
+**Environment variable interpolation.** String fields (`url`) support `${VAR}` and `${VAR:-default}` placeholders that are resolved from `os.environ` at YAML parse time. A plain `${VAR}` with an unset variable raises `DeclarativeConfigError`; the default-form falls back to `default` when the variable is unset or empty.
+
+**Runtime customization.** When credentials come from a secrets manager, register an `on_checkpointer_create` hook — it can either rewrite `ctx.definition` or supply a ready-built `BaseCheckpointSaver` via `ctx.checkpointer`. See [Hooks](hooks.md).
+
+**Cleanup.** Redis and Postgres savers open async connection pools. `DeclarativeAgent.aclose()` (and the `async with` form) release them via an `AsyncExitStack`. Always `await agent.aclose()` (or use `async with`) for redis/postgres-backed agents.
+
+### `build_checkpointer`
+
+```python
+async def build_checkpointer(
+    definition: CheckpointerDef | None,
+    *,
+    hook_manager: HookManager | None = None,
+) -> tuple[BaseCheckpointSaver | None, AsyncExitStack | None]
+```
+
+Factory used internally by `DeclarativeAgent.get_graph`. Runs the `on_checkpointer_create` hook first (if a hook manager is supplied), then instantiates the saver from the (possibly rewritten) definition. Returns `(saver, exit_stack)` where `exit_stack` owns any connection pools that must be closed via `await stack.aclose()` (it is `None` for memory savers and for hook-supplied instances).
 
 ### `load_declarative_config`
 

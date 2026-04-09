@@ -30,6 +30,8 @@ dependencies = [
 [project.optional-dependencies]
 streamlit = ["streamlit>=1.40.0", "nest-asyncio>=1.6.0"]
 fastapi = ["fastapi>=0.115.0"]
+redis = ["langgraph-checkpoint-redis>=0.0.3"]
+postgres = ["langgraph-checkpoint-postgres>=2.0.0", "psycopg[binary]>=3.2.0"]
 
 [dependency-groups]
 dev = ["ruff", "pyright", "pytest", "pytest-asyncio", "pre-commit", "commitizen", "pyyaml"]

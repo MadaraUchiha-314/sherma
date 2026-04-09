@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sherma.langgraph.declarative.nodes import NodeContext
+    from sherma.langgraph.declarative.schema import CheckpointerDef
     from sherma.registry.bundle import RegistryBundle
 
 
@@ -29,6 +30,7 @@ class HookType(Enum):
     BEFORE_INTERRUPT = "before_interrupt"
     AFTER_INTERRUPT = "after_interrupt"
     ON_CHAT_MODEL_CREATE = "on_chat_model_create"
+    ON_CHECKPOINTER_CREATE = "on_checkpointer_create"
     BEFORE_GRAPH_INVOKE = "before_graph_invoke"
     AFTER_GRAPH_INVOKE = "after_graph_invoke"
     NODE_EXECUTE = "node_execute"
@@ -196,6 +198,29 @@ class ChatModelCreateContext:
     model_name: str
     kwargs: dict[str, Any]
     chat_model: Any | None = None  # BaseChatModel | Callable[[], BaseChatModel] | None
+
+
+@dataclass
+class CheckpointerCreateContext:
+    """Context for on_checkpointer_create hooks.
+
+    Runs once, while ``DeclarativeAgent`` is resolving its checkpointer
+    from YAML.  Hooks can:
+
+    * Mutate ``definition`` to rewrite the checkpointer config before
+      the default builder runs (e.g. rewrite the ``url`` field to inject
+      credentials fetched from Vault or AWS Secrets Manager).
+    * Return a ready-to-use ``BaseCheckpointSaver`` instance by setting
+      ``checkpointer`` — this short-circuits the default
+      ``from_conn_string`` path entirely.
+
+    ``definition`` is ``None`` when the YAML has no ``checkpointer:``
+    block; hooks may still return a custom ``checkpointer`` in that
+    case to install one programmatically.
+    """
+
+    definition: CheckpointerDef | None
+    checkpointer: Any | None = None  # BaseCheckpointSaver | None
 
 
 @dataclass

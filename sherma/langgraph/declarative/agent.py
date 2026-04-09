@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, PrivateAttr
 
 from sherma.entities.base import DEFAULT_TENANT_ID
 from sherma.exceptions import GraphConstructionError
@@ -19,6 +20,7 @@ from sherma.langgraph.declarative.cel_engine import CelEngine
 from sherma.langgraph.declarative.edges import build_conditional_router
 from sherma.langgraph.declarative.loader import (
     RegistryBundle,
+    build_checkpointer,
     load_declarative_config,
     populate_hooks,
     populate_registries,
@@ -141,6 +143,7 @@ class DeclarativeAgent(LangGraphAgent):
     checkpointer: BaseCheckpointSaver = Field(default_factory=MemorySaver)
     _registries: RegistryBundle | None = None
     _compiled_graph: CompiledStateGraph | None = None
+    _checkpointer_exit_stack: AsyncExitStack | None = PrivateAttr(default=None)
 
     async def get_graph(self) -> CompiledStateGraph:
         """Build and return the compiled LangGraph from YAML config."""
@@ -191,10 +194,19 @@ class DeclarativeAgent(LangGraphAgent):
         # Track sub-agent tool IDs for use_sub_agents_as_tools
         self._sub_agent_tool_ids: list[str] = [sa.id for sa in config.sub_agents]
 
-        # 3. Resolve checkpointer
-        checkpointer = self.checkpointer
-        if config.checkpointer is not None and config.checkpointer.type == "memory":
-            checkpointer = MemorySaver()
+        # 3. Resolve checkpointer.  ``build_checkpointer`` runs the
+        # ``on_checkpointer_create`` hook (if registered) first, then
+        # falls back to instantiating from the YAML definition.  For
+        # redis/postgres it opens connection resources through an
+        # ``AsyncExitStack`` that is released in ``aclose``.
+        saver, stack = await build_checkpointer(
+            config.checkpointer, hook_manager=self.hook_manager
+        )
+        if saver is not None:
+            checkpointer = saver
+            self._checkpointer_exit_stack = stack
+        else:
+            checkpointer = self.checkpointer
 
         # 4. Apply langgraph_config from YAML to agent fields
         agent_def = config.agents[agent_name]
@@ -214,6 +226,28 @@ class DeclarativeAgent(LangGraphAgent):
             agent_def, config, checkpointer=checkpointer
         )
         return self._compiled_graph
+
+    async def aclose(self) -> None:
+        """Release resources owned by this agent.
+
+        Closes the checkpointer connection pool (when redis/postgres
+        was resolved through :func:`build_checkpointer`) and clears
+        the cached compiled graph so the agent can be re-initialised.
+        Safe to call multiple times.
+        """
+        if self._checkpointer_exit_stack is not None:
+            try:
+                await self._checkpointer_exit_stack.aclose()
+            finally:
+                self._checkpointer_exit_stack = None
+        self._compiled_graph = None
+
+    async def __aenter__(self) -> DeclarativeAgent:
+        await self.get_graph()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        await self.aclose()
 
     def _find_agent_name(self, config: DeclarativeConfig) -> str:
         """Find the agent name in config matching this agent's id."""

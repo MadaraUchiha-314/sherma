@@ -36,7 +36,7 @@ When the user describes what they want, gather information in **at most 2 rounds
 
 - LLM: OpenAI (`gpt-4o-mini`), provider `openai`
 - State: `messages` list (type `list`, default `[]`)
-- Checkpointer: in-memory (`MemorySaver`, auto-configured)
+- Checkpointer: in-memory (`MemorySaver`, auto-configured). Redis / Postgres are also supported — see Checkpointer section.
 - Version: `"1.0.0"` for all entities
 
 ## Quick Reference: Declarative YAML Schema
@@ -50,7 +50,7 @@ tools:         # Tool imports (id, version, import_path)
 skills:        # Skill card references (id, version, skill_card_path or url)
 sub_agents:    # Sub-agent declarations (id, version, yaml_path/import_path/url)
 hooks:         # Hook executor imports (import_path or url)
-checkpointer:  # Checkpointer config (type: memory)
+checkpointer:  # Checkpointer config (type: memory | redis | postgres)
 default_llm:   # Default LLM for call_llm nodes (id reference)
 agents:        # Agent graph definitions
 ```
@@ -144,6 +144,29 @@ Dynamic flags are mutually exclusive with each other, but an explicit `tools` li
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma auto-injects a `tool_node` after it with conditional edges. You do NOT wire this manually.
 
 **`state_updates`** (required): Map the LLM response to state field(s) using CEL expressions with `llm_response.content` and `llm_response.tool_calls`. Values are **deltas** passed to LangGraph reducers. The standard pattern is `messages: '[llm_response]'`. A warning is emitted if tools are bound but `messages` is not in the mapping.
+
+### Checkpointer types
+
+```yaml
+# Default — in-memory, nothing persists across restarts
+checkpointer:
+  type: memory
+
+# Redis (needs ``pip install 'sherma[redis]'``)
+checkpointer:
+  type: redis
+  url: "redis://default:${REDIS_PASSWORD}@redis.example.com:6379/0"
+  ttl_minutes: 60        # optional
+
+# Postgres (needs ``pip install 'sherma[postgres]'``)
+checkpointer:
+  type: postgres
+  url: "postgresql://app:${PG_PASSWORD}@db.example.com:5432/sherma"
+```
+
+String fields support `${VAR}` / `${VAR:-default}` env-var interpolation, resolved at YAML parse time. For credentials fetched at runtime (Vault, Secrets Manager), register an `on_checkpointer_create` hook instead — it can rewrite `ctx.definition` or set `ctx.checkpointer` to a pre-built `BaseCheckpointSaver`.
+
+Redis / Postgres open async connection pools — always use the async context manager form (`async with DeclarativeAgent(...) as agent:`) or call `await agent.aclose()` explicitly to release them.
 
 ## Quick Reference: Programmatic Agent
 
@@ -792,6 +815,12 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 9. **`custom` node hooks can access registries**: `NodeExecuteContext` exposes `ctx.registries` (a `RegistryBundle`) so `node_execute` hooks can call chat models (`ctx.registries.chat_models[llm_id]`), resolve tools, render prompts, etc. without wiring dependencies at agent-init time. Remote (JSON-RPC) hooks receive `registries=None` because it contains live Python objects.
 
+10. **Redis/Postgres checkpointers require extras and cleanup**: Install `sherma[redis]` or `sherma[postgres]` before using `checkpointer.type: redis` / `postgres`. Always call `await agent.aclose()` (or use `async with DeclarativeAgent(...) as agent:`) so the connection pool is released.
+
+11. **Env var interpolation happens at YAML parse time**: `${VAR}` and `${VAR:-default}` in checkpointer URLs (and other string fields that support it) are resolved from `os.environ` **when the YAML is loaded**, not at graph invoke time. Setting a variable after `load_declarative_config` has been called has no effect. For credentials fetched at runtime from Vault / Secrets Manager, use the `on_checkpointer_create` hook instead.
+
+12. **`on_checkpointer_create` is local-only**: Like `on_chat_model_create`, it returns live Python objects and therefore silently becomes a no-op when registered through the remote JSON-RPC hook server.
+
 ## Process
 
 Follow these steps when building an agent:
@@ -823,10 +852,12 @@ Follow these steps when building an agent:
 `Registry`, `RegistryEntry`, `RegistryBundle`, `TenantRegistryManager`, `PromptRegistry`, `LLMRegistry`, `ToolRegistry`, `SkillRegistry`, `AgentRegistry`
 
 ### Hooks
-`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookHandler`, `HookFastAPIApplication`, `HookStarletteApplication`
+`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookHandler`, `HookFastAPIApplication`, `HookStarletteApplication`, `CheckpointerCreateContext`
 
 ### Declarative
-`DeclarativeConfig`, `load_declarative_config`
+`DeclarativeConfig`, `load_declarative_config`, `build_checkpointer`, `MemoryCheckpointerDef`, `RedisCheckpointerDef`, `PostgresCheckpointerDef`
+
+`DeclarativeAgent` is an async context manager (`async with agent:`) and exposes `aclose()` to release any redis/postgres connection pools opened through its checkpointer.
 
 ### Skills
 `create_skill_tools`

@@ -29,9 +29,9 @@ class HookHandler:
     Override only the hooks you care about -- all methods default to
     ``None`` (pass-through).
 
-    The ``on_chat_model_create`` hook is intentionally absent because
-    it requires returning a Python object and cannot work over
-    JSON-RPC.
+    The ``on_chat_model_create`` and ``on_checkpointer_create`` hooks
+    are intentionally absent because they require returning live Python
+    objects and cannot work over JSON-RPC.
     """
 
     async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None:
