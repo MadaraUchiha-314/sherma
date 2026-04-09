@@ -753,6 +753,11 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 '["a", "b", "c"].join(", ")'                                   # join list → string
 '"hello world".substring(0, 5)'                                # extract substring
 
+# List functions
+'state.messages.slice(0, 5)'                                   # first 5 elements
+'state.messages.slice(state.cursor, size(state.messages))'     # from cursor to end
+'state.msgs.slice(size(state.msgs) - 6, size(state.msgs))'    # last 6 elements
+
 # Templating: ${key} substitution from a map
 'template("Hello ${name}!", {"name": state.user})'             # basic substitution
 'template(prompts["plan"]["instructions"], {"skills": state.skill_list})'  # prompt templating
