@@ -49,6 +49,7 @@ llms:          # LLM declarations (id, version, provider, model_name)
 tools:         # Tool imports (id, version, import_path)
 skills:        # Skill card references (id, version, skill_card_path or url)
 sub_agents:    # Sub-agent declarations (id, version, yaml_path/import_path/url)
+mcp_servers:   # MCP server declarations (auto-registers tools into the registry)
 hooks:         # Hook executor imports (import_path or url)
 checkpointer:  # Checkpointer config (type: memory)
 default_llm:   # Default LLM for call_llm nodes (id reference)
@@ -144,6 +145,29 @@ Dynamic flags are mutually exclusive with each other, but an explicit `tools` li
 **Auto-injected tool_node**: When a `call_llm` node has tools, sherma auto-injects a `tool_node` after it with conditional edges. You do NOT wire this manually.
 
 **`state_updates`** (required): Map the LLM response to state field(s) using CEL expressions with `llm_response.content` and `llm_response.tool_calls`. Values are **deltas** passed to LangGraph reducers. The standard pattern is `messages: '[llm_response]'`. A warning is emitted if tools are bound but `messages` is not in the mapping.
+
+### MCP servers
+
+Top-level `mcp_servers:` declarations connect to MCP servers and register their tools into the global tool registry, where they are picked up by `tools: [{id, version}]` or `use_tools_from_registry: true`.
+
+```yaml
+mcp_servers:
+  - id: factset
+    transport: streamable_http     # or "sse" / "stdio"
+    url: ${FACTSET_MCP_URL}
+    headers: { Authorization: "Bearer ${FACTSET_TOKEN}" }
+    tool_prefix: "factset__"        # optional, namespaces tool ids
+  - id: filesystem
+    transport: stdio
+    command: uvx
+    args: ["mcp-server-filesystem"]
+```
+
+Required fields: `url` for `streamable_http` / `sse`; `command` for `stdio`. Each registered tool gets `id = <tool_prefix><tool_name>` and `version = <server.version>`.
+
+### Environment-variable interpolation
+
+Every YAML string supports `${VAR}` and `${VAR:-default}` for `UPPERCASE_WITH_UNDERSCORES` names. Use `$$` for a literal `$`. Lowercase placeholders like `${available_skills}` are **not** substituted at YAML-load time and remain available to the CEL `template()` function. Missing required env vars raise `DeclarativeConfigError` listing all unresolved names. Interpolation runs **before** Pydantic validation.
 
 ## Quick Reference: Programmatic Agent
 

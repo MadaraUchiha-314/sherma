@@ -382,6 +382,7 @@ class DeclarativeConfig(BaseModel):
     skills: list[SkillDef] = []
     hooks: list[HookDef] = []
     sub_agents: list[SubAgentDef] = []
+    mcp_servers: list[MCPServerDef] = []
     default_llm: RegistryRef | None = None
     checkpointer: CheckpointerDef | None = None
 ```
@@ -423,6 +424,37 @@ class CheckpointerDef(BaseModel):
     type: Literal["memory"] = "memory"
 ```
 
+### `MCPServerDef` (declarative YAML)
+
+Top-level `mcp_servers:` entry — distinct from the same-named class
+under `sherma.entities.skill_card`, which models MCP servers embedded
+in a skill card. This one lives in
+`sherma.langgraph.declarative.schema`.
+
+```python
+class MCPServerDef(BaseModel):
+    id: str
+    version: str = "*"
+    transport: Literal["streamable_http", "sse", "stdio"] = "streamable_http"
+    # streamable_http / sse
+    url: str | None = None
+    headers: dict[str, str] = {}
+    # stdio
+    command: str | None = None
+    args: list[str] = []
+    env: dict[str, str] = {}
+    # Optional renaming to avoid name collisions across servers
+    tool_prefix: str | None = None
+```
+
+For HTTP-based transports, set `url` (and optionally `headers`).
+For `stdio`, set `command` (and optionally `args` / `env`).
+At config-load time sherma connects to each declared server,
+lists its tools, and registers them in the tool registry — making
+them usable from `call_llm` nodes via `tools:` or
+`use_tools_from_registry: true`. When `tool_prefix` is set, each
+tool is registered as `<tool_prefix><tool_name>`.
+
 ### `load_declarative_config`
 
 ```python
@@ -431,6 +463,16 @@ def load_declarative_config(
     yaml_content: str | None = None,
 ) -> DeclarativeConfig
 ```
+
+Before the YAML data is validated, every string value is passed
+through environment-variable interpolation: `${VAR}` is replaced
+with `os.environ["VAR"]`, `${VAR:-default}` falls back to `default`
+when the variable is unset, and `$$` becomes a literal `$`. Only
+`UPPERCASE_WITH_UNDERSCORES` names are matched, so lowercase
+placeholders intended for the CEL `template()` function (e.g.
+`${available_skills}`) pass through untouched. Missing required
+variables raise `DeclarativeConfigError` listing all unresolved
+names.
 
 ## Schema Utilities
 
