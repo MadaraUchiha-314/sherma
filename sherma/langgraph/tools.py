@@ -53,7 +53,16 @@ def agent_to_langgraph_tool(agent: Agent) -> BaseTool:
         else f"Invoke agent: {agent.id}"
     )
 
-    input_schema = agent.input_schema
+    raw_input_schema = agent.input_schema
+    # Only Pydantic-model inputs participate in the structured args_schema
+    # for the wrapper tool. JSON-Schema-dict inputs are still validated by
+    # the A2A executor at the agent boundary, but are not exposed as a
+    # structured field on the LangGraph tool's args_schema.
+    input_schema: type[BaseModel] | None = (
+        raw_input_schema
+        if isinstance(raw_input_schema, type) and issubclass(raw_input_schema, BaseModel)
+        else None
+    )
 
     if input_schema is not None:
         args_schema: type[BaseModel] = create_model(

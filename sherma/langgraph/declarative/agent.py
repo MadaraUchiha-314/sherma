@@ -209,6 +209,14 @@ class DeclarativeAgent(LangGraphAgent):
             if lgc.metadata is not None:
                 self.metadata = lgc.metadata
 
+        # 4b. Wire YAML JSON Schemas onto the agent so the A2A executor
+        # validates incoming/outgoing DataParts. Only set when the user
+        # has not already supplied a Pydantic schema programmatically.
+        if agent_def.input_schema is not None and self.input_schema is None:
+            self.input_schema = agent_def.input_schema
+        if agent_def.output_schema is not None and self.output_schema is None:
+            self.output_schema = agent_def.output_schema
+
         # 5. Build the graph
         self._compiled_graph = await self._build_graph(
             agent_def, config, checkpointer=checkpointer
