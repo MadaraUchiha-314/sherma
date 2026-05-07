@@ -1,3 +1,9 @@
+## v1.5.0 (2026-05-07)
+
+### Feat
+
+- validate declarative agent input/output against YAML JSON Schema (#76)
+
 ## v1.4.0 (2026-05-07)
 
 ### Feat
