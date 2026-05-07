@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+import jsonschema
 from a2a.types import AgentExtension, DataPart, Message, Part, Role
 from pydantic import BaseModel, ValidationError
 
@@ -18,12 +19,26 @@ SCHEMA_INPUT_URI = "urn:sherma:schema:input"
 SCHEMA_OUTPUT_URI = "urn:sherma:schema:output"
 
 
-def schema_to_extension(uri: str, schema_model: type[BaseModel]) -> AgentExtension:
-    """Convert a Pydantic model to an A2A AgentExtension with its JSON schema."""
+def schema_to_extension(
+    uri: str, schema: type[BaseModel] | dict[str, Any]
+) -> AgentExtension:
+    """Convert a schema to an A2A AgentExtension with its JSON schema.
+
+    *schema* may be either a Pydantic model class (in which case
+    ``model_json_schema()`` is used) or a raw JSON Schema dict.
+    """
+    if isinstance(schema, dict):
+        title = schema.get("title", "<json-schema>")
+        return AgentExtension(
+            uri=uri,
+            description=f"JSON Schema for {title}",
+            params=schema,
+        )
+
     return AgentExtension(
         uri=uri,
-        description=f"JSON Schema for {schema_model.__name__}",
-        params=schema_model.model_json_schema(),
+        description=f"JSON Schema for {schema.__name__}",
+        params=schema.model_json_schema(),
     )
 
 
@@ -50,6 +65,34 @@ def validate_data[T: BaseModel](data: dict[str, Any], schema_model: type[T]) -> 
         return schema_model.model_validate(data)
     except ValidationError as exc:
         raise SchemaValidationError(str(exc)) from exc
+
+
+def validate_json_schema_data(data: dict[str, Any], schema: dict[str, Any]) -> None:
+    """Validate a dict against a raw JSON Schema dict.
+
+    Raises :class:`SchemaValidationError` (with the underlying
+    ``jsonschema.ValidationError`` message) if validation fails.
+    """
+    try:
+        jsonschema.validate(instance=data, schema=schema)
+    except jsonschema.ValidationError as exc:
+        raise SchemaValidationError(exc.message) from exc
+    except jsonschema.SchemaError as exc:
+        raise SchemaValidationError(f"Invalid JSON Schema: {exc.message}") from exc
+
+
+def validate_against_schema(
+    data: dict[str, Any], schema: type[BaseModel] | dict[str, Any]
+) -> None:
+    """Validate *data* against either a Pydantic model or a JSON Schema dict.
+
+    Discards the validated model instance; use :func:`validate_data` directly
+    when you need it.
+    """
+    if isinstance(schema, dict):
+        validate_json_schema_data(data, schema)
+    else:
+        validate_data(data, schema)
 
 
 def _find_data_part_with_marker(message: Message, marker: str) -> DataPart | None:

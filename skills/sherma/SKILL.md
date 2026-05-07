@@ -169,6 +169,22 @@ Required fields: `url` for `streamable_http` / `sse`; `command` for `stdio`. Eac
 
 Every YAML string supports `${VAR}` and `${VAR:-default}` for `UPPERCASE_WITH_UNDERSCORES` names. Use `$$` for a literal `$`. Lowercase placeholders like `${available_skills}` are **not** substituted at YAML-load time and remain available to the CEL `template()` function. Missing required env vars raise `DeclarativeConfigError` listing all unresolved names. Interpolation runs **before** Pydantic validation.
 
+### Agent input/output schema (JSON Schema)
+
+`agents.<name>.input_schema:` and `agents.<name>.output_schema:` accept raw JSON Schema dicts. Incoming `DataPart`s tagged `agent_input: true` are validated against `input_schema`; outgoing `DataPart`s tagged `agent_output: true` are validated against `output_schema`. Both are also published as A2A capability extensions on the agent card. Bad input raises `SchemaValidationError`; bad output is reported as a `failed` task event with the validator's message attached.
+
+```yaml
+agents:
+  reader:
+    output_schema:
+      type: object
+      required: [ticker]
+      properties:
+        ticker: { type: string, pattern: "^[A-Z.]+$" }
+```
+
+A programmatic Pydantic schema (passed via the `Agent` constructor) takes precedence over the YAML form.
+
 ## Quick Reference: Programmatic Agent
 
 Subclass `LangGraphAgent` and implement `get_graph()`:

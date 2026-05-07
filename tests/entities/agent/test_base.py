@@ -173,3 +173,50 @@ async def test_get_card_preserves_existing_capabilities():
     assert result.capabilities.streaming is True
     assert result.capabilities.extensions is not None
     assert len(result.capabilities.extensions) == 1
+
+
+JSON_OUTPUT_SCHEMA: dict = {
+    "title": "Result",
+    "type": "object",
+    "required": ["result"],
+    "properties": {"result": {"type": "string"}},
+}
+
+
+@pytest.mark.asyncio
+async def test_get_card_supports_json_schema_dict_output():
+    """A dict-typed output_schema is published as an A2A extension."""
+    card = _make_card()
+    a = ConcreteAgent(
+        id="json-schema-agent",
+        agent_card=card,
+        output_schema=JSON_OUTPUT_SCHEMA,
+    )
+    result = await a.get_card()
+    assert result is not None
+    assert result.capabilities is not None
+    extensions = result.capabilities.extensions
+    assert extensions is not None
+    output_exts = [ext for ext in extensions if ext.uri == SCHEMA_OUTPUT_URI]
+    assert len(output_exts) == 1
+    assert output_exts[0].params == JSON_OUTPUT_SCHEMA
+
+
+@pytest.mark.asyncio
+async def test_get_card_mixes_pydantic_and_json_schema():
+    """Pydantic-typed input + dict-typed output produce two distinct
+    extensions."""
+    card = _make_card()
+    a = ConcreteAgent(
+        id="mixed-agent",
+        agent_card=card,
+        input_schema=InputModel,
+        output_schema=JSON_OUTPUT_SCHEMA,
+    )
+    result = await a.get_card()
+    assert result is not None
+    extensions = result.capabilities.extensions  # type: ignore[union-attr]
+    assert extensions is not None
+    uris = {ext.uri for ext in extensions}
+    assert SCHEMA_INPUT_URI in uris
+    assert SCHEMA_OUTPUT_URI in uris
