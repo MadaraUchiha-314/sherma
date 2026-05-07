@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,7 @@ from sherma.hooks.manager import HookManager
 from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DeclarativeConfig,
+    MCPServerDef,
 )
 from sherma.langgraph.tools import agent_to_langgraph_tool, from_langgraph_tool
 from sherma.registry.base import RegistryEntry
@@ -57,6 +60,68 @@ class LazyChatModel:
         return "LazyChatModel(pending)"
 
 
+_ENV_VAR_PATTERN = re.compile(
+    r"\$(?P<escape>\$)|\$\{(?P<name>[A-Z_][A-Z0-9_]*)(?::-(?P<default>[^}]*))?\}"
+)
+
+
+def _interpolate_env_vars(
+    data: Any,
+    *,
+    environ: dict[str, str] | None = None,
+) -> Any:
+    """Recursively substitute ``${VAR}`` / ``${VAR:-default}`` in strings.
+
+    Only ``UPPERCASE_WITH_UNDERSCORES`` names are treated as environment
+    variables; lowercase placeholders (e.g. ``${available_skills}``) are
+    left untouched so they remain available to the CEL ``template()``
+    function at runtime.
+
+    A literal ``$`` can be written as ``$$``. Missing variables without a
+    default are collected and reported as a single
+    :class:`DeclarativeConfigError`.
+
+    Non-string scalars and the structure of dicts/lists are preserved
+    verbatim.
+    """
+    env = os.environ if environ is None else environ
+    missing: list[str] = []
+
+    def _sub(value: str) -> str:
+        def _replace(m: re.Match[str]) -> str:
+            if m.group("escape"):
+                return "$"
+            name = m.group("name")
+            assert name is not None
+            default = m.group("default")
+            if name in env:
+                return env[name]
+            if default is not None:
+                return default
+            missing.append(name)
+            return ""
+
+        return _ENV_VAR_PATTERN.sub(_replace, value)
+
+    def _walk(node: Any) -> Any:
+        if isinstance(node, str):
+            return _sub(node)
+        if isinstance(node, dict):
+            return {k: _walk(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_walk(v) for v in node]
+        return node
+
+    result = _walk(data)
+    if missing:
+        unique = sorted(dict.fromkeys(missing))
+        raise DeclarativeConfigError(
+            "Unresolved environment variable(s) in YAML: "
+            + ", ".join(f"${{{n}}}" for n in unique)
+        )
+    return result
+
+
 def load_declarative_config(
     yaml_path: str | Path | None = None,
     yaml_content: str | None = None,
@@ -64,6 +129,9 @@ def load_declarative_config(
     """Load and validate a declarative config from YAML.
 
     Provide either yaml_path or yaml_content, not both.
+
+    String values support ``${VAR}`` and ``${VAR:-default}`` substitution
+    from the process environment. Use ``$$`` to write a literal ``$``.
     """
     if yaml_path is not None and yaml_content is not None:
         raise DeclarativeConfigError(
@@ -87,6 +155,8 @@ def load_declarative_config(
 
     if not isinstance(data, dict):
         raise DeclarativeConfigError("YAML root must be a mapping")
+
+    data = _interpolate_env_vars(data)
 
     return _parse_config(data)
 
@@ -268,6 +338,69 @@ def create_chat_model(
     """
     kwargs = _build_chat_model_kwargs(provider, model_name, http_async_client)
     return _construct_chat_model(provider, kwargs)
+
+
+def _build_mcp_connection(server: MCPServerDef) -> dict[str, Any]:
+    """Build a langchain-mcp-adapters connection dict for one MCP server."""
+    if server.transport == "stdio":
+        conn: dict[str, Any] = {
+            "transport": "stdio",
+            "command": server.command,
+            "args": list(server.args),
+        }
+        if server.env:
+            conn["env"] = dict(server.env)
+        return conn
+
+    conn = {"transport": server.transport, "url": server.url}
+    if server.headers:
+        conn["headers"] = dict(server.headers)
+    return conn
+
+
+async def _register_mcp_servers(
+    servers: list[MCPServerDef],
+    registries: RegistryBundle,
+    tenant_id: str,
+) -> None:
+    """Connect to declared MCP servers and register their tools."""
+    if not servers:
+        return
+
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+    except ImportError as exc:  # pragma: no cover - dependency is required
+        raise DeclarativeConfigError(
+            "langchain-mcp-adapters is required for 'mcp_servers'. "
+            "Install with: uv add langchain-mcp-adapters"
+        ) from exc
+
+    connections = {s.id: _build_mcp_connection(s) for s in servers}
+    client = MultiServerMCPClient(connections)  # type: ignore[arg-type]
+
+    for server in servers:
+        try:
+            mcp_tools = await client.get_tools(server_name=server.id)
+        except Exception as exc:
+            raise DeclarativeConfigError(
+                f"Failed to load tools from MCP server '{server.id}': {exc}"
+            ) from exc
+
+        for lg_tool in mcp_tools:
+            if server.tool_prefix:
+                lg_tool.name = f"{server.tool_prefix}{lg_tool.name}"
+            sherma_tool = from_langgraph_tool(lg_tool)
+            sherma_tool.id = lg_tool.name
+            sherma_tool.version = server.version
+            sherma_tool.tenant_id = tenant_id
+            await registries.tool_registry.add(
+                RegistryEntry(
+                    id=sherma_tool.id,
+                    version=server.version,
+                    tenant_id=tenant_id,
+                    instance=sherma_tool,
+                )
+            )
 
 
 async def populate_registries(
@@ -489,6 +622,9 @@ async def populate_registries(
                                 instance=sherma_tool,
                             )
                         )
+
+    # Connect to MCP servers and register their tools
+    await _register_mcp_servers(config.mcp_servers, registries, tenant_id)
 
     # Auto-import tools declared with import_path
     for tool_def in config.tools:

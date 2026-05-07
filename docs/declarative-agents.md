@@ -13,6 +13,7 @@ llms:         # LLM declarations
 tools:        # Tool imports
 skills:       # Skill card references
 sub_agents:   # Sub-agent declarations (for multi-agent orchestration)
+mcp_servers:  # MCP server declarations (tools auto-registered)
 hooks:        # Hook executor imports
 checkpointer: # Checkpointer configuration (for state persistence)
 default_llm:  # Default LLM for call_llm nodes (optional)
@@ -30,6 +31,44 @@ manifest_version: 1
 ```
 
 All entity registrations and the graph definition live in one file, giving you a complete snapshot of the agent.
+
+### Environment-variable interpolation
+
+Every string value in the YAML supports environment-variable
+substitution. This lets you keep secrets and per-environment values
+(URLs, tokens, model names) out of source control without templating
+the YAML yourself.
+
+| Syntax | Behaviour |
+| --- | --- |
+| `${VAR}` | Replaced with `os.environ["VAR"]` |
+| `${VAR:-default}` | Replaced with `default` if `VAR` is unset |
+| `$$` | Literal `$` — not processed as a substitution |
+
+Only `UPPERCASE_WITH_UNDERSCORES` names are treated as environment
+variables. Lowercase placeholders such as `${available_skills}` are
+**not** substituted at YAML-load time and remain available to the CEL
+`template()` function at runtime.
+
+Missing required variables (no default) raise
+`DeclarativeConfigError` with all unresolved names listed.
+Substitution happens **before** Pydantic validation, so the
+substituted values are validated like any other YAML input.
+
+```yaml
+llms:
+  - id: openai
+    version: "1.0.0"
+    provider: openai
+    model_name: ${OPENAI_MODEL:-gpt-4o-mini}
+
+mcp_servers:
+  - id: factset
+    transport: streamable_http
+    url: ${FACTSET_MCP_URL}
+    headers:
+      Authorization: "Bearer ${FACTSET_TOKEN}"
+```
 
 ## Entity Declarations
 
@@ -134,6 +173,81 @@ sub_agents:
     version: "1.0.0"
     # No source -- expects the agent to already be in the registry
 ```
+
+### MCP Servers
+
+Declare [Model Context Protocol](https://modelcontextprotocol.io)
+servers in YAML; sherma connects, lists each server's tools, and
+registers them in the tool registry. The tools are then usable from
+`call_llm` nodes via the standard tool-binding mechanisms (`tools:`
+list, `use_tools_from_registry: true`).
+
+```yaml
+mcp_servers:
+  # HTTP / streamable-HTTP server
+  - id: factset
+    version: "1.0.0"
+    transport: streamable_http               # or "sse"
+    url: ${FACTSET_MCP_URL}
+    headers:
+      Authorization: "Bearer ${FACTSET_TOKEN}"
+    tool_prefix: "factset__"                  # optional, namespaces registered tool ids
+
+  # Local stdio server
+  - id: filesystem
+    version: "1.0.0"
+    transport: stdio
+    command: uvx
+    args: ["mcp-server-filesystem", "--root", "."]
+    env:
+      LOG_LEVEL: info
+```
+
+| Field | Required for | Description |
+| --- | --- | --- |
+| `id` | All | Server identifier (used by `tool_prefix` and error messages). |
+| `version` | All | Used as the `version` of every registered tool from this server. |
+| `transport` | All | `streamable_http` (default), `sse`, or `stdio`. |
+| `url` | HTTP / SSE | Server URL. May contain `${VAR}` substitutions. |
+| `headers` | HTTP / SSE | Optional request headers. |
+| `command` | stdio | Executable to launch. |
+| `args` | stdio | Arguments to pass to `command`. |
+| `env` | stdio | Extra environment variables for the spawned process. |
+| `tool_prefix` | optional | Prefix prepended to every registered tool's id. |
+
+**Tool registration**: each tool returned by the MCP server is wrapped
+as a sherma `Tool` whose `id` equals `<tool_prefix><tool_name>` and
+whose version equals the server's `version`. Use `tool_prefix` when
+two MCP servers expose tools with the same name, or when you want a
+single binding mode (`use_tools_from_registry: true`) to coexist with
+non-MCP tools whose names you control.
+
+```yaml
+agents:
+  earnings-reviewer:
+    state:
+      fields:
+        - { name: messages, type: list, default: [] }
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - { role: system, content: 'prompts["er"]["instructions"]' }
+              - { role: messages, content: 'state.messages' }
+            use_tools_from_registry: true   # picks up MCP tools too
+            state_updates: { messages: '[llm_response]' }
+      edges:
+        - { source: agent, target: __end__ }
+```
+
+> **Note**: the `MCPServerDef` used here lives in
+> `sherma.langgraph.declarative.schema` and is distinct from the
+> identically named `MCPServerDef` in
+> `sherma.entities.skill_card`, which models MCP servers embedded in
+> a skill card.
 
 ### Checkpointer
 

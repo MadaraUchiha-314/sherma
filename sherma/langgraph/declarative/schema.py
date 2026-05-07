@@ -386,6 +386,57 @@ class CheckpointerDef(BaseModel):
     type: Literal["memory"] = "memory"
 
 
+class MCPServerDef(BaseModel):
+    """An MCP (Model Context Protocol) server declaration in the YAML.
+
+    Tools exposed by the server are listed at config-load time and
+    registered into the tool registry, making them usable from
+    ``call_llm`` nodes via ``tools:`` or
+    ``use_tools_from_registry: true``.
+
+    For HTTP-based transports (``streamable_http``, ``sse``), set
+    ``url`` (and optionally ``headers``). For ``stdio``, set ``command``
+    (and optionally ``args`` / ``env``). Set ``tool_prefix`` to namespace
+    the registered tools and avoid collisions across servers.
+    """
+
+    id: str
+    version: str = "*"
+    transport: Literal["streamable_http", "sse", "stdio"] = "streamable_http"
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    tool_prefix: str | None = None
+
+    @model_validator(mode="after")
+    def _check_transport_fields(self) -> Self:
+        if self.transport in ("streamable_http", "sse"):
+            if not self.url:
+                raise ValueError(
+                    f"MCPServerDef '{self.id}' with transport "
+                    f"'{self.transport}' requires 'url'"
+                )
+            if self.command:
+                raise ValueError(
+                    f"MCPServerDef '{self.id}' with transport "
+                    f"'{self.transport}' must not set 'command'"
+                )
+        else:  # stdio
+            if not self.command:
+                raise ValueError(
+                    f"MCPServerDef '{self.id}' with transport 'stdio' "
+                    f"requires 'command'"
+                )
+            if self.url:
+                raise ValueError(
+                    f"MCPServerDef '{self.id}' with transport 'stdio' "
+                    f"must not set 'url'"
+                )
+        return self
+
+
 class DeclarativeConfig(BaseModel):
     """Top-level declarative configuration parsed from YAML."""
 
@@ -397,5 +448,6 @@ class DeclarativeConfig(BaseModel):
     skills: list[SkillDef] = Field(default_factory=list)
     hooks: list[HookDef] = Field(default_factory=list)
     sub_agents: list[SubAgentDef] = Field(default_factory=list)
+    mcp_servers: list[MCPServerDef] = Field(default_factory=list)
     default_llm: RegistryRef | None = None
     checkpointer: CheckpointerDef | None = None
