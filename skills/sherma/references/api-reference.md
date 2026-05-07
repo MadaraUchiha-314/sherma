@@ -116,13 +116,19 @@ Abstract base class for all agents.
 ```python
 class Agent(EntityBase, ABC):
     agent_card: AgentCard | None = None
-    input_schema: type[BaseModel] | None = None
-    output_schema: type[BaseModel] | None = None
+    input_schema: type[BaseModel] | dict[str, Any] | None = None
+    output_schema: type[BaseModel] | dict[str, Any] | None = None
 
     def send_message(self, request: Message, ...) -> AsyncIterator[UpdateEvent | Message | Task]
     async def cancel_task(self, request: TaskIdParams, ...) -> Task
     async def get_card(self) -> AgentCard | None
 ```
+
+`input_schema` and `output_schema` accept either a Pydantic model
+class or a raw JSON Schema dict. Validation utilities and the A2A
+executor dispatch on the value's type, so both forms are treated
+identically. Declarative agents populate these from the YAML's
+`AgentDef.input_schema` / `AgentDef.output_schema` blocks.
 
 ### `LocalAgent`
 
@@ -487,7 +493,9 @@ SCHEMA_OUTPUT_URI = "urn:sherma:schema:output"
 
 ```python
 def validate_data(data: dict, schema_model: type[BaseModel]) -> BaseModel
-def schema_to_extension(uri: str, schema_model: type[BaseModel]) -> AgentExtension
+def validate_json_schema_data(data: dict, schema: dict) -> None
+def validate_against_schema(data: dict, schema: type[BaseModel] | dict) -> None
+def schema_to_extension(uri: str, schema: type[BaseModel] | dict) -> AgentExtension
 def make_schema_data_part(data: dict, schema_uri: str, *, extra_metadata=None) -> Part
 
 def create_agent_input_as_message_part(data, schema_uri, *, role=Role.user, ...) -> Message

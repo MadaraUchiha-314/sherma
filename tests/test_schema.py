@@ -16,7 +16,9 @@ from sherma.schema import (
     get_agent_output_from_message_part,
     make_schema_data_part,
     schema_to_extension,
+    validate_against_schema,
     validate_data,
+    validate_json_schema_data,
 )
 
 
@@ -80,6 +82,70 @@ def test_validate_data_failure():
 def test_validate_data_missing_field():
     with pytest.raises(SchemaValidationError):
         validate_data({"name": "test"}, SampleInput)
+
+
+SAMPLE_JSON_SCHEMA: dict = {
+    "title": "EarningsActuals",
+    "type": "object",
+    "required": ["ticker", "actuals"],
+    "additionalProperties": False,
+    "properties": {
+        "ticker": {"type": "string", "pattern": "^[A-Z.]+$"},
+        "actuals": {
+            "type": "object",
+            "additionalProperties": {"type": "number"},
+        },
+    },
+}
+
+
+def test_validate_json_schema_data_success():
+    validate_json_schema_data(
+        {"ticker": "AAPL", "actuals": {"revenue": 100.0}},
+        SAMPLE_JSON_SCHEMA,
+    )
+
+
+def test_validate_json_schema_data_failure_pattern():
+    with pytest.raises(SchemaValidationError):
+        validate_json_schema_data(
+            {"ticker": "lowercase", "actuals": {}},
+            SAMPLE_JSON_SCHEMA,
+        )
+
+
+def test_validate_json_schema_data_failure_extra_property():
+    with pytest.raises(SchemaValidationError):
+        validate_json_schema_data(
+            {"ticker": "AAPL", "actuals": {}, "extra": "nope"},
+            SAMPLE_JSON_SCHEMA,
+        )
+
+
+def test_validate_json_schema_data_invalid_schema_raises():
+    bad_schema = {"type": "not-a-real-type"}
+    with pytest.raises(SchemaValidationError, match="Invalid JSON Schema"):
+        validate_json_schema_data({"any": "data"}, bad_schema)
+
+
+def test_schema_to_extension_accepts_json_schema_dict():
+    ext = schema_to_extension(SCHEMA_OUTPUT_URI, SAMPLE_JSON_SCHEMA)
+    assert isinstance(ext, AgentExtension)
+    assert ext.uri == SCHEMA_OUTPUT_URI
+    assert ext.params == SAMPLE_JSON_SCHEMA
+    assert "EarningsActuals" in (ext.description or "")
+
+
+def test_validate_against_schema_dispatches():
+    # Pydantic path
+    validate_against_schema({"name": "x", "value": 1}, SampleInput)
+    with pytest.raises(SchemaValidationError):
+        validate_against_schema({"name": "x"}, SampleInput)
+
+    # JSON Schema path
+    validate_against_schema({"ticker": "AAPL", "actuals": {}}, SAMPLE_JSON_SCHEMA)
+    with pytest.raises(SchemaValidationError):
+        validate_against_schema({"ticker": "bad"}, SAMPLE_JSON_SCHEMA)
 
 
 def _make_message(*parts: Part, role: Role = Role.user) -> Message:

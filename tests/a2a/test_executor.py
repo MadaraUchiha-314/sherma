@@ -20,6 +20,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
     TextPart,
 )
+from pydantic import Field
 
 from sherma.a2a.executor import ShermaAgentExecutor
 from sherma.entities.agent.base import Agent
@@ -406,3 +407,164 @@ async def test_executor_execute_null_update_event():
 
     with pytest.raises(asyncio.QueueEmpty):
         await event_queue.dequeue_event(no_wait=True)
+
+
+# --- JSON Schema validation in the executor ----------------------------
+
+
+JSON_INPUT_SCHEMA: dict = {
+    "title": "Input",
+    "type": "object",
+    "required": ["name"],
+    "properties": {"name": {"type": "string"}},
+    "additionalProperties": False,
+}
+
+JSON_OUTPUT_SCHEMA: dict = {
+    "title": "Output",
+    "type": "object",
+    "required": ["result"],
+    "properties": {"result": {"type": "string"}},
+    "additionalProperties": False,
+}
+
+
+class StructuredOutputAgent(Agent):
+    """Agent that emits a single agent_output DataPart."""
+
+    output_payload: dict[str, Any] = Field(default_factory=lambda: {"result": "ok"})
+
+    async def send_message(
+        self,
+        request: Message,
+        *,
+        context: ClientCallContext | None = None,
+        request_metadata: dict[str, Any] | None = None,
+        extensions: list[str] | None = None,
+    ) -> AsyncIterator[UpdateEvent | Message | Task]:
+        from a2a.types import DataPart
+
+        yield Message(
+            message_id="resp-out",
+            parts=[
+                Part(
+                    root=DataPart(
+                        data=self.output_payload,
+                        metadata={"agent_output": True},
+                    )
+                )
+            ],
+            role=Role.agent,
+        )
+
+    async def cancel_task(
+        self,
+        request: TaskIdParams,
+        *,
+        context: ClientCallContext | None = None,
+        extensions: list[str] | None = None,
+    ) -> Task:
+        return Task(
+            id=request.id,
+            context_id="ctx-out",
+            status=TaskStatus(state=TaskState.canceled),
+        )
+
+
+@pytest.mark.asyncio
+async def test_executor_validates_input_against_json_schema_dict():
+    from a2a.types import DataPart
+
+    from sherma.exceptions import SchemaValidationError
+
+    agent = EchoAgent(id="json-input", input_schema=JSON_INPUT_SCHEMA)
+    executor = ShermaAgentExecutor(agent)
+
+    bad = Message(
+        message_id="m-bad",
+        parts=[
+            Part(
+                root=DataPart(
+                    data={"name": 42},  # wrong type
+                    metadata={"agent_input": True},
+                )
+            )
+        ],
+        role=Role.user,
+    )
+    request = MessageSendParams(message=bad)
+    context = RequestContext(request=request, task_id="t-bad")
+    event_queue = EventQueue()
+
+    with pytest.raises(SchemaValidationError):
+        await executor.execute(context, event_queue)
+
+
+@pytest.mark.asyncio
+async def test_executor_validates_output_against_json_schema_dict():
+    """Output that violates the JSON Schema is reported as a failed task."""
+    agent = StructuredOutputAgent(
+        id="json-output",
+        output_schema=JSON_OUTPUT_SCHEMA,
+        output_payload={"result": 123},  # wrong type
+    )
+    executor = ShermaAgentExecutor(agent)
+
+    message = _make_message("hello")
+    request = MessageSendParams(message=message)
+    context = RequestContext(request=request, task_id="t-out")
+    event_queue = EventQueue()
+
+    await executor.execute(context, event_queue)
+
+    import asyncio
+
+    events: list[Any] = []
+    while True:
+        try:
+            events.append(await event_queue.dequeue_event(no_wait=True))
+        except asyncio.QueueEmpty:
+            break
+    failed = [
+        e
+        for e in events
+        if isinstance(e, TaskStatusUpdateEvent) and e.status.state == TaskState.failed
+    ]
+    assert len(failed) == 1
+    assert failed[0].status.message is not None
+    text_parts = [
+        p.root.text  # type: ignore[union-attr]
+        for p in failed[0].status.message.parts
+        if hasattr(p.root, "text")
+    ]
+    assert any("not of type 'string'" in t for t in text_parts)
+
+
+@pytest.mark.asyncio
+async def test_executor_passes_valid_json_schema_output():
+    agent = StructuredOutputAgent(
+        id="json-output-valid",
+        output_schema=JSON_OUTPUT_SCHEMA,
+        output_payload={"result": "all good"},
+    )
+    executor = ShermaAgentExecutor(agent)
+
+    message = _make_message("hello")
+    request = MessageSendParams(message=message)
+    context = RequestContext(request=request, task_id="t-ok")
+    event_queue = EventQueue()
+
+    await executor.execute(context, event_queue)
+    # Drain the queue: at least one working + completed event
+    import asyncio
+
+    events: list[Any] = []
+    while True:
+        try:
+            events.append(await event_queue.dequeue_event(no_wait=True))
+        except asyncio.QueueEmpty:
+            break
+    assert any(
+        isinstance(e, TaskStatusUpdateEvent) and e.status.state == TaskState.completed
+        for e in events
+    )

@@ -356,6 +356,71 @@ If a field named `messages` is present (type `list`), sherma uses LangGraph's `M
 
 State fields are accessed in CEL expressions via the `state` prefix: `state.messages`, `state["counter"]`, etc.
 
+### Input / Output Schema (JSON Schema)
+
+`input_schema` and `output_schema` declare the structured-data contract
+for the agent at the A2A boundary. They accept a raw JSON Schema dict
+and are validated at runtime — incoming `DataPart`s tagged
+`agent_input: true` are validated against `input_schema`, and outgoing
+`DataPart`s tagged `agent_output: true` are validated against
+`output_schema`. Both schemas are also surfaced as A2A capability
+extensions on the agent card (`urn:sherma:schema:input` /
+`urn:sherma:schema:output`).
+
+```yaml
+agents:
+  earnings-transcript-reader:
+    state:
+      fields:
+        - { name: messages, type: list, default: [] }
+
+    input_schema:
+      title: TranscriptReaderInput
+      type: object
+      required: [ticker]
+      properties:
+        ticker:
+          type: string
+          pattern: "^[A-Z.]+$"
+
+    output_schema:
+      title: EarningsActuals
+      type: object
+      required: [ticker, period, actuals]
+      additionalProperties: false
+      properties:
+        ticker: { type: string, pattern: "^[A-Z.]+$" }
+        period: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        actuals:
+          type: object
+          additionalProperties: { type: number }
+
+    graph:
+      entry_point: agent
+      nodes:
+        - name: agent
+          type: call_llm
+          args:
+            prompt:
+              - { role: system, content: '"You produce structured earnings actuals."' }
+              - { role: messages, content: 'state.messages' }
+            state_updates: { messages: '[llm_response]' }
+      edges:
+        - { source: agent, target: __end__ }
+```
+
+Schema mismatches raise `SchemaValidationError`. For input, the error
+propagates out of the A2A executor; for output, the executor reports
+the failure as a `failed` task event with the validator's message
+attached (consistent with how other in-execution exceptions are
+surfaced).
+
+> **Compatibility**: programmatically constructed `Agent` instances may
+> still pass a Pydantic model class instead of a dict — both forms are
+> validated identically. A YAML `output_schema` is only applied if no
+> programmatic `output_schema` was already supplied to the agent
+> constructor.
+
 ## Node Types
 
 ### `call_llm`

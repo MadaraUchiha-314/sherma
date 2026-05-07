@@ -93,6 +93,65 @@ async def test_declarative_agent_data_transform():
     assert result["count"] == 1
 
 
+YAML_WITH_OUTPUT_SCHEMA = """\
+manifest_version: 1
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: result
+          type: str
+          default: ""
+    output_schema:
+      title: Report
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+    graph:
+      entry_point: setter
+      nodes:
+        - name: setter
+          type: set_state
+          args:
+            values:
+              result: '"done"'
+      edges: []
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_wires_yaml_output_schema_onto_agent():
+    """YAML ``output_schema`` is copied onto the agent so the A2A executor
+    validates outgoing DataParts against it."""
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=YAML_WITH_OUTPUT_SCHEMA,
+    )
+    # Force the lazy build that wires YAML schemas onto the agent
+    await agent.get_graph()
+    assert isinstance(agent.output_schema, dict)
+    assert agent.output_schema["required"] == ["result"]
+    # Programmatic Pydantic schema, if set, should not be overwritten on a
+    # second build.
+    from pydantic import BaseModel
+
+    class Other(BaseModel):
+        result: str
+
+    fresh = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=YAML_WITH_OUTPUT_SCHEMA,
+        output_schema=Other,
+    )
+    await fresh.get_graph()
+    assert fresh.output_schema is Other
+
+
 START_EDGE_STATIC_YAML = """\
 manifest_version: 1
 

@@ -18,11 +18,17 @@ from sherma.schema import SCHEMA_INPUT_URI, SCHEMA_OUTPUT_URI, schema_to_extensi
 
 
 class Agent(EntityBase, ABC):
-    """Abstract base class for all agents."""
+    """Abstract base class for all agents.
+
+    ``input_schema`` and ``output_schema`` may be either a Pydantic
+    model class or a raw JSON Schema dict. Validation utilities and
+    A2A integration dispatch on the value's type, so both forms are
+    treated identically downstream.
+    """
 
     agent_card: AgentCard | None = None
-    input_schema: type[BaseModel] | None = None
-    output_schema: type[BaseModel] | None = None
+    input_schema: type[BaseModel] | dict[str, Any] | None = None
+    output_schema: type[BaseModel] | dict[str, Any] | None = None
 
     @abstractmethod
     def send_message(
