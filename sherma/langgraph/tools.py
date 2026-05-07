@@ -60,7 +60,8 @@ def agent_to_langgraph_tool(agent: Agent) -> BaseTool:
     # structured field on the LangGraph tool's args_schema.
     input_schema: type[BaseModel] | None = (
         raw_input_schema
-        if isinstance(raw_input_schema, type) and issubclass(raw_input_schema, BaseModel)
+        if isinstance(raw_input_schema, type)
+        and issubclass(raw_input_schema, BaseModel)
         else None
     )
 
