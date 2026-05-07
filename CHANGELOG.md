@@ -1,3 +1,9 @@
+## v1.4.0 (2026-05-07)
+
+### Feat
+
+- add mcp_servers and env-var interpolation to declarative YAML (#75)
+
 ## v1.3.0 (2026-04-08)
 
 ### Feat
