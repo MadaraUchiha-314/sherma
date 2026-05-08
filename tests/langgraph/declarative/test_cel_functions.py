@@ -706,3 +706,58 @@ class TestIntegration:
             {"messages": messages},
         )
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Tier 5: slice()
+# ---------------------------------------------------------------------------
+
+
+class TestSlice:
+    def test_basic(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("[1, 2, 3, 4, 5].slice(1, 3)", {})
+        assert result == [2, 3]
+
+    def test_from_start(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("[1, 2, 3, 4, 5].slice(0, 3)", {})
+        assert result == [1, 2, 3]
+
+    def test_to_end(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            "state.items.slice(2, size(state.items))",
+            {"items": [10, 20, 30, 40, 50]},
+        )
+        assert result == [30, 40, 50]
+
+    def test_empty_result(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate("[1, 2, 3].slice(2, 2)", {})
+        assert result == []
+
+    def test_full_list(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            "state.items.slice(0, size(state.items))",
+            {"items": ["a", "b", "c"]},
+        )
+        assert result == ["a", "b", "c"]
+
+    def test_with_state_indices(self) -> None:
+        cel = CelEngine()
+        result = cel.evaluate(
+            "state.messages.slice(state.cursor, size(state.messages))",
+            {"messages": ["m0", "m1", "m2", "m3", "m4"], "cursor": 3},
+        )
+        assert result == ["m3", "m4"]
+
+    def test_keep_last_n(self) -> None:
+        """Simulate keeping last N messages: slice(size - N, size)."""
+        cel = CelEngine()
+        result = cel.evaluate(
+            "state.msgs.slice(size(state.msgs) - 2, size(state.msgs))",
+            {"msgs": ["a", "b", "c", "d", "e"]},
+        )
+        assert result == ["d", "e"]
