@@ -267,6 +267,53 @@ class RemoteHookExecutor(BaseHookExecutor):
 
 The `on_chat_model_create` hook is a no-op (cannot return Python objects over JSON-RPC). On any network or protocol error, logs a warning and passes through.
 
+### `MCPHookTransport`
+
+Connection parameters for an MCP hook server. Provide exactly one of `command` (stdio) or `url` (HTTP).
+
+```python
+@dataclass
+class MCPHookTransport:
+    command: str | None = None
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    url: str | None = None
+    transport: Literal["streamable_http", "sse"] = "streamable_http"
+    headers: dict[str, str] = field(default_factory=dict)
+```
+
+### `MCPHookExecutor`
+
+Hook executor that delegates to an MCP server. Each hook is invoked as an MCP tool named `hooks.<hook_name>`. Implements the `HookExecutor` protocol.
+
+```python
+class MCPHookExecutor(BaseHookExecutor):
+    def __init__(self, transport: MCPHookTransport) -> None
+    async def connect(self) -> None          # open connection + discover hook tools
+    async def close(self) -> None            # close connection (idempotent)
+    @property
+    def available_hooks(self) -> set[str]    # hook names discovered on the server
+```
+
+Call `connect()` before use and `close()` when done. The `on_chat_model_create` hook is a no-op. On any error, logs a warning and passes through. Hooks not registered on the server are skipped without any IPC.
+
+### `MCPHookServer`
+
+Wraps a `HookHandler` as an MCP server. Only overridden hook methods are exposed as MCP tools named `hooks.<hook_name>`.
+
+```python
+class MCPHookServer:
+    def __init__(self, handler: HookHandler, name: str = "sherma-hooks",
+                 instructions: str | None = None) -> None
+    @property
+    def server(self) -> FastMCP             # underlying FastMCP instance
+    @property
+    def registered_hooks(self) -> set[str]  # hooks exposed as tools
+    def run_stdio(self) -> None
+    def run_streamable_http(self, mount_path: str | None = None) -> None
+    def run_sse(self, mount_path: str | None = None) -> None
+```
+
 ### `HookHandler`
 
 Base class for implementing remote hook servers. The remote equivalent of `BaseHookExecutor` -- works with plain dicts instead of dataclasses.

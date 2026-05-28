@@ -145,11 +145,25 @@ See [Skills](skills.md) for details on skill cards and progressive disclosure.
 
 ```yaml
 hooks:
+  # Local Python hook executor
   - import_path: my_package.hooks.LoggingHook
   - import_path: my_package.hooks.GuardrailHook
+
+  # Remote hook over JSON-RPC (HTTP)
+  - url: http://localhost:8000/hooks
+
+  # Remote hook over MCP (stdio)
+  - mcp:
+      command: python
+      args: ["-m", "my_package.mcp_hook_server"]
+
+  # Remote hook over MCP (HTTP)
+  - mcp:
+      url: http://localhost:9000/mcp
+      transport: streamable_http   # or "sse"
 ```
 
-Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md).
+Each `hooks` entry must set exactly one of `import_path`, `url`, or `mcp`. Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md).
 
 ### Sub-Agents
 

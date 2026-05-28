@@ -1336,7 +1336,8 @@ async def test_no_hook_manager_default_behavior():
 # ---------------------------------------------------------------------------
 
 
-def test_populate_hooks_with_url():
+@pytest.mark.asyncio
+async def test_populate_hooks_with_url():
     """populate_hooks creates a RemoteHookExecutor for url-based hooks."""
     yaml_content = """\
 manifest_version: 1
@@ -1360,14 +1361,16 @@ agents:
 """
     config = load_declarative_config(yaml_content=yaml_content)
     hook_manager = HookManager()
-    populate_hooks(config, hook_manager)
+    mcp_executors = await populate_hooks(config, hook_manager)
 
+    assert mcp_executors == []
     assert len(hook_manager._executors) == 1
     assert isinstance(hook_manager._executors[0], RemoteHookExecutor)
     assert hook_manager._executors[0]._url == "http://localhost:8080/hooks"
 
 
-def test_populate_hooks_mixed():
+@pytest.mark.asyncio
+async def test_populate_hooks_mixed():
     """populate_hooks handles a mix of url and import_path hooks."""
     yaml_content = """\
 manifest_version: 1
@@ -1392,8 +1395,9 @@ agents:
 """
     config = load_declarative_config(yaml_content=yaml_content)
     hook_manager = HookManager()
-    populate_hooks(config, hook_manager)
+    mcp_executors = await populate_hooks(config, hook_manager)
 
+    assert mcp_executors == []
     assert len(hook_manager._executors) == 2
     assert isinstance(hook_manager._executors[0], RemoteHookExecutor)
     from sherma.hooks.executor import BaseHookExecutor

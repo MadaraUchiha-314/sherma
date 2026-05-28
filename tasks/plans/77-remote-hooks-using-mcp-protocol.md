@@ -329,4 +329,17 @@ This is out of scope for this task but worth noting as a future enhancement.
 
 ## Plan Revisions
 
-(None yet)
+### 2026-05-28: Open questions resolved (from issue #77 comment)
+
+1. **MCP tool prefix:** Use a `hooks` namespace prefix. The user requested `hooks/before_llm_call`, but the MCP spec restricts tool names to `[A-Za-z0-9_.-]+`, so `/` is not valid. Using `.` as the separator instead: `hooks.before_llm_call`. Same namespacing semantics.
+2. **MCP notifications:** Not supported. Hooks are always request/response. `MCPHookServer` does not expose notification-based variants.
+3. **Auto-detection:** Tools must use the `hooks.` prefix to be considered hook tools. No auto-detection by name alone.
+
+Open Questions section can now be considered resolved.
+
+### 2026-05-28: Implementation refinements
+
+- Adopted **FastMCP** (from the `mcp` Python SDK) instead of the lower-level `Server` class — `FastMCP` is built into the existing dependency and simplifies tool registration plus offers stdio / sse / streamable-http transports out of the box.
+- `MCPHookExecutor` accepts `MCPHookTransport` config (stdio command or HTTP URL) and manages connection lifecycle internally via `AsyncExitStack`. The client opens a `ClientSession`, performs `initialize`, then calls `list_tools` to populate the available-hook set.
+- `MCPHookServer` builds a `FastMCP` instance, inspects which `HookHandler` methods have been overridden (by comparing function references against the base class), and registers each as a tool named `hooks.<hook_name>`.
+- Per-hook errors on the client side log a warning and return `None` (pass-through) — same resilience model as `RemoteHookExecutor`.

@@ -345,22 +345,59 @@ class SkillDef(BaseModel):
     skill_card_path: str | None = None
 
 
+class MCPHookDef(BaseModel):
+    """Connection parameters for an MCP-based hook server.
+
+    Provide exactly one of ``command`` (for stdio) or ``url`` (for an
+    HTTP transport).  When ``url`` is set, ``transport`` selects
+    between ``streamable_http`` (default) and ``sse``.
+
+    Tool name convention: the server exposes one tool per supported
+    hook as ``hooks.<hook_name>`` (e.g. ``hooks.before_llm_call``).
+    """
+
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = None
+    transport: Literal["streamable_http", "sse"] = "streamable_http"
+    headers: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_one_transport(self) -> Self:
+        if bool(self.command) == bool(self.url):
+            raise ValueError("MCPHookDef requires exactly one of 'command' or 'url'")
+        return self
+
+
 class HookDef(BaseModel):
     """A hook executor declaration in the YAML.
 
-    Provide either ``import_path`` for a local Python hook executor
-    or ``url`` for a remote JSON-RPC 2.0 hook server.
+    Provide exactly one of:
+
+    * ``import_path`` for a local Python hook executor;
+    * ``url`` for a remote JSON-RPC 2.0 hook server;
+    * ``mcp`` for an MCP-based hook server.
     """
 
     import_path: str | None = None
     url: str | None = None
+    mcp: MCPHookDef | None = None
 
     @model_validator(mode="after")
     def _check_one_source(self) -> Self:
-        if not self.import_path and not self.url:
-            raise ValueError("HookDef requires either 'import_path' or 'url'")
-        if self.import_path and self.url:
-            raise ValueError("HookDef cannot have both 'import_path' and 'url'")
+        sources = [
+            self.import_path is not None,
+            self.url is not None,
+            self.mcp is not None,
+        ]
+        count = sum(sources)
+        if count == 0:
+            raise ValueError("HookDef requires one of 'import_path', 'url', or 'mcp'")
+        if count > 1:
+            raise ValueError(
+                "HookDef can only have one of 'import_path', 'url', or 'mcp'"
+            )
         return self
 
 

@@ -911,12 +911,42 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
         )
 
 
-def populate_hooks(
+async def populate_hooks(
     config: DeclarativeConfig,
     hook_manager: HookManager,
-) -> None:
-    """Import and register hook executors declared in the YAML config."""
+) -> list[Any]:
+    """Import and register hook executors declared in the YAML config.
+
+    Returns the list of MCP-based hook executors that were connected
+    (in registration order) so the caller can close their connections
+    during shutdown.  Local and JSON-RPC hooks do not require explicit
+    teardown and are not returned.
+    """
+    mcp_executors: list[Any] = []
+
     for hook_def in config.hooks:
+        if hook_def.mcp is not None:
+            from sherma.hooks.mcp_executor import MCPHookExecutor, MCPHookTransport
+
+            transport = MCPHookTransport(
+                command=hook_def.mcp.command,
+                args=list(hook_def.mcp.args),
+                env=dict(hook_def.mcp.env),
+                url=hook_def.mcp.url,
+                transport=hook_def.mcp.transport,
+                headers=dict(hook_def.mcp.headers),
+            )
+            executor = MCPHookExecutor(transport)
+            try:
+                await executor.connect()
+            except Exception as exc:
+                raise DeclarativeConfigError(
+                    f"Failed to connect to MCP hook server: {exc}"
+                ) from exc
+            hook_manager.register(executor)
+            mcp_executors.append(executor)
+            continue
+
         if hook_def.url:
             from sherma.hooks.remote import RemoteHookExecutor
 
@@ -950,3 +980,5 @@ def populate_hooks(
                 f"'{import_path}' is not a HookExecutor, got {type(instance).__name__}"
             )
         hook_manager.register(instance)
+
+    return mcp_executors

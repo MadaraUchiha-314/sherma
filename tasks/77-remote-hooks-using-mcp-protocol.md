@@ -18,4 +18,26 @@ Design and implement MCP-based remote hooks for sherma. Sherma already supports 
 
 ## Chat Iterations
 
-(None yet)
+### 2026-05-28: Answers to open questions
+
+Decisions made on issue #77:
+1. Use `hooks/` prefix for MCP tool names (e.g. `hooks/before_llm_call`).
+2. Hooks are always request/response. No MCP notifications.
+3. No auto-detection of tools — tools must use the `hooks/` prefix to be considered hook tools.
+
+The implementation must include unit tests, integration tests, and a working example.
+
+### 2026-05-28: MCP tool name separator
+
+MCP tool names cannot contain `/` (the spec allows only `[A-Za-z0-9_.-]+`). The `hooks/` prefix from the decision above became `hooks.` (dot separator) to stay MCP-compliant while preserving the same namespacing intent.
+
+## Implementation Summary
+
+- `sherma/hooks/mcp_executor.py` — `MCPHookExecutor` + `MCPHookTransport` (client side; stdio / streamable-http / sse).
+- `sherma/hooks/mcp_server.py` — `MCPHookServer` wrapping a `HookHandler` as a `FastMCP` server, exposing only overridden hooks as `hooks.<name>` tools.
+- `sherma/langgraph/declarative/schema.py` — `MCPHookDef`; `HookDef` now accepts `import_path` | `url` | `mcp`.
+- `sherma/langgraph/declarative/loader.py` — `populate_hooks` is now async and connects MCP hook servers, returning the executors for cleanup.
+- `sherma/langgraph/declarative/agent.py` — connects MCP hooks during `get_graph`, adds `aclose()` for teardown.
+- Example: `examples/mcp_hook_server/stdio_server.py`.
+- Tests: `tests/hooks/test_mcp_executor.py`, `tests/hooks/test_mcp_server.py`, `tests/integration/test_mcp_hook_server.py`, plus schema/loader test updates.
+- Docs + skill: `docs/hooks.md`, `docs/api-reference.md`, `docs/declarative-agents.md` (mirrored to `skills/sherma/references/`), and `skills/sherma/SKILL.md`.
