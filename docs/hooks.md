@@ -503,18 +503,31 @@ hooks:
 
 ```yaml
 hooks:
+  # JSON-RPC hook server (HTTP)
   - url: http://localhost:8000/hooks
+
+  # MCP hook server (stdio)
+  - mcp:
+      command: python
+      args: ["-m", "my_package.mcp_hook_server"]
+
+  # MCP hook server (HTTP)
+  - mcp:
+      url: http://localhost:9000/mcp
 ```
 
-You can mix local and remote hooks in the same config:
+You can mix local, JSON-RPC, and MCP hooks in the same config:
 
 ```yaml
 hooks:
   - import_path: my_package.hooks.LoggingHook
   - url: http://localhost:8000/hooks
+  - mcp:
+      command: python
+      args: ["-m", "my_package.mcp_hook_server"]
 ```
 
-Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc) for details.
+Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc) and [Remote Hooks (MCP)](#remote-hooks-mcp) for details.
 
 ## Example: Logging Hook
 
@@ -622,45 +635,47 @@ hooks:
   - url: http://localhost:8000/hooks
 ```
 
-### HookHandler
+### Writing a hook server
 
-sherma provides a `HookHandler` base class -- the remote equivalent of `BaseHookExecutor`. Subclass it and override only the hooks you need. Each method receives a plain `dict` and returns a modified dict (or `None` to pass through):
+Hook servers are authored with the **same** typed interface as in-process hooks: subclass `BaseHookExecutor` and override only the hooks you need, working with the typed context dataclasses (`BeforeLLMCallContext`, `NodeEnterContext`, ...). The server wrapper handles (de)serialization at the wire boundary.
 
 ```python
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext, NodeEnterContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise and accurate."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise and accurate."
+        return ctx
 
-    async def node_enter(self, params):
-        print(f">>> Entering node '{params['node_name']}'")
+    async def node_enter(self, ctx: NodeEnterContext):
+        print(f">>> Entering node '{ctx.node_name}'")
         return None  # Observation only, no modification
 ```
 
-`HookHandler` mirrors the `BaseHookExecutor` interface but works with JSON-serializable dicts instead of Python dataclasses. The `on_chat_model_create` hook is intentionally absent since it cannot work over JSON-RPC.
+On the server side, non-serializable fields (`node_context`, `agent`, `registries`) arrive as `None`, and complex fields (`messages`, `tools`, `response`) hold their serialized form. The `on_chat_model_create` hook is never dispatched remotely since it returns a Python object.
 
 ### HookFastAPIApplication / HookStarletteApplication
 
-Pass your handler to an application builder to get a ready-to-run ASGI server. This is the same pattern as A2A's `A2AFastAPIApplication` / `A2AStarletteApplication`:
+Pass your executor to an application builder to get a ready-to-run ASGI server. This is the same pattern as A2A's `A2AFastAPIApplication` / `A2AStarletteApplication`:
 
 **FastAPI:**
 
 ```python
 from sherma.hooks.apps import HookFastAPIApplication
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext, GraphInvokeContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise."
+        return ctx
 
-    async def before_graph_invoke(self, params):
-        params["config"]["recursion_limit"] = 50
-        return params
+    async def before_graph_invoke(self, ctx: GraphInvokeContext):
+        ctx.config["recursion_limit"] = 50
+        return ctx
 
-app = HookFastAPIApplication(handler=MyHooks()).build()
+app = HookFastAPIApplication(executor=MyHooks()).build()
 ```
 
 ```bash
@@ -672,14 +687,15 @@ uvicorn hook_server:app --port 8000
 
 ```python
 from sherma.hooks.apps import HookStarletteApplication
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise."
+        return ctx
 
-app = HookStarletteApplication(handler=MyHooks()).build()
+app = HookStarletteApplication(executor=MyHooks()).build()
 ```
 
 ```bash
@@ -703,7 +719,7 @@ from fastapi import FastAPI
 from sherma.hooks.apps import HookFastAPIApplication
 
 existing_app = FastAPI()
-HookFastAPIApplication(handler=MyHooks()).add_routes_to_app(
+HookFastAPIApplication(executor=MyHooks()).add_routes_to_app(
     existing_app, rpc_url="/hooks"
 )
 ```
@@ -713,7 +729,7 @@ from starlette.applications import Starlette
 from sherma.hooks.apps import HookStarletteApplication
 
 existing_app = Starlette()
-HookStarletteApplication(handler=MyHooks()).add_routes_to_app(
+HookStarletteApplication(executor=MyHooks()).add_routes_to_app(
     existing_app, rpc_url="/hooks"
 )
 ```
@@ -811,6 +827,141 @@ The default timeout is 30 seconds. You can configure it:
 ```python
 RemoteHookExecutor(url="http://localhost:8000/hooks", timeout=10.0)
 ```
+
+## Remote Hooks (MCP)
+
+MCP-based hooks let you implement hook logic as an [MCP](https://modelcontextprotocol.io/) server, with one MCP tool per supported hook. This complements the JSON-RPC transport above: same semantics, different protocol — useful when you want to share infrastructure with MCP-aware tooling (e.g. Claude Code, MCP Inspector) or run hooks as sidecar processes over stdio.
+
+### How it works
+
+Each hook the server supports is exposed as an MCP tool named `hooks.<hook_name>` (e.g. `hooks.before_llm_call`). When the executor connects, it calls `list_tools` to discover which hooks the server actually implements and only dispatches to those.
+
+```
+Agent                              MCP Hook Server
+  |                                       |
+  |--- initialize ----------------------->|
+  |--- list_tools ----------------------->|
+  |<-- [hooks.before_llm_call, ...] -----|
+  |                                       |
+  |--- call_tool hooks.before_llm_call ->|
+  |   { params: { ... context } }         |
+  |<-- { result: { ... modified } } -----|
+```
+
+Note: MCP tool names are restricted to `A-Z`, `a-z`, `0-9`, `_`, `-`, `.`. The `hooks.` namespace uses `.` as the separator (slash is not allowed).
+
+### Registering an MCP hook
+
+#### In YAML
+
+stdio transport (server launched as a subprocess):
+
+```yaml
+hooks:
+  - mcp:
+      command: python
+      args: ["-m", "my_package.mcp_hook_server"]
+      env:
+        SOME_FLAG: "1"
+```
+
+HTTP transport (`streamable_http` by default, or `sse`):
+
+```yaml
+hooks:
+  - mcp:
+      url: http://localhost:9000/mcp
+      transport: streamable_http   # or "sse"
+      headers:
+        Authorization: "Bearer ..."
+```
+
+#### In Python
+
+```python
+from sherma import DeclarativeAgent
+from sherma.hooks.mcp_executor import MCPHookExecutor, MCPHookTransport
+
+executor = MCPHookExecutor(
+    MCPHookTransport(command="python", args=["-m", "my_pkg.hook_server"])
+)
+await executor.connect()
+
+agent = DeclarativeAgent(
+    id="my-agent",
+    version="1.0.0",
+    yaml_path="agent.yaml",
+    hooks=[executor],
+)
+
+try:
+    # ... use the agent
+    ...
+finally:
+    await executor.close()
+```
+
+When configured via YAML, the loader connects to MCP hook servers during agent setup. Call `await agent.aclose()` to shut them down cleanly.
+
+### Writing an MCP hook server
+
+Use the same typed `BaseHookExecutor` interface as in-process and JSON-RPC hooks, and wrap it in `MCPHookServer`. Only methods you override become MCP tools.
+
+```python
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.mcp_server import MCPHookServer
+from sherma.hooks.types import BeforeLLMCallContext, NodeEnterContext
+
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise."
+        return ctx
+
+    async def node_enter(self, ctx: NodeEnterContext):
+        return None  # pass-through observation
+
+server = MCPHookServer(executor=MyHooks(), name="my-hooks")
+server.run_stdio()
+# server.run_streamable_http()   # for HTTP
+# server.run_sse()                # for SSE
+```
+
+The `MCPHookServer.server` attribute exposes the underlying `FastMCP` instance so you can mount it into an existing ASGI app or add middleware.
+
+### Tool naming and discovery
+
+| Hook | MCP tool name |
+| --- | --- |
+| `before_llm_call` | `hooks.before_llm_call` |
+| `after_llm_call` | `hooks.after_llm_call` |
+| `before_tool_call` | `hooks.before_tool_call` |
+| ... | ... |
+| `on_error` | `hooks.on_error` |
+
+The executor's `available_hooks` property returns the names (without the prefix) of the tools discovered on the server. Hooks not registered on the server are skipped without any IPC.
+
+### Serialization
+
+The serialization rules are identical to JSON-RPC hooks (see [What the server receives and can modify](#what-the-server-receives-and-can-modify)): non-serializable Python objects are stripped before sending and re-attached on the response; complex LangChain objects are sent read-only.
+
+### Unsupported hooks
+
+The `on_chat_model_create` hook is **not called** over MCP for the same reason as JSON-RPC: it requires returning a Python object. It silently becomes a no-op.
+
+### Error handling
+
+MCP hooks share the same resilience model as JSON-RPC hooks. Errors, timeouts, and disconnects all log a warning and pass through unchanged. The agent is **never blocked** by a failing MCP hook server.
+
+### When to choose MCP over JSON-RPC
+
+| | JSON-RPC | MCP |
+| --- | --- | --- |
+| Transport | HTTP only | stdio, streamable HTTP, SSE |
+| Discovery | None — all hooks called | `list_tools` — only registered hooks called |
+| Setup | Any HTTP server | Requires the MCP SDK |
+| Best for | Centralized hook services | Sidecar processes, MCP-aware ecosystems |
+
+Both transports coexist; pick whichever fits your deployment.
 
 ## HookManager
 

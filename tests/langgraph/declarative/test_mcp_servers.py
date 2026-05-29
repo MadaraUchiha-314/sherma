@@ -170,6 +170,57 @@ async def test_populate_registries_applies_tool_prefix(
 
 
 @pytest.mark.asyncio
+async def test_hook_tools_are_excluded_from_agent_tool_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tools named ``hooks.*`` (sherma hook tools) must not pollute the
+    agent's tool registry when the same MCP server also serves hooks."""
+
+    class FakeMultiServerMCPClient:
+        def __init__(self, _: dict[str, object]) -> None: ...
+
+        async def get_tools(
+            self, *, server_name: str | None = None
+        ) -> list[StructuredTool]:
+            return [
+                _fake_tool("real_tool"),
+                _fake_tool("hooks.before_llm_call"),
+                _fake_tool("hooks.node_enter"),
+            ]
+
+    monkeypatch.setattr(
+        "langchain_mcp_adapters.client.MultiServerMCPClient",
+        FakeMultiServerMCPClient,
+    )
+
+    config = DeclarativeConfig(
+        manifest_version=1,
+        mcp_servers=[
+            MCPServerDef(
+                id="hybrid-server",
+                version="1.0.0",
+                transport="streamable_http",
+                url="https://example.com/mcp",
+            )
+        ],
+    )
+    registries = RegistryBundle(tenant_id=DEFAULT_TENANT_ID)
+
+    await populate_registries(config, registries)
+
+    # Real tool is registered.
+    real = await registries.tool_registry.get("real_tool", "==1.0.0")
+    assert real.id == "real_tool"
+
+    # Hook-prefixed tools are NOT registered as agent tools.
+    from sherma.exceptions import EntityNotFoundError
+
+    for hook_tool_name in ("hooks.before_llm_call", "hooks.node_enter"):
+        with pytest.raises(EntityNotFoundError):
+            await registries.tool_registry.get(hook_tool_name, "==1.0.0")
+
+
+@pytest.mark.asyncio
 async def test_no_mcp_servers_is_noop() -> None:
     config = DeclarativeConfig(manifest_version=1)
     registries = RegistryBundle(tenant_id=DEFAULT_TENANT_ID)

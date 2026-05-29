@@ -22,31 +22,33 @@ else:
         _fastapi_installed = False
 
 from sherma.hooks.apps.jsonrpc_handler import dispatch_jsonrpc
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import HookExecutor
 
 
 class HookFastAPIApplication:
-    """Builds a FastAPI application that serves a :class:`HookHandler`
+    """Builds a FastAPI application that serves a :class:`HookExecutor`
     over JSON-RPC 2.0.
 
     Example::
 
-        class MyHooks(HookHandler):
-            async def before_llm_call(self, params):
-                params["system_prompt"] += "\\nBe concise."
-                return params
+        from sherma.hooks.executor import BaseHookExecutor
 
-        app = HookFastAPIApplication(handler=MyHooks()).build()
+        class MyHooks(BaseHookExecutor):
+            async def before_llm_call(self, ctx):
+                ctx.system_prompt += "\\nBe concise."
+                return ctx
+
+        app = HookFastAPIApplication(executor=MyHooks()).build()
     """
 
-    def __init__(self, handler: HookHandler) -> None:
+    def __init__(self, executor: HookExecutor) -> None:
         if not _fastapi_installed:
             raise ImportError(
                 "The 'fastapi' package is required to use "
                 "HookFastAPIApplication. "
                 "Install with: pip install fastapi"
             )
-        self._handler = handler
+        self._executor = executor
 
     def add_routes_to_app(
         self,
@@ -58,7 +60,7 @@ class HookFastAPIApplication:
         @app.post(rpc_url)
         async def hooks_endpoint(request: Request) -> JSONResponse:
             body = await request.json()
-            response = await dispatch_jsonrpc(self._handler, body)
+            response = await dispatch_jsonrpc(self._executor, body)
             return JSONResponse(response)
 
     def build(

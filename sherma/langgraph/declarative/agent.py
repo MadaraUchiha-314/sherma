@@ -9,7 +9,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, PrivateAttr
 
 from sherma.entities.base import DEFAULT_TENANT_ID
 from sherma.exceptions import GraphConstructionError
@@ -141,6 +141,20 @@ class DeclarativeAgent(LangGraphAgent):
     checkpointer: BaseCheckpointSaver = Field(default_factory=MemorySaver)
     _registries: RegistryBundle | None = None
     _compiled_graph: CompiledStateGraph | None = None
+    _mcp_hook_executors: list[Any] = PrivateAttr(default_factory=list)
+
+    async def aclose(self) -> None:
+        """Close resources held by the agent (MCP hook connections, etc.).
+
+        Call this when the agent is no longer needed.  Safe to call
+        multiple times.
+        """
+        for executor in self._mcp_hook_executors:
+            try:
+                await executor.close()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Error closing MCP hook executor: %s", exc)
+        self._mcp_hook_executors = []
 
     async def get_graph(self) -> CompiledStateGraph:
         """Build and return the compiled LangGraph from YAML config."""
@@ -170,7 +184,8 @@ class DeclarativeAgent(LangGraphAgent):
             self.hook_manager.register(executor)
 
         if config.hooks:
-            populate_hooks(config, self.hook_manager)
+            mcp_executors = await populate_hooks(config, self.hook_manager)
+            self._mcp_hook_executors = mcp_executors
 
         # Derive base_path for resolving relative file paths in the YAML
         base_path = self.base_path

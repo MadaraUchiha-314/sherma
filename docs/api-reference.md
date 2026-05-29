@@ -267,51 +267,75 @@ class RemoteHookExecutor(BaseHookExecutor):
 
 The `on_chat_model_create` hook is a no-op (cannot return Python objects over JSON-RPC). On any network or protocol error, logs a warning and passes through.
 
-### `HookHandler`
+### `MCPHookTransport`
 
-Base class for implementing remote hook servers. The remote equivalent of `BaseHookExecutor` -- works with plain dicts instead of dataclasses.
+Connection parameters for an MCP hook server. Provide exactly one of `command` (stdio) or `url` (HTTP).
 
 ```python
-class HookHandler:
-    async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_tool_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_tool_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_agent_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_agent_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def node_enter(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def node_execute(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def node_exit(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_graph_invoke(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_graph_invoke(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def on_node_error(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def on_error(self, params: dict[str, Any]) -> dict[str, Any] | None
+@dataclass
+class MCPHookTransport:
+    command: str | None = None
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    url: str | None = None
+    transport: Literal["streamable_http", "sse"] = "streamable_http"
+    headers: dict[str, str] = field(default_factory=dict)
 ```
 
-All methods return `None` by default. `on_chat_model_create` is intentionally absent.
+### `MCPHookExecutor`
+
+Hook executor that delegates to an MCP server. Each hook is invoked as an MCP tool named `hooks.<hook_name>`. Implements the `HookExecutor` protocol.
+
+```python
+class MCPHookExecutor(BaseHookExecutor):
+    def __init__(self, transport: MCPHookTransport) -> None
+    async def connect(self) -> None          # open connection + discover hook tools
+    async def close(self) -> None            # close connection (idempotent)
+    @property
+    def available_hooks(self) -> set[str]    # hook names discovered on the server
+```
+
+Call `connect()` before use and `close()` when done. The `on_chat_model_create` hook is a no-op. On any error, logs a warning and passes through. Hooks not registered on the server are skipped without any IPC.
+
+### `MCPHookServer`
+
+Wraps a `HookExecutor` as an MCP server. Only overridden hook methods are exposed as MCP tools named `hooks.<hook_name>`. Hooks are authored with the same typed context dataclasses as in-process hooks; the server reconstructs the context from the incoming params and serializes the returned context back.
+
+```python
+class MCPHookServer:
+    def __init__(self, executor: HookExecutor, name: str = "sherma-hooks",
+                 instructions: str | None = None) -> None
+    @property
+    def server(self) -> FastMCP             # underlying FastMCP instance
+    @property
+    def registered_hooks(self) -> set[str]  # hooks exposed as tools
+    def run_stdio(self) -> None
+    def run_streamable_http(self, mount_path: str | None = None) -> None
+    def run_sse(self, mount_path: str | None = None) -> None
+```
+
+### Authoring a hook server
+
+Remote hook servers (both JSON-RPC and MCP) are authored as `BaseHookExecutor` subclasses with the typed context dataclasses — the same interface as in-process hooks. On the server side, non-serializable fields (`node_context`, `agent`, `registries`) are `None` and complex fields (`messages`, `tools`, `response`) carry their serialized form. `on_chat_model_create` is never dispatched remotely.
 
 ### `HookFastAPIApplication`
 
-Builds a FastAPI application from a `HookHandler`.
+Builds a FastAPI application from a `HookExecutor`.
 
 ```python
 class HookFastAPIApplication:
-    def __init__(self, handler: HookHandler) -> None
+    def __init__(self, executor: HookExecutor) -> None
     def build(self, rpc_url: str = "/hooks", **kwargs) -> FastAPI
     def add_routes_to_app(self, app: FastAPI, rpc_url: str = "/hooks") -> None
 ```
 
 ### `HookStarletteApplication`
 
-Builds a Starlette application from a `HookHandler`.
+Builds a Starlette application from a `HookExecutor`.
 
 ```python
 class HookStarletteApplication:
-    def __init__(self, handler: HookHandler) -> None
+    def __init__(self, executor: HookExecutor) -> None
     def build(self, rpc_url: str = "/hooks", **kwargs) -> Starlette
     def add_routes_to_app(self, app: Starlette, rpc_url: str = "/hooks") -> None
     def routes(self, rpc_url: str = "/hooks") -> list[Route]

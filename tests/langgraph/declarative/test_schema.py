@@ -379,13 +379,48 @@ def test_hook_def_with_url():
 
 
 def test_hook_def_requires_one_source():
-    with pytest.raises(ValidationError, match="requires either"):
+    with pytest.raises(ValidationError, match="requires one of"):
         HookDef()
 
 
-def test_hook_def_rejects_both_sources():
-    with pytest.raises(ValidationError, match="cannot have both"):
+def test_hook_def_rejects_multiple_sources():
+    with pytest.raises(ValidationError, match="can only have one of"):
         HookDef(import_path="my_module.MyHook", url="http://localhost:8080/hooks")
+
+
+def test_hook_def_with_mcp_stdio():
+    from sherma.langgraph.declarative.schema import MCPHookDef
+
+    hook = HookDef(mcp=MCPHookDef(command="python", args=["-m", "srv"]))
+    assert hook.mcp is not None
+    assert hook.mcp.command == "python"
+    assert hook.mcp.url is None
+    assert hook.import_path is None
+
+
+def test_hook_def_with_mcp_url():
+    from sherma.langgraph.declarative.schema import MCPHookDef
+
+    hook = HookDef(mcp=MCPHookDef(url="http://localhost:9000/mcp"))
+    assert hook.mcp is not None
+    assert hook.mcp.url == "http://localhost:9000/mcp"
+    assert hook.mcp.transport == "streamable_http"
+
+
+def test_mcp_hook_def_requires_one_transport():
+    from sherma.langgraph.declarative.schema import MCPHookDef
+
+    with pytest.raises(ValidationError, match="exactly one of 'command' or 'url'"):
+        MCPHookDef()
+    with pytest.raises(ValidationError, match="exactly one of 'command' or 'url'"):
+        MCPHookDef(command="python", url="http://x")
+
+
+def test_hook_def_rejects_mcp_combined_with_url():
+    from sherma.langgraph.declarative.schema import MCPHookDef
+
+    with pytest.raises(ValidationError, match="can only have one of"):
+        HookDef(url="http://x", mcp=MCPHookDef(command="python"))
 
 
 # --- use_sub_agents_as_tools type normalization ---

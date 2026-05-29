@@ -479,8 +479,14 @@ agents:
 hooks:
   - import_path: my_package.hooks.LoggingHook
   - import_path: my_package.hooks.GuardrailHook
-  # Remote hooks also supported:
+  # Remote hooks over JSON-RPC (HTTP):
   # - url: http://localhost:8000/hooks
+  # Remote hooks over MCP (stdio or HTTP):
+  # - mcp:
+  #     command: python
+  #     args: ["-m", "my_package.mcp_hook_server"]
+  # - mcp:
+  #     url: http://localhost:9000/mcp
 
 prompts:
   - id: system-prompt
@@ -830,7 +836,9 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 8. **`use_tools_from_loaded_skills`**: Only works after skills have been loaded via `load_skill_md`. Put the discovery node before the execution node.
 
-9. **`custom` node hooks can access registries**: `NodeExecuteContext` exposes `ctx.registries` (a `RegistryBundle`) so `node_execute` hooks can call chat models (`ctx.registries.chat_models[llm_id]`), resolve tools, render prompts, etc. without wiring dependencies at agent-init time. Remote (JSON-RPC) hooks receive `registries=None` because it contains live Python objects.
+9. **`custom` node hooks can access registries**: `NodeExecuteContext` exposes `ctx.registries` (a `RegistryBundle`) so `node_execute` hooks can call chat models (`ctx.registries.chat_models[llm_id]`), resolve tools, render prompts, etc. without wiring dependencies at agent-init time. Remote (JSON-RPC and MCP) hooks receive `registries=None` because it contains live Python objects.
+
+10. **MCP hook tool names use `.` not `/`**: MCP restricts tool names to `[A-Za-z0-9_.-]+`, so MCP-based hook tools are named `hooks.before_llm_call` (dot separator), not `hooks/before_llm_call`. The executor discovers tools with the `hooks.` prefix at connect time and only dispatches the hooks the server has registered.
 
 ## Process
 
@@ -863,7 +871,7 @@ Follow these steps when building an agent:
 `Registry`, `RegistryEntry`, `RegistryBundle`, `TenantRegistryManager`, `PromptRegistry`, `LLMRegistry`, `ToolRegistry`, `SkillRegistry`, `AgentRegistry`
 
 ### Hooks
-`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookHandler`, `HookFastAPIApplication`, `HookStarletteApplication`
+`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookFastAPIApplication`, `HookStarletteApplication`, `RemoteHookExecutor`, `MCPHookExecutor`, `MCPHookTransport`, `MCPHookServer`. Remote hook servers (JSON-RPC and MCP) are authored as `BaseHookExecutor` subclasses with typed contexts — same as in-process hooks.
 
 ### Declarative
 `DeclarativeConfig`, `load_declarative_config`
