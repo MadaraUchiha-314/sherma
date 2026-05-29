@@ -2,7 +2,6 @@
 
 from sherma.hooks.apps import HookFastAPIApplication, HookStarletteApplication
 from sherma.hooks.executor import BaseHookExecutor, HookExecutor
-from sherma.hooks.handler import HookHandler
 from sherma.hooks.manager import HookManager
 from sherma.hooks.mcp_executor import MCPHookExecutor, MCPHookTransport
 from sherma.hooks.mcp_server import MCPHookServer
@@ -46,7 +45,6 @@ __all__ = [
     "GraphInvokeContext",
     "HookExecutor",
     "HookFastAPIApplication",
-    "HookHandler",
     "HookManager",
     "HookStarletteApplication",
     "HookType",

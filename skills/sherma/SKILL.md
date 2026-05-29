@@ -871,7 +871,7 @@ Follow these steps when building an agent:
 `Registry`, `RegistryEntry`, `RegistryBundle`, `TenantRegistryManager`, `PromptRegistry`, `LLMRegistry`, `ToolRegistry`, `SkillRegistry`, `AgentRegistry`
 
 ### Hooks
-`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookHandler`, `HookFastAPIApplication`, `HookStarletteApplication`, `RemoteHookExecutor`, `MCPHookExecutor`, `MCPHookTransport`, `MCPHookServer`
+`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookFastAPIApplication`, `HookStarletteApplication`, `RemoteHookExecutor`, `MCPHookExecutor`, `MCPHookTransport`, `MCPHookServer`. Remote hook servers (JSON-RPC and MCP) are authored as `BaseHookExecutor` subclasses with typed contexts — same as in-process hooks.
 
 ### Declarative
 `DeclarativeConfig`, `load_declarative_config`

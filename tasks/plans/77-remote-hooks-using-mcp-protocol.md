@@ -343,3 +343,11 @@ Open Questions section can now be considered resolved.
 - `MCPHookExecutor` accepts `MCPHookTransport` config (stdio command or HTTP URL) and manages connection lifecycle internally via `AsyncExitStack`. The client opens a `ClientSession`, performs `initialize`, then calls `list_tools` to populate the available-hook set.
 - `MCPHookServer` builds a `FastMCP` instance, inspects which `HookHandler` methods have been overridden (by comparing function references against the base class), and registers each as a tool named `hooks.<hook_name>`.
 - Per-hook errors on the client side log a warning and return `None` (pass-through) — same resilience model as `RemoteHookExecutor`.
+
+### 2026-05-28: PR review — unify remote hook authoring on typed contexts
+
+Following PR #78 review, the server side of remote hooks was unified onto the typed `BaseHookExecutor` interface (the same one used by in-process hooks), replacing the dict-based `HookHandler`:
+
+- Added `build_context_from_params` (serialization.py) and `run_executor_hook` (apps/jsonrpc_handler.py).
+- `MCPHookServer` / `HookFastAPIApplication` / `HookStarletteApplication` accept `executor: HookExecutor`.
+- Removed `HookHandler`. Remote hook authors now subclass `BaseHookExecutor` and work with `BeforeLLMCallContext` etc., with non-serializable fields presented as `None` server-side.

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -321,26 +320,26 @@ agents:
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_mcp_hook_server_serves_overridden_hooks():
-    """The MCPHookServer routes call_tool to the underlying handler."""
-    from sherma.hooks.handler import HookHandler
+    """The MCPHookServer routes call_tool to the underlying executor."""
+    from sherma.hooks.executor import BaseHookExecutor
     from sherma.hooks.mcp_server import HOOK_TOOL_PREFIX, MCPHookServer
 
-    class MyHooks(HookHandler):
+    class MyHooks(BaseHookExecutor):
         async def before_llm_call(
-            self, params: dict[str, Any]
-        ) -> dict[str, Any] | None:
-            params["system_prompt"] = params.get("system_prompt", "") + " [hooked]"
-            return params
+            self, ctx: BeforeLLMCallContext
+        ) -> BeforeLLMCallContext | None:
+            ctx.system_prompt = (ctx.system_prompt or "") + " [hooked]"
+            return ctx
 
-        async def node_enter(self, params: dict[str, Any]) -> None:
+        async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
             return None
 
-    server = MCPHookServer(handler=MyHooks(), name="test-srv")
+    server = MCPHookServer(executor=MyHooks(), name="test-srv")
     assert server.registered_hooks == {"before_llm_call", "node_enter"}
 
     tool_name = f"{HOOK_TOOL_PREFIX}before_llm_call"
     result = await server.server.call_tool(
-        tool_name, {"params": {"system_prompt": "orig"}}
+        tool_name, {"params": {"system_prompt": "orig", "node_name": "n", "state": {}}}
     )
     if isinstance(result, tuple):
         _, structured = result

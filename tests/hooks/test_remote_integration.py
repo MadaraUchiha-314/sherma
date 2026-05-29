@@ -7,14 +7,13 @@ RemoteHookExecutor to send hooks through the full HTTP stack.
 from __future__ import annotations
 
 import threading
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 import uvicorn
 
 from sherma.hooks.apps import HookStarletteApplication
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
 from sherma.hooks.remote import RemoteHookExecutor
 from sherma.hooks.types import (
     BeforeLLMCallContext,
@@ -24,29 +23,31 @@ from sherma.hooks.types import (
     OnErrorContext,
 )
 
-# -- Hook handler for the server side --
+# -- Hook executor for the server side --
 
 
-class TestHooks(HookHandler):
-    """Server-side handler used during integration tests."""
+class TestHooks(BaseHookExecutor):
+    """Server-side executor used during integration tests."""
 
-    async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None:
-        params["system_prompt"] += " [from-server]"
-        return params
+    async def before_llm_call(
+        self, ctx: BeforeLLMCallContext
+    ) -> BeforeLLMCallContext | None:
+        ctx.system_prompt += " [from-server]"
+        return ctx
 
     async def before_graph_invoke(
-        self, params: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        params["config"]["recursion_limit"] = 77
-        return params
+        self, ctx: GraphInvokeContext
+    ) -> GraphInvokeContext | None:
+        ctx.config["recursion_limit"] = 77
+        return ctx
 
-    async def node_enter(self, params: dict[str, Any]) -> None:
+    async def node_enter(self, ctx: NodeEnterContext) -> NodeEnterContext | None:
         # Observation only
         return None
 
-    async def on_error(self, params: dict[str, Any]) -> dict[str, Any] | None:
-        params["agent_id"] = params["agent_id"] + "-handled"
-        return params
+    async def on_error(self, ctx: OnErrorContext) -> OnErrorContext | None:
+        ctx.agent_id = ctx.agent_id + "-handled"
+        return ctx
 
 
 # -- Fixtures --
@@ -55,7 +56,7 @@ class TestHooks(HookHandler):
 @pytest.fixture(scope="module")
 def hook_server_url():
     """Start a Starlette hook server in a background thread, return its URL."""
-    app = HookStarletteApplication(handler=TestHooks()).build()
+    app = HookStarletteApplication(executor=TestHooks()).build()
 
     # Use port 0 to let OS pick a free port; uvicorn doesn't expose it
     # directly, so we use a known free port via socket.

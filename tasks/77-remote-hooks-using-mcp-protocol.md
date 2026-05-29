@@ -31,6 +31,16 @@ The implementation must include unit tests, integration tests, and a working exa
 
 MCP tool names cannot contain `/` (the spec allows only `[A-Za-z0-9_.-]+`). The `hooks/` prefix from the decision above became `hooks.` (dot separator) to stay MCP-compliant while preserving the same namespacing intent.
 
+### 2026-05-28: PR review — typed contexts for remote hook servers
+
+PR #78 review (owner): remote hook servers should use the typed context dataclasses (`BeforeLLMCallContext`, ...) like in-process hooks, not plain `dict[str, Any]`. Decision: **unify** — both remote transports (JSON-RPC and MCP) now run a typed `BaseHookExecutor` on the server side. The dict-based `HookHandler` class was removed.
+
+- New `build_context_from_params(hook_name, params)` in `serialization.py` reconstructs the typed context (non-serializable fields → `None`, error fields → stand-in exception, complex fields → serialized form).
+- New `run_executor_hook(executor, hook_name, params)` in `apps/jsonrpc_handler.py` drives the build → call → serialize cycle; `dispatch_jsonrpc` and `MCPHookServer` both use it.
+- `MCPHookServer`, `HookFastAPIApplication`, `HookStarletteApplication` now take `executor=` (a `HookExecutor`) instead of `handler=`.
+- `sherma/hooks/handler.py` and `tests/hooks/test_handler.py` deleted.
+- Both examples and all affected tests rewritten to the typed interface; docs + skill references updated.
+
 ## Implementation Summary
 
 - `sherma/hooks/mcp_executor.py` — `MCPHookExecutor` + `MCPHookTransport` (client side; stdio / streamable-http / sse).

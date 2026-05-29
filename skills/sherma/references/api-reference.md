@@ -299,11 +299,11 @@ Call `connect()` before use and `close()` when done. The `on_chat_model_create` 
 
 ### `MCPHookServer`
 
-Wraps a `HookHandler` as an MCP server. Only overridden hook methods are exposed as MCP tools named `hooks.<hook_name>`.
+Wraps a `HookExecutor` as an MCP server. Only overridden hook methods are exposed as MCP tools named `hooks.<hook_name>`. Hooks are authored with the same typed context dataclasses as in-process hooks; the server reconstructs the context from the incoming params and serializes the returned context back.
 
 ```python
 class MCPHookServer:
-    def __init__(self, handler: HookHandler, name: str = "sherma-hooks",
+    def __init__(self, executor: HookExecutor, name: str = "sherma-hooks",
                  instructions: str | None = None) -> None
     @property
     def server(self) -> FastMCP             # underlying FastMCP instance
@@ -314,51 +314,28 @@ class MCPHookServer:
     def run_sse(self, mount_path: str | None = None) -> None
 ```
 
-### `HookHandler`
+### Authoring a hook server
 
-Base class for implementing remote hook servers. The remote equivalent of `BaseHookExecutor` -- works with plain dicts instead of dataclasses.
-
-```python
-class HookHandler:
-    async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_tool_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_tool_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_agent_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_agent_call(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_skill_load(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def node_enter(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def node_execute(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def node_exit(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_interrupt(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def before_graph_invoke(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def after_graph_invoke(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def on_node_error(self, params: dict[str, Any]) -> dict[str, Any] | None
-    async def on_error(self, params: dict[str, Any]) -> dict[str, Any] | None
-```
-
-All methods return `None` by default. `on_chat_model_create` is intentionally absent.
+Remote hook servers (both JSON-RPC and MCP) are authored as `BaseHookExecutor` subclasses with the typed context dataclasses — the same interface as in-process hooks. On the server side, non-serializable fields (`node_context`, `agent`, `registries`) are `None` and complex fields (`messages`, `tools`, `response`) carry their serialized form. `on_chat_model_create` is never dispatched remotely.
 
 ### `HookFastAPIApplication`
 
-Builds a FastAPI application from a `HookHandler`.
+Builds a FastAPI application from a `HookExecutor`.
 
 ```python
 class HookFastAPIApplication:
-    def __init__(self, handler: HookHandler) -> None
+    def __init__(self, executor: HookExecutor) -> None
     def build(self, rpc_url: str = "/hooks", **kwargs) -> FastAPI
     def add_routes_to_app(self, app: FastAPI, rpc_url: str = "/hooks") -> None
 ```
 
 ### `HookStarletteApplication`
 
-Builds a Starlette application from a `HookHandler`.
+Builds a Starlette application from a `HookExecutor`.
 
 ```python
 class HookStarletteApplication:
-    def __init__(self, handler: HookHandler) -> None
+    def __init__(self, executor: HookExecutor) -> None
     def build(self, rpc_url: str = "/hooks", **kwargs) -> Starlette
     def add_routes_to_app(self, app: Starlette, rpc_url: str = "/hooks") -> None
     def routes(self, rpc_url: str = "/hooks") -> list[Route]

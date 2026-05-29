@@ -9,29 +9,34 @@ import pytest
 from starlette.testclient import TestClient
 
 from sherma.hooks.apps import HookFastAPIApplication, HookStarletteApplication
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext, GraphInvokeContext
 
 _fastapi_installed = importlib.util.find_spec("fastapi") is not None
 
 
-class EchoHooks(HookHandler):
-    """Handler that modifies system_prompt on before_llm_call."""
+class EchoHooks(BaseHookExecutor):
+    """Executor that modifies system_prompt on before_llm_call."""
 
-    async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None:
-        params["system_prompt"] += " [modified]"
-        return params
+    async def before_llm_call(
+        self, ctx: BeforeLLMCallContext
+    ) -> BeforeLLMCallContext | None:
+        ctx.system_prompt += " [modified]"
+        return ctx
 
     async def before_graph_invoke(
-        self, params: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        params["config"]["recursion_limit"] = 99
-        return params
+        self, ctx: GraphInvokeContext
+    ) -> GraphInvokeContext | None:
+        ctx.config["recursion_limit"] = 99
+        return ctx
 
 
-class ErrorHooks(HookHandler):
-    """Handler that raises on before_llm_call."""
+class ErrorHooks(BaseHookExecutor):
+    """Executor that raises on before_llm_call."""
 
-    async def before_llm_call(self, params: dict[str, Any]) -> dict[str, Any] | None:
+    async def before_llm_call(
+        self, ctx: BeforeLLMCallContext
+    ) -> BeforeLLMCallContext | None:
         raise ValueError("hook exploded")
 
 
@@ -45,11 +50,11 @@ def _rpc_request(method: str, params: dict[str, Any], id: int = 1):
 @pytest.mark.skipif(not _fastapi_installed, reason="fastapi not installed")
 class TestHookFastAPIApplication:
     def test_build_returns_app(self):
-        app = HookFastAPIApplication(handler=EchoHooks()).build()
+        app = HookFastAPIApplication(executor=EchoHooks()).build()
         assert app is not None
 
     def test_hook_modifies_context(self):
-        app = HookFastAPIApplication(handler=EchoHooks()).build()
+        app = HookFastAPIApplication(executor=EchoHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -64,7 +69,7 @@ class TestHookFastAPIApplication:
         assert body["id"] == 1
 
     def test_unhandled_hook_passes_through(self):
-        app = HookFastAPIApplication(handler=EchoHooks()).build()
+        app = HookFastAPIApplication(executor=EchoHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -74,7 +79,7 @@ class TestHookFastAPIApplication:
         assert body["result"] is None
 
     def test_unknown_method_passes_through(self):
-        app = HookFastAPIApplication(handler=EchoHooks()).build()
+        app = HookFastAPIApplication(executor=EchoHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -84,7 +89,7 @@ class TestHookFastAPIApplication:
         assert body["result"] is None
 
     def test_handler_error_returns_jsonrpc_error(self):
-        app = HookFastAPIApplication(handler=ErrorHooks()).build()
+        app = HookFastAPIApplication(executor=ErrorHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -96,7 +101,7 @@ class TestHookFastAPIApplication:
         assert "hook exploded" in body["error"]["message"]
 
     def test_custom_rpc_url(self):
-        app = HookFastAPIApplication(handler=EchoHooks()).build(rpc_url="/custom")
+        app = HookFastAPIApplication(executor=EchoHooks()).build(rpc_url="/custom")
         client = TestClient(app)
         resp = client.post(
             "/custom",
@@ -106,7 +111,7 @@ class TestHookFastAPIApplication:
         assert resp.json()["result"]["system_prompt"] == "hi [modified]"
 
     def test_multiple_hooks(self):
-        app = HookFastAPIApplication(handler=EchoHooks()).build()
+        app = HookFastAPIApplication(executor=EchoHooks()).build()
         client = TestClient(app)
 
         resp1 = client.post(
@@ -132,11 +137,11 @@ class TestHookFastAPIApplication:
 
 class TestHookStarletteApplication:
     def test_build_returns_app(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build()
+        app = HookStarletteApplication(executor=EchoHooks()).build()
         assert app is not None
 
     def test_hook_modifies_context(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build()
+        app = HookStarletteApplication(executor=EchoHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -151,7 +156,7 @@ class TestHookStarletteApplication:
         assert body["id"] == 1
 
     def test_unhandled_hook_passes_through(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build()
+        app = HookStarletteApplication(executor=EchoHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -161,7 +166,7 @@ class TestHookStarletteApplication:
         assert body["result"] is None
 
     def test_unknown_method_passes_through(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build()
+        app = HookStarletteApplication(executor=EchoHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -171,7 +176,7 @@ class TestHookStarletteApplication:
         assert body["result"] is None
 
     def test_handler_error_returns_jsonrpc_error(self):
-        app = HookStarletteApplication(handler=ErrorHooks()).build()
+        app = HookStarletteApplication(executor=ErrorHooks()).build()
         client = TestClient(app)
         resp = client.post(
             "/hooks",
@@ -183,7 +188,7 @@ class TestHookStarletteApplication:
         assert "hook exploded" in body["error"]["message"]
 
     def test_custom_rpc_url(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build(rpc_url="/custom")
+        app = HookStarletteApplication(executor=EchoHooks()).build(rpc_url="/custom")
         client = TestClient(app)
         resp = client.post(
             "/custom",
@@ -193,7 +198,7 @@ class TestHookStarletteApplication:
         assert resp.json()["result"]["system_prompt"] == "hi [modified]"
 
     def test_multiple_hooks(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build()
+        app = HookStarletteApplication(executor=EchoHooks()).build()
         client = TestClient(app)
 
         resp1 = client.post(
@@ -214,13 +219,13 @@ class TestHookStarletteApplication:
         assert r2["config"]["recursion_limit"] == 99
 
     def test_routes_returns_list(self):
-        hook_app = HookStarletteApplication(handler=EchoHooks())
+        hook_app = HookStarletteApplication(executor=EchoHooks())
         routes = hook_app.routes()
         assert len(routes) == 1
         assert routes[0].path == "/hooks"
 
     def test_routes_custom_url(self):
-        hook_app = HookStarletteApplication(handler=EchoHooks())
+        hook_app = HookStarletteApplication(executor=EchoHooks())
         routes = hook_app.routes(rpc_url="/my-rpc")
         assert routes[0].path == "/my-rpc"
 
@@ -228,7 +233,7 @@ class TestHookStarletteApplication:
         from starlette.applications import Starlette
 
         existing_app = Starlette()
-        hook_app = HookStarletteApplication(handler=EchoHooks())
+        hook_app = HookStarletteApplication(executor=EchoHooks())
         hook_app.add_routes_to_app(existing_app, rpc_url="/my-hooks")
 
         client = TestClient(existing_app)
@@ -239,5 +244,5 @@ class TestHookStarletteApplication:
         assert resp.json()["result"]["system_prompt"] == "test [modified]"
 
     def test_build_passes_kwargs_to_starlette(self):
-        app = HookStarletteApplication(handler=EchoHooks()).build(debug=True)
+        app = HookStarletteApplication(executor=EchoHooks()).build(debug=True)
         assert app.debug is True

@@ -28,37 +28,38 @@ else:
         _starlette_installed = False
 
 from sherma.hooks.apps.jsonrpc_handler import dispatch_jsonrpc
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import HookExecutor
 
 
 class HookStarletteApplication:
-    """Builds a Starlette application that serves a :class:`HookHandler`
+    """Builds a Starlette application that serves a :class:`HookExecutor`
     over JSON-RPC 2.0.
 
     Example::
 
         from starlette.applications import Starlette
+        from sherma.hooks.executor import BaseHookExecutor
 
-        class MyHooks(HookHandler):
-            async def before_llm_call(self, params):
-                params["system_prompt"] += "\\nBe concise."
-                return params
+        class MyHooks(BaseHookExecutor):
+            async def before_llm_call(self, ctx):
+                ctx.system_prompt += "\\nBe concise."
+                return ctx
 
-        app = HookStarletteApplication(handler=MyHooks()).build()
+        app = HookStarletteApplication(executor=MyHooks()).build()
     """
 
-    def __init__(self, handler: HookHandler) -> None:
+    def __init__(self, executor: HookExecutor) -> None:
         if not _starlette_installed:
             raise ImportError(
                 "The 'starlette' package is required to use "
                 "HookStarletteApplication. "
                 "Install with: pip install starlette"
             )
-        self._handler = handler
+        self._executor = executor
 
     async def _handle_request(self, request: Request) -> JSONResponse:
         body = await request.json()
-        response = await dispatch_jsonrpc(self._handler, body)
+        response = await dispatch_jsonrpc(self._executor, body)
         return JSONResponse(response)
 
     def routes(self, rpc_url: str = "/hooks") -> list[Route]:

@@ -635,45 +635,47 @@ hooks:
   - url: http://localhost:8000/hooks
 ```
 
-### HookHandler
+### Writing a hook server
 
-sherma provides a `HookHandler` base class -- the remote equivalent of `BaseHookExecutor`. Subclass it and override only the hooks you need. Each method receives a plain `dict` and returns a modified dict (or `None` to pass through):
+Hook servers are authored with the **same** typed interface as in-process hooks: subclass `BaseHookExecutor` and override only the hooks you need, working with the typed context dataclasses (`BeforeLLMCallContext`, `NodeEnterContext`, ...). The server wrapper handles (de)serialization at the wire boundary.
 
 ```python
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext, NodeEnterContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise and accurate."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise and accurate."
+        return ctx
 
-    async def node_enter(self, params):
-        print(f">>> Entering node '{params['node_name']}'")
+    async def node_enter(self, ctx: NodeEnterContext):
+        print(f">>> Entering node '{ctx.node_name}'")
         return None  # Observation only, no modification
 ```
 
-`HookHandler` mirrors the `BaseHookExecutor` interface but works with JSON-serializable dicts instead of Python dataclasses. The `on_chat_model_create` hook is intentionally absent since it cannot work over JSON-RPC.
+On the server side, non-serializable fields (`node_context`, `agent`, `registries`) arrive as `None`, and complex fields (`messages`, `tools`, `response`) hold their serialized form. The `on_chat_model_create` hook is never dispatched remotely since it returns a Python object.
 
 ### HookFastAPIApplication / HookStarletteApplication
 
-Pass your handler to an application builder to get a ready-to-run ASGI server. This is the same pattern as A2A's `A2AFastAPIApplication` / `A2AStarletteApplication`:
+Pass your executor to an application builder to get a ready-to-run ASGI server. This is the same pattern as A2A's `A2AFastAPIApplication` / `A2AStarletteApplication`:
 
 **FastAPI:**
 
 ```python
 from sherma.hooks.apps import HookFastAPIApplication
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext, GraphInvokeContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise."
+        return ctx
 
-    async def before_graph_invoke(self, params):
-        params["config"]["recursion_limit"] = 50
-        return params
+    async def before_graph_invoke(self, ctx: GraphInvokeContext):
+        ctx.config["recursion_limit"] = 50
+        return ctx
 
-app = HookFastAPIApplication(handler=MyHooks()).build()
+app = HookFastAPIApplication(executor=MyHooks()).build()
 ```
 
 ```bash
@@ -685,14 +687,15 @@ uvicorn hook_server:app --port 8000
 
 ```python
 from sherma.hooks.apps import HookStarletteApplication
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
+from sherma.hooks.types import BeforeLLMCallContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise."
+        return ctx
 
-app = HookStarletteApplication(handler=MyHooks()).build()
+app = HookStarletteApplication(executor=MyHooks()).build()
 ```
 
 ```bash
@@ -716,7 +719,7 @@ from fastapi import FastAPI
 from sherma.hooks.apps import HookFastAPIApplication
 
 existing_app = FastAPI()
-HookFastAPIApplication(handler=MyHooks()).add_routes_to_app(
+HookFastAPIApplication(executor=MyHooks()).add_routes_to_app(
     existing_app, rpc_url="/hooks"
 )
 ```
@@ -726,7 +729,7 @@ from starlette.applications import Starlette
 from sherma.hooks.apps import HookStarletteApplication
 
 existing_app = Starlette()
-HookStarletteApplication(handler=MyHooks()).add_routes_to_app(
+HookStarletteApplication(executor=MyHooks()).add_routes_to_app(
     existing_app, rpc_url="/hooks"
 )
 ```
@@ -902,21 +905,22 @@ When configured via YAML, the loader connects to MCP hook servers during agent s
 
 ### Writing an MCP hook server
 
-Reuse the same `HookHandler` interface used for JSON-RPC, and wrap it in `MCPHookServer`. Only methods you override become MCP tools.
+Use the same typed `BaseHookExecutor` interface as in-process and JSON-RPC hooks, and wrap it in `MCPHookServer`. Only methods you override become MCP tools.
 
 ```python
-from sherma.hooks.handler import HookHandler
+from sherma.hooks.executor import BaseHookExecutor
 from sherma.hooks.mcp_server import MCPHookServer
+from sherma.hooks.types import BeforeLLMCallContext, NodeEnterContext
 
-class MyHooks(HookHandler):
-    async def before_llm_call(self, params):
-        params["system_prompt"] += "\n\nBe concise."
-        return params
+class MyHooks(BaseHookExecutor):
+    async def before_llm_call(self, ctx: BeforeLLMCallContext):
+        ctx.system_prompt += "\n\nBe concise."
+        return ctx
 
-    async def node_enter(self, params):
+    async def node_enter(self, ctx: NodeEnterContext):
         return None  # pass-through observation
 
-server = MCPHookServer(handler=MyHooks(), name="my-hooks")
+server = MCPHookServer(executor=MyHooks(), name="my-hooks")
 server.run_stdio()
 # server.run_streamable_http()   # for HTTP
 # server.run_sse()                # for SSE
