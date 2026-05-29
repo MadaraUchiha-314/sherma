@@ -1,3 +1,9 @@
+## v1.6.0 (2026-05-29)
+
+### Feat
+
+- add MCP-based remote hooks support (#78)
+
 ## v1.5.0 (2026-05-07)
 
 ### Feat
