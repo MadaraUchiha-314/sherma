@@ -20,6 +20,7 @@ from sherma.entities.skill_card import SkillCard
 from sherma.exceptions import DeclarativeConfigError
 from sherma.hooks.executor import HookExecutor
 from sherma.hooks.manager import HookManager
+from sherma.hooks.mcp_server import HOOK_TOOL_PREFIX
 from sherma.langgraph.declarative.schema import (
     CallLLMArgs,
     DeclarativeConfig,
@@ -387,6 +388,11 @@ async def _register_mcp_servers(
             ) from exc
 
         for lg_tool in mcp_tools:
+            # Skip sherma hook tools so they don't pollute the agent's
+            # tool registry when the same MCP server is also used to
+            # serve hooks (see sherma.hooks.mcp_server.HOOK_TOOL_PREFIX).
+            if lg_tool.name.startswith(HOOK_TOOL_PREFIX):
+                continue
             if server.tool_prefix:
                 lg_tool.name = f"{server.tool_prefix}{lg_tool.name}"
             sherma_tool = from_langgraph_tool(lg_tool)
