@@ -415,3 +415,92 @@ async def test_tool_discovery_filters_non_hook_tools():
 
     assert executor.available_hooks == {"before_llm_call", "after_llm_call"}
     await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_passes_shared_client_factory():
+    """The streamable_http transport receives the sherma MCP client factory."""
+    executor = MCPHookExecutor(
+        MCPHookTransport(url="http://localhost:1/mcp", headers={"X-Hdr": "1"})
+    )
+
+    mock_session = AsyncMock()
+    mock_session.initialize = AsyncMock()
+    mock_session.list_tools = AsyncMock(return_value=SimpleNamespace(tools=[]))
+
+    fake_factory = MagicMock(name="factory")
+    captured: dict = {}
+
+    def fake_streamablehttp_client(**kwargs):
+        captured.update(kwargs)
+        cm = AsyncMock()
+        cm.__aenter__.return_value = (AsyncMock(), AsyncMock(), AsyncMock())
+        cm.__aexit__.return_value = None
+        return cm
+
+    with (
+        patch(
+            "sherma.hooks.mcp_executor.mcp_http_client_factory",
+            AsyncMock(return_value=fake_factory),
+        ),
+        patch(
+            "mcp.client.streamable_http.streamablehttp_client",
+            side_effect=fake_streamablehttp_client,
+        ),
+        patch(
+            "contextlib.AsyncExitStack.enter_async_context",
+            side_effect=[
+                (AsyncMock(), AsyncMock(), AsyncMock()),
+                mock_session,
+            ],
+        ),
+    ):
+        await executor.connect()
+
+    assert captured.get("httpx_client_factory") is fake_factory
+    assert captured.get("headers") == {"X-Hdr": "1"}
+    await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_sse_passes_shared_client_factory():
+    """The sse transport also receives the sherma MCP client factory."""
+    executor = MCPHookExecutor(
+        MCPHookTransport(url="http://localhost:1/mcp", transport="sse")
+    )
+
+    mock_session = AsyncMock()
+    mock_session.initialize = AsyncMock()
+    mock_session.list_tools = AsyncMock(return_value=SimpleNamespace(tools=[]))
+
+    fake_factory = MagicMock(name="factory")
+    captured: dict = {}
+
+    def fake_sse_client(**kwargs):
+        captured.update(kwargs)
+        cm = AsyncMock()
+        cm.__aenter__.return_value = (AsyncMock(), AsyncMock())
+        cm.__aexit__.return_value = None
+        return cm
+
+    with (
+        patch(
+            "sherma.hooks.mcp_executor.mcp_http_client_factory",
+            AsyncMock(return_value=fake_factory),
+        ),
+        patch(
+            "mcp.client.sse.sse_client",
+            side_effect=fake_sse_client,
+        ),
+        patch(
+            "contextlib.AsyncExitStack.enter_async_context",
+            side_effect=[
+                (AsyncMock(), AsyncMock()),
+                mock_session,
+            ],
+        ),
+    ):
+        await executor.connect()
+
+    assert captured.get("httpx_client_factory") is fake_factory
+    await executor.close()

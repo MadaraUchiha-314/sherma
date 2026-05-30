@@ -43,6 +43,7 @@ from sherma.hooks.types import (
     OnErrorContext,
     OnNodeErrorContext,
 )
+from sherma.http import mcp_http_client_factory
 
 logger = logging.getLogger(__name__)
 
@@ -121,24 +122,28 @@ class MCPHookExecutor(BaseHookExecutor):
             elif self._transport.transport == "sse":
                 from mcp.client.sse import sse_client
 
+                factory = await mcp_http_client_factory()
                 read, write = await stack.enter_async_context(
                     sse_client(
                         url=self._transport.url,  # type: ignore[arg-type]
                         headers=dict(self._transport.headers)
                         if self._transport.headers
                         else None,
+                        httpx_client_factory=factory,
                     )
                 )
                 session = await stack.enter_async_context(ClientSession(read, write))
             else:  # streamable_http
                 from mcp.client.streamable_http import streamablehttp_client
 
+                factory = await mcp_http_client_factory()
                 read, write, _ = await stack.enter_async_context(
                     streamablehttp_client(
                         url=self._transport.url,  # type: ignore[arg-type]
                         headers=dict(self._transport.headers)
                         if self._transport.headers
                         else None,
+                        httpx_client_factory=factory,
                     )
                 )
                 session = await stack.enter_async_context(ClientSession(read, write))

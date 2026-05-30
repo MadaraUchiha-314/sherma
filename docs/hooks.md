@@ -593,6 +593,8 @@ This is useful when:
 
 When a remote hook is registered, sherma serializes each hook context to JSON and sends it as a JSON-RPC method call to your server. The method name is the hook name (e.g., `before_llm_call`). Your server processes the request and returns a (possibly modified) context.
 
+The request is sent through the shared `httpx.AsyncClient` returned by `sherma.http.get_http_client()`, so any default headers, auth, event hooks, transport, or proxy you configured there apply to remote hook calls too. The executor's `timeout` argument is applied per-request.
+
 ```
 Agent                        Hook Server
   |                              |
@@ -849,6 +851,8 @@ Agent                              MCP Hook Server
 ```
 
 Note: MCP tool names are restricted to `A-Z`, `a-z`, `0-9`, `_`, `-`, `.`. The `hooks.` namespace uses `.` as the separator (slash is not allowed).
+
+For `streamable_http` and `sse` transports, the MCP SDK's httpx client is built by `sherma.http.mcp_http_client_factory()`, so default headers, auth, event hooks, and transport (proxies/retries/mocks) from the shared HTTP client flow through. Headers and `auth` you supply on the MCP transport itself win over shared-client defaults on conflict. The stdio transport does not use HTTP.
 
 ### Registering an MCP hook
 
