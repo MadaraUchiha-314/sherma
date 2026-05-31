@@ -1,3 +1,9 @@
+## v1.7.0 (2026-05-31)
+
+### Feat
+
+- route MCP and remote-hook traffic through the shared HTTP client (#79)
+
 ## v1.6.0 (2026-05-29)
 
 ### Feat
