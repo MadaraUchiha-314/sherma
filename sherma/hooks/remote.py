@@ -31,6 +31,7 @@ from sherma.hooks.types import (
     OnErrorContext,
     OnNodeErrorContext,
 )
+from sherma.http import get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +52,7 @@ class RemoteHookExecutor(BaseHookExecutor):
     def __init__(self, url: str, timeout: float = 30.0) -> None:
         self._url = url
         self._timeout = timeout
-        self._client: httpx.AsyncClient | None = None
         self._request_id = 0
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
-        return self._client
 
     async def _call_rpc(
         self, method: str, params: dict[str, Any]
@@ -71,11 +66,12 @@ class RemoteHookExecutor(BaseHookExecutor):
             "id": self._request_id,
         }
         try:
-            client = await self._get_client()
+            client = await get_http_client()
             resp = await client.post(
                 self._url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
+                timeout=self._timeout,
             )
             resp.raise_for_status()
             body = resp.json()

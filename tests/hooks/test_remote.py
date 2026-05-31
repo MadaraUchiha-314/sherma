@@ -41,6 +41,24 @@ def _make_jsonrpc_error(code=-32000, message="server error", request_id=1):
     return httpx.Response(200, json=body, request=_FAKE_REQUEST)
 
 
+def _patch_shared_client(response_or_side_effect):
+    """Patch ``get_http_client`` in ``sherma.hooks.remote`` to a mock client.
+
+    Returns the mock client so tests can introspect calls.
+    """
+    mock_client = AsyncMock()
+    if isinstance(response_or_side_effect, Exception) or (
+        isinstance(response_or_side_effect, type)
+        and issubclass(response_or_side_effect, Exception)
+    ):
+        mock_client.post = AsyncMock(side_effect=response_or_side_effect)
+    else:
+        mock_client.post = AsyncMock(return_value=response_or_side_effect)
+    return mock_client, patch(
+        "sherma.hooks.remote.get_http_client", AsyncMock(return_value=mock_client)
+    )
+
+
 @pytest.mark.asyncio
 async def test_successful_rpc_call(executor):
     """Successful JSON-RPC call updates the context."""
@@ -55,14 +73,15 @@ async def test_successful_rpc_call(executor):
             "input": {"msg": "hi"},
         }
     )
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
+    mock_client, ctx_patch = _patch_shared_client(mock_response)
+    with ctx_patch:
+        result = await executor.before_graph_invoke(ctx)
 
-    result = await executor.before_graph_invoke(ctx)
     assert result is not None
     assert result.config == {"k": "updated"}
     mock_client.post.assert_called_once()
+    # Per-request timeout is applied from the executor's timeout setting
+    assert mock_client.post.call_args.kwargs.get("timeout") == 5.0
 
 
 @pytest.mark.asyncio
@@ -70,11 +89,9 @@ async def test_null_result_returns_none(executor):
     """JSON-RPC returning null result is treated as pass-through."""
     ctx = GraphInvokeContext(agent_id="a1", thread_id="t1", config={}, input={})
     mock_response = _make_jsonrpc_response(None)
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
-
-    result = await executor.before_graph_invoke(ctx)
+    _, ctx_patch = _patch_shared_client(mock_response)
+    with ctx_patch:
+        result = await executor.before_graph_invoke(ctx)
     assert result is None
 
 
@@ -92,11 +109,9 @@ async def test_on_chat_model_create_is_noop(executor):
 async def test_network_error_returns_none(executor):
     """Network error logs warning and returns None."""
     ctx = GraphInvokeContext(agent_id="a1", thread_id="t1", config={}, input={})
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
-    executor._client = mock_client
+    _, ctx_patch = _patch_shared_client(httpx.ConnectError("connection refused"))
 
-    with patch("sherma.hooks.remote.logger") as mock_logger:
+    with ctx_patch, patch("sherma.hooks.remote.logger") as mock_logger:
         result = await executor.before_graph_invoke(ctx)
         assert result is None
         mock_logger.warning.assert_called_once()
@@ -106,11 +121,9 @@ async def test_network_error_returns_none(executor):
 async def test_timeout_returns_none(executor):
     """Timeout logs warning and returns None."""
     ctx = GraphInvokeContext(agent_id="a1", thread_id="t1", config={}, input={})
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
-    executor._client = mock_client
+    _, ctx_patch = _patch_shared_client(httpx.TimeoutException("timed out"))
 
-    with patch("sherma.hooks.remote.logger") as mock_logger:
+    with ctx_patch, patch("sherma.hooks.remote.logger") as mock_logger:
         result = await executor.before_graph_invoke(ctx)
         assert result is None
         mock_logger.warning.assert_called_once()
@@ -120,12 +133,9 @@ async def test_timeout_returns_none(executor):
 async def test_jsonrpc_error_returns_none(executor):
     """JSON-RPC error response logs warning and returns None."""
     ctx = GraphInvokeContext(agent_id="a1", thread_id="t1", config={}, input={})
-    mock_response = _make_jsonrpc_error()
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
+    _, ctx_patch = _patch_shared_client(_make_jsonrpc_error())
 
-    with patch("sherma.hooks.remote.logger") as mock_logger:
+    with ctx_patch, patch("sherma.hooks.remote.logger") as mock_logger:
         result = await executor.before_graph_invoke(ctx)
         assert result is None
         mock_logger.warning.assert_called_once()
@@ -141,11 +151,9 @@ async def test_node_enter_with_node_context(executor):
     mock_response = _make_jsonrpc_response(
         {"node_name": "llm1", "node_type": "call_llm", "state": {"k": 2}}
     )
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
-
-    result = await executor.node_enter(ctx)
+    _, ctx_patch = _patch_shared_client(mock_response)
+    with ctx_patch:
+        result = await executor.node_enter(ctx)
     assert result is not None
     assert result.node_context is nc
     assert result.state == {"k": 2}
@@ -168,11 +176,9 @@ async def test_before_llm_call_preserves_complex_fields(executor):
     mock_response = _make_jsonrpc_response(
         {"node_name": "llm1", "system_prompt": "new", "state": {"k": 2}}
     )
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
-
-    result = await executor.before_llm_call(ctx)
+    _, ctx_patch = _patch_shared_client(mock_response)
+    with ctx_patch:
+        result = await executor.before_llm_call(ctx)
     assert result is not None
     assert result.node_context is nc
     assert result.messages is messages
@@ -194,19 +200,15 @@ async def test_on_error_serializes_error(executor):
     mock_response = _make_jsonrpc_response(
         {"agent_id": "a1", "thread_id": "t1", "config": {}, "input": {}}
     )
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
-
-    # Verify the error was serialized in the RPC call
-    result = await executor.on_error(ctx)
+    mock_client, ctx_patch = _patch_shared_client(mock_response)
+    with ctx_patch:
+        result = await executor.on_error(ctx)
     call_args = mock_client.post.call_args
     sent_payload = call_args.kwargs.get("json") or call_args[1].get("json")
     assert sent_payload["params"]["error"] == {
         "type": "RuntimeError",
         "message": "boom",
     }
-    # Error is re-attached from original
     assert result is not None
     assert result.error is ctx.error
 
@@ -216,16 +218,14 @@ async def test_request_id_increments(executor):
     """Each RPC call gets an incrementing request ID."""
     ctx = GraphInvokeContext(agent_id="a1", thread_id="t1", config={}, input={})
     mock_response = _make_jsonrpc_response(None)
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    executor._client = mock_client
-
-    await executor.before_graph_invoke(ctx)
-    await executor.after_graph_invoke(
-        AfterGraphInvokeContext(
-            agent_id="a1", thread_id="t1", config={}, input={}, result={}
+    mock_client, ctx_patch = _patch_shared_client(mock_response)
+    with ctx_patch:
+        await executor.before_graph_invoke(ctx)
+        await executor.after_graph_invoke(
+            AfterGraphInvokeContext(
+                agent_id="a1", thread_id="t1", config={}, input={}, result={}
+            )
         )
-    )
 
     calls = mock_client.post.call_args_list
     id1 = calls[0].kwargs.get("json", calls[0][1].get("json", {})).get("id")
@@ -235,15 +235,11 @@ async def test_request_id_increments(executor):
 
 
 @pytest.mark.asyncio
-async def test_lazy_client_creation(executor):
-    """httpx client is created lazily on first call."""
-    assert executor._client is None
+async def test_uses_shared_http_client(executor):
+    """Executor delegates to ``sherma.hooks.remote.get_http_client``."""
     ctx = GraphInvokeContext(agent_id="a1", thread_id="t1", config={}, input={})
-    # Patch httpx.AsyncClient to avoid real network calls
-    with patch("sherma.hooks.remote.httpx.AsyncClient") as mock_cls:
-        mock_instance = AsyncMock()
-        mock_instance.post = AsyncMock(return_value=_make_jsonrpc_response(None))
-        mock_cls.return_value = mock_instance
-
+    mock_client, ctx_patch = _patch_shared_client(_make_jsonrpc_response(None))
+    with ctx_patch as mock_get:
         await executor.before_graph_invoke(ctx)
-        mock_cls.assert_called_once_with(timeout=5.0)
+        mock_get.assert_awaited()
+    mock_client.post.assert_called_once()

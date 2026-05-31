@@ -267,6 +267,8 @@ class RemoteHookExecutor(BaseHookExecutor):
 
 The `on_chat_model_create` hook is a no-op (cannot return Python objects over JSON-RPC). On any network or protocol error, logs a warning and passes through.
 
+Uses the shared HTTP client returned by `sherma.http.get_http_client()`, so headers, auth, transport, event hooks, and timeouts configured there are applied to remote hook calls. The `timeout` constructor argument is applied per-request and takes precedence over the shared client's timeout.
+
 ### `MCPHookTransport`
 
 Connection parameters for an MCP hook server. Provide exactly one of `command` (stdio) or `url` (HTTP).
@@ -296,6 +298,8 @@ class MCPHookExecutor(BaseHookExecutor):
 ```
 
 Call `connect()` before use and `close()` when done. The `on_chat_model_create` hook is a no-op. On any error, logs a warning and passes through. Hooks not registered on the server are skipped without any IPC.
+
+For `streamable_http` and `sse` transports, the MCP SDK's httpx client is built by `sherma.http.mcp_http_client_factory()` so that event hooks, auth, transport, and default headers from the shared HTTP client flow through. MCP-supplied headers and auth win over shared-client defaults on conflict. The stdio transport does not use HTTP.
 
 ### `MCPHookServer`
 
@@ -579,6 +583,48 @@ class EntityType(StrEnum):
     SKILL = "skill"
     AGENT = "agent"
 ```
+
+## HTTP Client
+
+`sherma.http` exposes a single shared `httpx.AsyncClient` cached in a `ContextVar`. All built-in HTTP traffic — LLM provider calls, A2A remote agents, skill/prompt/skill-card registries, remote hooks (JSON-RPC), and MCP hooks (`streamable_http` / `sse`) — flows through the same configuration, so users can customize headers, auth, event hooks, transport (proxies, retries, mocks), and timeouts in one place.
+
+### `get_http_client`
+
+```python
+HttpClientFactory = Callable[[], httpx.AsyncClient]
+
+async def get_http_client(
+    client: httpx.AsyncClient | HttpClientFactory | None = None,
+) -> httpx.AsyncClient
+```
+
+Returns the shared client. Pass an `httpx.AsyncClient` instance or a zero-arg factory to seed the context (typically once, at agent setup). Subsequent calls with no argument return the cached client.
+
+### `mcp_http_client_factory`
+
+```python
+class McpHttpClientFactory(Protocol):
+    def __call__(
+        self,
+        headers: dict[str, str] | None = None,
+        timeout: httpx.Timeout | None = None,
+        auth: httpx.Auth | None = None,
+    ) -> httpx.AsyncClient: ...
+
+async def mcp_http_client_factory() -> McpHttpClientFactory
+```
+
+Builds the `httpx_client_factory` consumed by the MCP SDK's `streamablehttp_client` and `sse_client`. The MCP SDK opens its HTTP transports inside `async with` and closes the returned client, so the factory hands back a **fresh** `httpx.AsyncClient` per MCP connection, inheriting configuration from the shared client:
+
+| Attribute | Behavior |
+| --- | --- |
+| `event_hooks` | copied |
+| `transport` | reused (proxies, retries, mocks flow through) |
+| default headers | merged; **MCP-supplied headers win on conflict** |
+| `auth` | inherited only if MCP did not supply one |
+| `timeout` | MCP's value wins; falls back to the shared client's |
+
+Used internally by `MCPHookExecutor`; agent authors rarely call it directly.
 
 ## Exceptions
 

@@ -891,4 +891,7 @@ Follow these steps when building an agent:
 ### A2A Integration
 `ShermaAgentExecutor`, `a2a_to_langgraph`, `langgraph_to_a2a`, `combine_ai_messages`
 
+### HTTP Client (`sherma.http`)
+`get_http_client`, `HttpClientFactory`, `mcp_http_client_factory`, `McpHttpClientFactory`. A single shared `httpx.AsyncClient` is cached in a `ContextVar` and used by LLM, A2A, registries, remote hooks (JSON-RPC), and MCP hooks (`streamable_http` / `sse`). Configure headers/auth/event hooks/transport on it once via `get_http_client(...)`.
+
 For detailed signatures, see `references/api-reference.md`.
