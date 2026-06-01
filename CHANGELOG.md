@@ -1,3 +1,9 @@
+## v1.8.0 (2026-06-01)
+
+### Feat
+
+- add custom data section to declarative YAML (#81)
+
 ## v1.7.0 (2026-05-31)
 
 ### Feat
