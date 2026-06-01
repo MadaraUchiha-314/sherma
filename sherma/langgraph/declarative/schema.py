@@ -479,6 +479,7 @@ class DeclarativeConfig(BaseModel):
 
     manifest_version: int
     agents: dict[str, AgentDef] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
     llms: list[LLMDef] = Field(default_factory=list)
     tools: list[ToolDef] = Field(default_factory=list)
     prompts: list[PromptDef] = Field(default_factory=list)

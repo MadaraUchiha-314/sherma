@@ -44,6 +44,7 @@ When the user describes what they want, gather information in **at most 2 rounds
 ### Top-level keys
 
 ```yaml
+data:          # Custom static data referenceable from CEL (free-form mapping)
 prompts:       # Prompt definitions (id, version, instructions | instructions_path)
 llms:          # LLM declarations (id, version, provider, model_name)
 tools:         # Tool imports (id, version, import_path)
@@ -743,7 +744,27 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 # Message metadata via additional_kwargs
 'state.messages[0]["additional_kwargs"]["type"] == "approval_decision"'
+
+# Reference custom static data from the top-level `data:` section
+'data.thresholds.max_retries'                                  # nested map access
+'data["labels"][state.sentiment]'                             # state-driven lookup
+'state.retry_count < data.thresholds.max_retries'             # threshold check
 ```
+
+### Data binding (what CEL can reference)
+
+All bindings are **top-level** except `state` (which uses the `state.` prefix):
+
+| Variable | Source | Scope |
+| --- | --- | --- |
+| `state` | agent `state.fields` | every expression |
+| `prompts["<id>"]["instructions"]` | top-level `prompts:` | every expression |
+| `llms["<id>"]["model_name"]` | top-level `llms:` | every expression |
+| `skills["<id>"]` → `id`/`version`/`name`/`description` | top-level `skills:` (when declared) | every expression |
+| `data` | top-level `data:` (when declared) — free-form | every expression |
+| `llm_response` → `content`/`tool_calls` | the LLM reply | **only** in `call_llm` `state_updates` |
+
+`llm_response` is the only runtime-scoped binding — it is unavailable in prompts, edges, or non-`call_llm` nodes.
 
 ### List macros (built-in)
 
@@ -810,7 +831,7 @@ CEL (Common Expression Language) is used in YAML for dynamic behavior.
 
 ### Gotchas
 
-- **State access requires `state.` prefix**: Use `state.messages`, `state["counter"]` — not bare `messages` or `counter`. Extra vars like `prompts` and `llms` are top-level.
+- **State access requires `state.` prefix**: Use `state.messages`, `state["counter"]` — not bare `messages` or `counter`. Extra vars like `prompts`, `llms`, `skills`, and `data` are top-level.
 - **String literals need inner quotes**: `'"hello"'` not `'hello'`. Without inner quotes, CEL treats it as a variable name.
 - **`size()` not `len()`**: CEL uses `size()` for list/string length.
 - **Map syntax**: `{"key": value}` — keys must be strings in double quotes.

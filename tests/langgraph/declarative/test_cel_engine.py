@@ -63,6 +63,28 @@ def test_evaluate_with_extra_vars():
     assert result == "be helpful"
 
 
+def test_evaluate_custom_data_dot_access():
+    extra = {"data": {"thresholds": {"max_retries": 3}}}
+    cel = CelEngine(extra_vars=extra)
+    result = cel.evaluate("data.thresholds.max_retries", {})
+    assert result == 3
+
+
+def test_evaluate_custom_data_bracket_access():
+    extra = {"data": {"labels": {"positive": "good", "negative": "bad"}}}
+    cel = CelEngine(extra_vars=extra)
+    result = cel.evaluate('data["labels"][state.sentiment]', {"sentiment": "positive"})
+    assert result == "good"
+
+
+def test_evaluate_custom_data_in_condition():
+    extra = {"data": {"thresholds": {"max_retries": 3}}}
+    cel = CelEngine(extra_vars=extra)
+    expr = "state.retries < data.thresholds.max_retries"
+    assert cel.evaluate_bool(expr, {"retries": 1})
+    assert not cel.evaluate_bool(expr, {"retries": 3})
+
+
 def test_evaluate_nested_map():
     cel = CelEngine()
     result = cel.evaluate(

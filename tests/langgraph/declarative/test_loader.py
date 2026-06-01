@@ -165,6 +165,81 @@ def test_load_manifest_version_parsed():
     assert config.manifest_version == 1
 
 
+def test_load_custom_data_defaults_empty():
+    """The top-level ``data`` mapping defaults to an empty dict when omitted."""
+    config = load_declarative_config(yaml_content=MINIMAL_YAML)
+    assert config.data == {}
+
+
+def test_load_custom_data_section():
+    """A top-level ``data`` mapping round-trips through the loader verbatim."""
+    yaml_content = """\
+manifest_version: 1
+
+data:
+  thresholds:
+    max_retries: 3
+    min_confidence: 0.7
+  labels:
+    positive: "good"
+  flags: ["a", "b"]
+
+agents:
+  my-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hello"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    assert config.data["thresholds"]["max_retries"] == 3
+    assert config.data["thresholds"]["min_confidence"] == 0.7
+    assert config.data["labels"]["positive"] == "good"
+    assert config.data["flags"] == ["a", "b"]
+
+
+def test_load_custom_data_env_interpolation(monkeypatch):
+    """``${VAR}`` placeholders inside ``data`` values are interpolated."""
+    monkeypatch.setenv("SUPPORT_EMAIL", "help@example.com")
+    yaml_content = """\
+manifest_version: 1
+
+data:
+  support_email: ${SUPPORT_EMAIL}
+  fallback: ${MISSING_VAR:-default-value}
+
+agents:
+  my-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hello"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    assert config.data["support_email"] == "help@example.com"
+    assert config.data["fallback"] == "default-value"
+
+
 def test_load_call_llm_config():
     config = load_declarative_config(yaml_content=CALL_LLM_YAML)
     agent = config.agents["weather-agent"]

@@ -383,6 +383,12 @@ class DeclarativeAgent(LangGraphAgent):
         """Build extra variables for CEL from config registries."""
         extra: dict[str, Any] = {}
 
+        # Expose user-defined static data so CEL expressions can reference
+        # constants declared in the top-level ``data`` section (e.g.
+        # ``data.thresholds.max_retries`` or ``data["labels"][state.key]``).
+        if config.data:
+            extra["data"] = config.data
+
         prompts: dict[str, dict[str, str]] = {}
         for p in config.prompts:
             prompts[p.id] = {"instructions": p.instructions or ""}
