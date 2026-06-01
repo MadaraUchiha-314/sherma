@@ -8,6 +8,7 @@ A declarative agent YAML has these top-level sections:
 
 ```yaml
 manifest_version: 1   # Required: schema version (currently 1)
+data:         # Custom static data referenceable from CEL (optional)
 prompts:      # Prompt definitions
 llms:         # LLM declarations
 tools:        # Tool imports
@@ -71,6 +72,45 @@ mcp_servers:
 ```
 
 ## Entity Declarations
+
+### Custom Data
+
+The optional top-level `data` section holds arbitrary **static** values that you
+want to reference from CEL expressions throughout the YAML — thresholds, label
+maps, feature flags, routing tables, support contacts, and so on. It is a
+free-form mapping: values may be scalars, nested maps, or lists.
+
+```yaml
+data:
+  thresholds:
+    max_retries: 3
+    min_confidence: 0.7
+  labels:
+    positive: "👍"
+    negative: "👎"
+  support_email: ${SUPPORT_EMAIL:-help@example.com}
+```
+
+The whole mapping is exposed to every CEL expression in the agent under the
+top-level `data` variable, accessed via dot or bracket syntax (the same way
+`prompts`, `llms`, and `skills` are exposed):
+
+```yaml
+# In a prompt — inject a constant via template()
+content: 'template(prompts["sys"]["instructions"], {"email": data.support_email})'
+
+# In a conditional edge — compare state against a declared threshold
+condition: 'state.retry_count < data.thresholds.max_retries'
+
+# In set_state — look a value up by a state-driven key
+values: { emoji: 'data["labels"][state.sentiment]' }
+```
+
+Because [environment-variable interpolation](#environment-variable-interpolation)
+runs over the entire YAML before parsing, `${VAR}` placeholders inside `data`
+values work just like anywhere else. The `data` section is **not** validated
+against a schema — it is intentionally free-form. For the full set of variables
+available to CEL, see [Data Binding Reference](#data-binding-reference).
 
 ### Prompts
 
@@ -872,8 +912,33 @@ host conditional edges.
 - **Prompts**: `prompts["prompt-id"]["instructions"]`
 - **LLMs**: `llms["llm-id"]["model_name"]`
 - **Skills**: `skills["skill-id"]["name"]`, `skills["skill-id"]["description"]` (when skills are declared)
+- **Custom data**: `data["key"]` / `data.key` — your [custom static data](#custom-data) (when a `data` section is declared)
 
-State fields are always accessed through the `state` prefix. Extra variables like `prompts`, `llms`, and `skills` remain at the top level.
+State fields are always accessed through the `state` prefix. Extra variables like `prompts`, `llms`, `skills`, and `data` remain at the top level.
+
+### Data Binding Reference
+
+These are the variables sherma binds into the CEL evaluation context. Every variable except `state` lives at the **top level** (no `state.` prefix). The table is the authoritative answer to "what can I reference from CEL, and where does it come from?"
+
+| Variable | Type | Where it comes from | Scope | Example |
+| --- | --- | --- | --- | --- |
+| `state` | map | The agent's [state schema](#state-schema) (`agents.<name>.state.fields`) | Every CEL expression | `state.messages`, `state["counter"]` |
+| `prompts` | map | Top-level [`prompts`](#prompts) declarations, keyed by `id` | Every CEL expression | `prompts["sys"]["instructions"]` |
+| `llms` | map | Top-level [`llms`](#llms) declarations, keyed by `id` | Every CEL expression | `llms["gpt-4o"]["model_name"]` |
+| `skills` | map | Top-level [`skills`](#skills) declarations, keyed by `id` (present only when skills are declared) | Every CEL expression | `skills["weather"]["name"]`, `skills["weather"]["description"]` |
+| `data` | map | Top-level [`data`](#custom-data) section (present only when declared) | Every CEL expression | `data.thresholds.max_retries` |
+| `llm_response` | map | The LLM's reply inside a `call_llm` node | **Only** in that node's [`state_updates`](#state_updates) expressions | `llm_response.content`, `[llm_response]` |
+
+`prompts`, `llms`, and `skills` each expose a small fixed set of sub-keys:
+
+| Variable | Available sub-keys |
+| --- | --- |
+| `prompts["<id>"]` | `instructions` |
+| `llms["<id>"]` | `model_name` |
+| `skills["<id>"]` | `id`, `version`, `name`, `description` |
+| `llm_response` | `content` (string), `tool_calls` (list) |
+
+`data` has no fixed sub-keys — its shape is whatever you declare. `llm_response` is the only **runtime-scoped** binding: it exists solely while a `call_llm` node maps its result into state and is unavailable in prompts, edges, or other node types.
 
 CEL supports standard operations: arithmetic, string manipulation, list operations (`size()`, indexing, `filter`, `exists`, `map`), map construction, comparisons, and boolean logic.
 

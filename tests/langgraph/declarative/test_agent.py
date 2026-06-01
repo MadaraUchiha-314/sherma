@@ -80,6 +80,63 @@ async def test_declarative_agent_set_state():
     assert result["result"] == "done"
 
 
+CUSTOM_DATA_YAML = """\
+manifest_version: 1
+
+data:
+  labels:
+    positive: "great"
+    negative: "bad"
+  thresholds:
+    max_retries: 3
+
+agents:
+  test-agent:
+    state:
+      fields:
+        - name: sentiment
+          type: str
+          default: ""
+        - name: emoji
+          type: str
+          default: ""
+        - name: allowed
+          type: bool
+          default: false
+        - name: retries
+          type: int
+          default: 0
+    graph:
+      entry_point: setter
+      nodes:
+        - name: setter
+          type: set_state
+          args:
+            values:
+              emoji: 'data["labels"][state.sentiment]'
+              allowed: 'state.retries < data.thresholds.max_retries'
+      edges: []
+"""
+
+
+@pytest.mark.asyncio
+async def test_declarative_agent_custom_data_in_cel():
+    """CEL expressions can reference the top-level ``data`` section."""
+    agent = DeclarativeAgent(
+        id="test-agent",
+        version="1.0.0",
+        yaml_content=CUSTOM_DATA_YAML,
+    )
+    graph = await agent.get_graph()
+    config = {"configurable": {"thread_id": "t1"}}
+    result = await graph.ainvoke(
+        {"sentiment": "positive", "emoji": "", "allowed": False, "retries": 1},
+        config,
+    )
+    assert result["emoji"] == "great"
+    assert result["allowed"] is True
+
+
 @pytest.mark.asyncio
 async def test_declarative_agent_data_transform():
     agent = DeclarativeAgent(
