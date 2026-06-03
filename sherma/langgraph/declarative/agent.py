@@ -184,7 +184,11 @@ class DeclarativeAgent(LangGraphAgent):
             self.hook_manager.register(executor)
 
         if config.hooks:
-            mcp_executors = await populate_hooks(config, self.hook_manager)
+            mcp_executors = await populate_hooks(
+                config,
+                self.hook_manager,
+                cel_extra_vars=self._build_cel_extra_vars(config),
+            )
             self._mcp_hook_executors = mcp_executors
 
         # Derive base_path for resolving relative file paths in the YAML

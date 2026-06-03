@@ -370,6 +370,34 @@ class MCPHookDef(BaseModel):
         return self
 
 
+class CELHookSpec(BaseModel):
+    """CEL rules for a single hook type within a ``cel`` hook.
+
+    * ``when`` — optional CEL boolean guard; the hook is a no-op when it
+      evaluates to ``false``.
+    * ``state_updates`` — map of ``state_key -> CEL expression``; results are
+      merged into the context's ``state``.
+    * ``set`` — map of ``field -> CEL expression`` for other writable
+      scalar/dict context fields (e.g. ``system_prompt``, ``config``).
+
+    Every context field is readable in the expressions at the top level
+    (``node_name``, ``response``, ``value``, ...); ``state`` fields are reached
+    via ``state.<field>``.
+    """
+
+    when: str | None = None
+    state_updates: dict[str, str] = Field(default_factory=dict)
+    set: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_non_empty(self) -> Self:
+        if not self.state_updates and not self.set:
+            raise ValueError(
+                "CELHookSpec requires at least one of 'state_updates' or 'set'"
+            )
+        return self
+
+
 class HookDef(BaseModel):
     """A hook executor declaration in the YAML.
 
@@ -377,12 +405,15 @@ class HookDef(BaseModel):
 
     * ``import_path`` for a local Python hook executor;
     * ``url`` for a remote JSON-RPC 2.0 hook server;
-    * ``mcp`` for an MCP-based hook server.
+    * ``mcp`` for an MCP-based hook server;
+    * ``cel`` for inline CEL-expression based hooks (a map of
+      ``hook_name -> CELHookSpec``).
     """
 
     import_path: str | None = None
     url: str | None = None
     mcp: MCPHookDef | None = None
+    cel: dict[str, CELHookSpec] | None = None
 
     @model_validator(mode="after")
     def _check_one_source(self) -> Self:
@@ -390,14 +421,52 @@ class HookDef(BaseModel):
             self.import_path is not None,
             self.url is not None,
             self.mcp is not None,
+            self.cel is not None,
         ]
         count = sum(sources)
         if count == 0:
-            raise ValueError("HookDef requires one of 'import_path', 'url', or 'mcp'")
+            raise ValueError(
+                "HookDef requires one of 'import_path', 'url', 'mcp', or 'cel'"
+            )
         if count > 1:
             raise ValueError(
-                "HookDef can only have one of 'import_path', 'url', or 'mcp'"
+                "HookDef can only have one of 'import_path', 'url', 'mcp', or 'cel'"
             )
+        if self.cel is not None:
+            self._validate_cel()
+        return self
+
+    def _validate_cel(self) -> Self:
+        from sherma.hooks.cel_executor import (
+            CEL_CAPABLE_HOOKS,
+            hook_supports_state_updates,
+            writable_fields,
+        )
+
+        assert self.cel is not None
+        if not self.cel:
+            raise ValueError("HookDef 'cel' must declare at least one hook")
+        for hook_name, spec in self.cel.items():
+            if hook_name not in CEL_CAPABLE_HOOKS:
+                raise ValueError(
+                    f"Unknown or unsupported CEL hook '{hook_name}'. "
+                    f"'on_chat_model_create' is not supported by CEL hooks "
+                    f"because it returns a Python object."
+                )
+            if spec.state_updates and not hook_supports_state_updates(hook_name):
+                raise ValueError(
+                    f"CEL hook '{hook_name}' has neither a 'result' nor a "
+                    f"'state' field; 'state_updates' is not allowed for it."
+                )
+            if spec.set:
+                allowed = writable_fields(hook_name)
+                invalid = set(spec.set) - allowed
+                if invalid:
+                    raise ValueError(
+                        f"CEL hook '{hook_name}' cannot set "
+                        f"{sorted(invalid)}; writable fields are "
+                        f"{sorted(allowed)}."
+                    )
         return self
 
 

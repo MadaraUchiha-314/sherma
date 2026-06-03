@@ -1,6 +1,7 @@
 """Hooks system for agent lifecycle events."""
 
 from sherma.hooks.apps import HookFastAPIApplication, HookStarletteApplication
+from sherma.hooks.cel_executor import CELHookExecutor
 from sherma.hooks.executor import BaseHookExecutor, HookExecutor
 from sherma.hooks.manager import HookManager
 from sherma.hooks.mcp_executor import MCPHookExecutor, MCPHookTransport
@@ -41,6 +42,7 @@ __all__ = [
     "BeforeLLMCallContext",
     "BeforeSkillLoadContext",
     "BeforeToolCallContext",
+    "CELHookExecutor",
     "ChatModelCreateContext",
     "GraphInvokeContext",
     "HookExecutor",

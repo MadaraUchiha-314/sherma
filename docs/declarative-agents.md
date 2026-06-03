@@ -201,9 +201,20 @@ hooks:
   - mcp:
       url: http://localhost:9000/mcp
       transport: streamable_http   # or "sse"
+
+  # Inline CEL-expression based hook (no Python, no service)
+  - cel:
+      node_exit:
+        when: 'node_type == "interrupt" && node_name == "get_approval"'
+        state_updates:
+          response_type: >
+            default(result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"], "revise")
+      before_llm_call:
+        set:
+          system_prompt: 'system_prompt + "\n\nBe concise."'
 ```
 
-Each `hooks` entry must set exactly one of `import_path`, `url`, or `mcp`. Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md).
+Each `hooks` entry must set exactly one of `import_path`, `url`, `mcp`, or `cel`. Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md) — and [CEL Hooks](hooks.md#cel-hooks) for the fully declarative option.
 
 ### Sub-Agents
 

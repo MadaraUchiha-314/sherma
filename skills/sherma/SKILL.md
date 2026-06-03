@@ -51,7 +51,7 @@ tools:         # Tool imports (id, version, import_path)
 skills:        # Skill card references (id, version, skill_card_path or url)
 sub_agents:    # Sub-agent declarations (id, version, yaml_path/import_path/url)
 mcp_servers:   # MCP server declarations (auto-registers tools into the registry)
-hooks:         # Hook executor imports (import_path or url)
+hooks:         # Hook executors: import_path | url | mcp | cel (inline CEL)
 checkpointer:  # Checkpointer config (type: memory)
 default_llm:   # Default LLM for call_llm nodes (id reference)
 agents:        # Agent graph definitions
@@ -488,6 +488,15 @@ hooks:
   #     args: ["-m", "my_package.mcp_hook_server"]
   # - mcp:
   #     url: http://localhost:9000/mcp
+  # Inline CEL hooks (no Python, no service):
+  # - cel:
+  #     node_exit:
+  #       when: 'node_type == "interrupt"'
+  #       state_updates:
+  #         response_type: '"approve"'
+  #     before_llm_call:
+  #       set:
+  #         system_prompt: 'system_prompt + "\n\nBe concise."'
 
 prompts:
   - id: system-prompt
@@ -861,6 +870,8 @@ All bindings are **top-level** except `state` (which uses the `state.` prefix):
 
 10. **MCP hook tool names use `.` not `/`**: MCP restricts tool names to `[A-Za-z0-9_.-]+`, so MCP-based hook tools are named `hooks.before_llm_call` (dot separator), not `hooks/before_llm_call`. The executor discovers tools with the `hooks.` prefix at connect time and only dispatches the hooks the server has registered.
 
+11. **CEL hooks persist state via `result`, not `state`**: A `cel` hook's `state_updates` only durably update graph state on hooks whose context carries `result` (most often `node_exit`, also `node_execute`/`after_*`), because LangGraph persists by the node's *returned* delta. Mutating `state` on e.g. `after_interrupt` does not persist — for the issue #68 pattern (state update after interrupt resume), use a `node_exit` CEL hook reading `result["messages"]`. `cel` hooks read every context field at the top level (`node_name`, `node_type`, `response`, `result`, …) and cannot target `on_chat_model_create`.
+
 ## Process
 
 Follow these steps when building an agent:
@@ -892,7 +903,7 @@ Follow these steps when building an agent:
 `Registry`, `RegistryEntry`, `RegistryBundle`, `TenantRegistryManager`, `PromptRegistry`, `LLMRegistry`, `ToolRegistry`, `SkillRegistry`, `AgentRegistry`
 
 ### Hooks
-`HookExecutor`, `BaseHookExecutor`, `HookManager`, `HookType`, `HookFastAPIApplication`, `HookStarletteApplication`, `RemoteHookExecutor`, `MCPHookExecutor`, `MCPHookTransport`, `MCPHookServer`. Remote hook servers (JSON-RPC and MCP) are authored as `BaseHookExecutor` subclasses with typed contexts — same as in-process hooks.
+`HookExecutor`, `BaseHookExecutor`, `CELHookExecutor`, `HookManager`, `HookType`, `HookFastAPIApplication`, `HookStarletteApplication`, `RemoteHookExecutor`, `MCPHookExecutor`, `MCPHookTransport`, `MCPHookServer`. Remote hook servers (JSON-RPC and MCP) are authored as `BaseHookExecutor` subclasses with typed contexts — same as in-process hooks. `CELHookExecutor` backs the declarative `cel` hook source (inline CEL expressions; see references/hooks.md#cel-hooks).
 
 ### Declarative
 `DeclarativeConfig`, `load_declarative_config`

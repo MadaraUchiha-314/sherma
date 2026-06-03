@@ -423,6 +423,56 @@ def test_hook_def_rejects_mcp_combined_with_url():
         HookDef(url="http://x", mcp=MCPHookDef(command="python"))
 
 
+def test_hook_def_with_cel():
+    hook = HookDef(
+        cel={
+            "node_exit": {
+                "when": 'node_type == "interrupt"',
+                "state_updates": {"response_type": '"approve"'},
+            },
+            "before_llm_call": {"set": {"system_prompt": 'system_prompt + "!"'}},
+        }
+    )
+    assert hook.cel is not None
+    assert hook.cel["node_exit"].when == 'node_type == "interrupt"'
+    assert hook.cel["node_exit"].state_updates == {"response_type": '"approve"'}
+    assert hook.cel["before_llm_call"].set == {"system_prompt": 'system_prompt + "!"'}
+    assert hook.import_path is None
+
+
+def test_hook_def_rejects_cel_combined_with_import_path():
+    with pytest.raises(ValidationError, match="can only have one of"):
+        HookDef(
+            import_path="my.Hook",
+            cel={"node_exit": {"set": {"node_name": '"x"'}}},
+        )
+
+
+def test_cel_hook_spec_requires_state_updates_or_set():
+    with pytest.raises(ValidationError, match="at least one of"):
+        HookDef(cel={"node_exit": {}})
+
+
+def test_cel_hook_rejects_unknown_hook_name():
+    with pytest.raises(ValidationError, match="Unknown or unsupported CEL hook"):
+        HookDef(cel={"not_a_hook": {"set": {"node_name": '"x"'}}})
+
+
+def test_cel_hook_rejects_on_chat_model_create():
+    with pytest.raises(ValidationError, match="Unknown or unsupported CEL hook"):
+        HookDef(cel={"on_chat_model_create": {"set": {"model_name": '"x"'}}})
+
+
+def test_cel_hook_rejects_state_updates_on_stateless_hook():
+    with pytest.raises(ValidationError, match="state_updates' is not allowed"):
+        HookDef(cel={"before_skill_load": {"state_updates": {"a": '"b"'}}})
+
+
+def test_cel_hook_rejects_invalid_set_field():
+    with pytest.raises(ValidationError, match="cannot set"):
+        HookDef(cel={"before_llm_call": {"set": {"messages": '"x"'}}})
+
+
 # --- use_sub_agents_as_tools type normalization ---
 
 

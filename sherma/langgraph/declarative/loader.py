@@ -920,17 +920,33 @@ def validate_config(config: DeclarativeConfig, agent_name: str) -> None:
 async def populate_hooks(
     config: DeclarativeConfig,
     hook_manager: HookManager,
+    cel_extra_vars: dict[str, Any] | None = None,
 ) -> list[Any]:
     """Import and register hook executors declared in the YAML config.
 
+    *cel_extra_vars* are passed to the :class:`CelEngine` backing any
+    ``cel`` hooks so they can reference ``data``/``prompts``/``llms``.
+
     Returns the list of MCP-based hook executors that were connected
     (in registration order) so the caller can close their connections
-    during shutdown.  Local and JSON-RPC hooks do not require explicit
+    during shutdown.  Local, JSON-RPC, and CEL hooks do not require explicit
     teardown and are not returned.
     """
     mcp_executors: list[Any] = []
 
     for hook_def in config.hooks:
+        if hook_def.cel is not None:
+            from sherma.hooks.cel_executor import CELHookExecutor
+            from sherma.langgraph.declarative.cel_engine import CelEngine
+
+            spec = {
+                hook_name: hook_spec.model_dump()
+                for hook_name, hook_spec in hook_def.cel.items()
+            }
+            cel = CelEngine(extra_vars=cel_extra_vars or {})
+            hook_manager.register(CELHookExecutor(spec, cel))
+            continue
+
         if hook_def.mcp is not None:
             from sherma.hooks.mcp_executor import MCPHookExecutor, MCPHookTransport
 

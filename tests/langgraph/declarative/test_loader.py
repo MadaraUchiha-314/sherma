@@ -1480,6 +1480,52 @@ agents:
     assert isinstance(hook_manager._executors[1], BaseHookExecutor)
 
 
+@pytest.mark.asyncio
+async def test_populate_hooks_with_cel():
+    """populate_hooks creates a CELHookExecutor for cel-based hooks."""
+    from sherma.hooks.cel_executor import CELHookExecutor
+
+    yaml_content = """\
+manifest_version: 1
+
+data:
+  labels:
+    k: "v"
+
+hooks:
+  - cel:
+      node_exit:
+        when: 'node_type == "interrupt"'
+        state_updates:
+          response_type: '"approve"'
+
+agents:
+  a:
+    state:
+      fields: []
+    graph:
+      entry_point: start
+      nodes:
+        - name: start
+          type: set_state
+          args:
+            values:
+              x: '"hi"'
+      edges: []
+"""
+    config = load_declarative_config(yaml_content=yaml_content)
+    hook_manager = HookManager()
+    mcp_executors = await populate_hooks(
+        config, hook_manager, cel_extra_vars={"data": config.data}
+    )
+
+    assert mcp_executors == []
+    assert len(hook_manager._executors) == 1
+    executor = hook_manager._executors[0]
+    assert isinstance(executor, CELHookExecutor)
+    assert "node_exit" in executor._spec
+
+
 # ---------------------------------------------------------------------------
 # use_sub_agents_as_tools validation tests
 # ---------------------------------------------------------------------------

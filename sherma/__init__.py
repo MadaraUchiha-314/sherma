@@ -27,6 +27,7 @@ from sherma.exceptions import (
 )
 from sherma.hooks import (
     BaseHookExecutor,
+    CELHookExecutor,
     HookExecutor,
     HookManager,
     HookType,
@@ -69,6 +70,7 @@ __all__ = [
     "Agent",
     "AgentRegistry",
     "BaseHookExecutor",
+    "CELHookExecutor",
     "CelEvaluationError",
     "DeclarativeAgent",
     "DeclarativeConfig",

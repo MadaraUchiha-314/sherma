@@ -1,0 +1,120 @@
+# Declarative CEL Hooks Agent — state updates after interrupt resume
+#
+# Demonstrates CEL-expression based hooks: hook behaviour defined entirely in
+# YAML, no Python hook class or external service required.
+#
+# This is the approval-tagging flow from examples/approval_agent, but instead
+# of a Python `ApprovalTaggingHook` (node_exit) that reaches into the resumed
+# message's metadata, an `after_interrupt` CEL hook declaratively sets the
+# `response_type` state field from the resume message's `additional_kwargs`.
+# This is exactly the use case in issue #68 — `state_updates` after an
+# interrupt resume — solved without an extra `set_state` node.
+#
+# Flow:
+#   1. LLM drafts a response
+#   2. Interrupt pauses for human approval
+#   3. after_interrupt CEL hook reads the resumed HumanMessage metadata and
+#      sets state.response_type to "approve" / "revise"
+#   4. A CEL edge routes on state.response_type
+
+manifest_version: 1
+
+prompts:
+  - id: draft-prompt
+    version: "1.0.0"
+    instructions: >
+      You are a helpful writing assistant. Draft a concise response to the
+      user's request. Keep it to 2-3 sentences.
+
+  - id: revise-prompt
+    version: "1.0.0"
+    instructions: >
+      The reviewer rejected your previous draft and provided feedback.
+      Revise your draft based on the reviewer's comments.
+      The reviewer's feedback is the most recent human message.
+
+llms:
+  - id: openai-gpt-4o-mini
+    version: "1.0.0"
+    provider: openai
+    model_name: gpt-4o-mini
+
+# CEL hooks: declared at the agent level, scoped to a node with `when`.
+#
+# node_exit fires as the interrupt node returns. Its `result` dict is the
+# node's state delta ({"messages": [<resumed message>]}), so `state_updates`
+# here merge into `result` and persist into the graph state. The hook reads
+# the decision metadata off the resumed HumanMessage and stores it on the
+# `response_type` state field — the issue #68 use case, no `set_state` node.
+hooks:
+  - cel:
+      node_exit:
+        when: 'node_type == "interrupt" && node_name == "get_approval"'
+        state_updates:
+          response_type: >
+            default(
+              result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"],
+              "revise"
+            )
+
+agents:
+  cel-hooks-approval-agent:
+    state:
+      fields:
+        - name: messages
+          type: list
+          default: []
+        - name: response_type
+          type: str
+          default: ""
+
+    graph:
+      entry_point: draft
+      nodes:
+        - name: draft
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+            prompt:
+              - role: system
+                content: 'prompts["draft-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
+
+        # Pause for human review — show the draft and ask for approval
+        - name: get_approval
+          type: interrupt
+          args:
+            value: >
+              {"type": "approval_request",
+               "draft": state.messages[size(state.messages) - 1]["content"],
+               "instructions": "Reply 'approve' to accept, or provide feedback to revise."}
+
+        - name: revise
+          type: call_llm
+          args:
+            llm: { id: openai-gpt-4o-mini, version: "1.0.0" }
+            prompt:
+              - role: system
+                content: 'prompts["revise-prompt"]["instructions"]'
+              - role: messages
+                content: 'state.messages'
+            state_updates:
+              messages: '[llm_response]'
+
+      edges:
+        - source: draft
+          target: get_approval
+
+        # Route on the response_type field set by the CEL hook
+        - source: get_approval
+          branches:
+            - condition: 'state.response_type == "approve"'
+              target: __end__
+          default: revise
+
+        # After revision, go back for another review
+        - source: revise
+          target: get_approval

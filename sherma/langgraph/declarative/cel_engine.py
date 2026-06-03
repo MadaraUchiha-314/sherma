@@ -210,9 +210,18 @@ class CelEngine:
         ):
             return _cel_to_python(self._evaluate_raw(fallback_str, state, extra))
 
-    def evaluate_bool(self, expression: str, state: dict[str, Any]) -> bool:
-        """Evaluate a CEL expression that must return a boolean."""
-        result = self.evaluate(expression, state)
+    def evaluate_bool(
+        self,
+        expression: str,
+        state: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> bool:
+        """Evaluate a CEL expression that must return a boolean.
+
+        *extra* provides additional top-level variables (e.g. hook context
+        fields) available in the expression.
+        """
+        result = self.evaluate(expression, state, extra=extra)
         if not isinstance(result, bool):
             raise CelEvaluationError(
                 f"CEL expression '{expression}' returned {type(result).__name__}, "

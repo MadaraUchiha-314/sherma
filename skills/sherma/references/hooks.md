@@ -516,7 +516,19 @@ hooks:
       url: http://localhost:9000/mcp
 ```
 
-You can mix local, JSON-RPC, and MCP hooks in the same config:
+### Declarative (via YAML, inline CEL)
+
+```yaml
+hooks:
+  - cel:
+      before_llm_call:
+        set:
+          system_prompt: 'system_prompt + "\n\nBe concise."'
+```
+
+See [CEL Hooks](#cel-hooks) for the full surface.
+
+You can mix local, JSON-RPC, MCP, and CEL hooks in the same config:
 
 ```yaml
 hooks:
@@ -525,9 +537,13 @@ hooks:
   - mcp:
       command: python
       args: ["-m", "my_package.mcp_hook_server"]
+  - cel:
+      node_enter:
+        state_updates:
+          enter_count: 'default(state.enter_count, 0) + 1'
 ```
 
-Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc) and [Remote Hooks (MCP)](#remote-hooks-mcp) for details.
+Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc), [Remote Hooks (MCP)](#remote-hooks-mcp), and [CEL Hooks](#cel-hooks) for details.
 
 ## Example: Logging Hook
 
@@ -966,6 +982,101 @@ MCP hooks share the same resilience model as JSON-RPC hooks. Errors, timeouts, a
 | Best for | Centralized hook services | Sidecar processes, MCP-aware ecosystems |
 
 Both transports coexist; pick whichever fits your deployment.
+
+## CEL Hooks
+
+CEL hooks let you define hook behaviour **entirely in the YAML**, with no Python class and no external service. Each hook type maps to a small spec of [CEL](declarative-agents.md#cel-expressions) expressions that are evaluated against the hook context. The result updates graph `state` (via `state_updates`) and other modifiable context fields (via `set`) — the same effect as the return value of a Python hook.
+
+This is the fourth hook source on a `hooks` entry, alongside `import_path`, `url`, and `mcp`.
+
+### Surface
+
+```yaml
+hooks:
+  - cel:
+      <hook_name>:
+        when: '<CEL boolean>'          # optional guard; no-op when false
+        state_updates:                  # merged into the node's state delta
+          <state_key>: '<CEL expr>'
+        set:                            # assigned to other writable fields
+          <field>: '<CEL expr>'
+```
+
+A `cel` value is a map of `hook_name -> spec`. Each spec needs at least one of `state_updates` or `set`. `when` is optional.
+
+### What's readable
+
+Every context field is available at the **top level** of the expression by its own name — `node_name`, `node_type`, `system_prompt`, `response`, `value`, `result`, `config`, `skill_id`, … Graph state is reachable via `state.<field>` (as everywhere else in sherma). Complex LangChain objects (`messages`, `response`, `result["messages"]`, `tools`) are converted to maps, so message metadata reads work just like in node CEL:
+
+```cel
+result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]
+```
+
+The `default(expr, fallback)` wrapper, custom CEL functions, and the top-level `data` / `prompts` / `llms` variables are all available.
+
+### What's writable
+
+| Block | Target | Notes |
+| --- | --- | --- |
+| `state_updates` | The node's returned state delta | Merges into `result` when the context has one (`node_exit`, `node_execute`, `after_tool_call`, `after_agent_call`, `after_graph_invoke`) — **these persist into graph state**. Otherwise merges into the in-flight `state` (visible to later hooks). |
+| `set` | Any writable scalar/dict field | `system_prompt`, `node_name`, `config`, `input`, `kwargs`, `result`, `value`, `content`, … — i.e. every field except complex objects (`messages`, `response`, `tools`, `tool_calls`), `error`, the framework-only objects (`node_context`, `agent`, `chat_model`, `registries`), and `state` (use `state_updates`). |
+
+Invalid `set` fields and `state_updates` on a context that has neither `result` nor `state` are rejected at config-load time.
+
+> **Persisting state:** LangGraph nodes persist state by *returning* a delta dict, not by mutating the `state` dict they receive. So to durably update graph state, target a hook whose context carries `result` — most commonly `node_exit` (any node) or `node_execute` (custom nodes). `state_updates` automatically merge into `result` there.
+
+### Unsupported hook
+
+`on_chat_model_create` cannot be a CEL hook (it returns a Python chat model object). Declaring it raises a config error.
+
+### Example: state update after interrupt resume (issue #68)
+
+Set a `response_type` state field from the resumed message's decision metadata — no extra `set_state` node:
+
+```yaml
+agents:
+  approval-agent:
+    state:
+      fields:
+        - { name: messages, type: list, default: [] }
+        - { name: response_type, type: str, default: "" }
+    # ... graph with an `interrupt` node named get_approval ...
+
+hooks:
+  - cel:
+      node_exit:
+        when: 'node_type == "interrupt" && node_name == "get_approval"'
+        state_updates:
+          response_type: >
+            default(result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"], "revise")
+```
+
+A CEL edge can then route on `state.response_type`. See `examples/declarative_cel_hooks_agent/`.
+
+### Example: prompt guardrail
+
+```yaml
+hooks:
+  - cel:
+      before_llm_call:
+        when: 'node_name == "agent"'
+        set:
+          system_prompt: 'system_prompt + "\n\nBe concise and never fabricate data."'
+```
+
+### Programmatic use
+
+The same executor is available in Python:
+
+```python
+from sherma import CELHookExecutor
+from sherma.langgraph.declarative.cel_engine import CelEngine
+
+executor = CELHookExecutor(
+    {"before_llm_call": {"set": {"system_prompt": 'system_prompt + " Be concise."'}}},
+    CelEngine(),
+)
+```
 
 ## HookManager
 
