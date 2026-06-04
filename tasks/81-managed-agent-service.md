@@ -62,3 +62,8 @@ service ("sherma Cloud" / `sherma-server`) with:
   deployment; and for a detailed architecture informed by how Anthropic and
   OpenAI (and other players) do managed agents. Researched the landscape and
   produced `tasks/plans/81-managed-agent-service.md`.
+- Decisions (2026-06-04): repo layout = **uv-workspace monorepo**
+  (`packages/sherma` + `packages/sherma-server`); platform license =
+  **Apache-2.0**; target audience = **both equally** (self-hostable core first).
+  User opted to stop at the plan (no scaffolding yet). Plan §2 and §12 updated
+  accordingly; see Plan Revisions in the plan file.

@@ -141,49 +141,46 @@ Every platform converges on the same component set:
 
 ---
 
-## 2. Repo strategy — recommendation
+## 2. Repo strategy — decision
 
-**Recommendation: separate repository for the service, with `sherma` as a
-versioned dependency.** Concretely:
+**Decided (2026-06-04): a single `uv` **workspace monorepo** with two
+separately-published packages**, and an **Apache-2.0** license so others can
+self-host their own managed-agent deployment. Proposed layout:
 
-| Repo | What it is | License |
+```
+sherma/                      # repo root (uv workspace)
+  packages/
+    sherma/                  # the agent ENGINE library (this package, moved under packages/)
+    sherma-server/           # the PLATFORM: control + run API, workers, adapters, deploy artifacts
+  pyproject.toml             # [tool.uv.workspace] members = ["packages/*"]
+```
+
+| Package | What it is | License |
 |---|---|---|
-| `sherma` (this repo) | The agent **engine** library. Stays focused, importable, easy to test, no web/DB/infra deps. | Permissive (MIT/Apache-2.0) — keep it adoptable |
-| `sherma-server` (new) | The **platform**: control plane API, data-plane workers, persistence adapters, sandbox runner, dashboard, deploy artifacts (Compose/Helm). Depends on `sherma`. | Permissive **so others can self-host their own managed-agent deployment** (the stated requirement). Consider Apache-2.0; avoid ELv2/SUL-style "no competing service" clauses since the explicit goal is to let others host it. |
+| `sherma` | The agent **engine** library. Stays focused, importable, easy to test, **no web/DB/infra deps**. Published to PyPI as today. | Apache-2.0 |
+| `sherma-server` | The **platform**: control-plane API, data-plane workers, persistence adapters, sandbox runner, dashboard, deploy artifacts (Compose/Helm). Depends on `sherma` (workspace dep). | **Apache-2.0** — no "no-competing-service" clause, so the stack is genuinely reusable (the explicit goal). |
 
-**Why separate, not the same repo:**
+**Why the workspace monorepo (vs two repos or one package):**
 
-1. **Different release cadence & blast radius.** The library is imported by many
-   programs; the platform ships continuously with DB migrations, infra, secrets.
-   Coupling them forces library consumers to pull web/DB/queue deps and slows
-   library releases.
-2. **Clean dependency direction.** `sherma-server → sherma`, never the reverse.
-   The library must stay free of Postgres/Redis/FastAPI/K8s concerns. (Some
-   *runtime hooks* the platform needs — Postgres checkpointer interface, graph
-   caching, build-agent-from-config, secret-provider hook — belong **in the
-   library** as optional, dependency-light extension points; see Phase 1.)
-3. **It matches the whole industry** (OSS lib vs platform) and keeps the
-   library's value proposition ("declarative agents, embeddable anywhere")
-   intact and undiluted.
-4. **Self-hostability is cleaner.** A separate repo with its own Compose/Helm,
-   docs, and versioning is what people will `git clone` to run their own
-   deployment. The library stays a `pip install`.
+1. **Clean dependency direction is preserved** — `sherma-server → sherma`, never
+   the reverse. The library must stay free of Postgres/Redis/FastAPI/K8s
+   concerns. Some *runtime extension points* the platform needs (Postgres
+   checkpointer, graph caching, build-agent-from-config, `SecretProvider`)
+   belong **in the library** as optional, dependency-light hooks; see Phase 1.
+2. **Separate release/versioning is retained** — each package versions and
+   publishes independently; library consumers still `pip install sherma` without
+   pulling any platform deps.
+3. **No cross-repo coordination tax** — a server change that needs a new library
+   hook is one PR across both packages (uv resolves the workspace dep locally),
+   avoiding the two-repo "PR + release + bump" round-trip during fast iteration.
+4. **Self-hostability stays clean** — `sherma-server` keeps its own
+   Compose/Helm, docs, and version; people `git clone` the repo and run the
+   platform, or `pip install sherma` for just the library.
 
-**The realistic counter-argument (and the mitigation):** a separate repo adds
-cross-repo coordination — a server change that needs a new library hook now
-spans two PRs and a library release. Early on this is friction. **Mitigation:**
-during the MVP phase, develop the server in the same workspace using an editable
-local install of `sherma` (`uv pip install -e ../sherma`), pinning a git SHA;
-only cut formal `sherma` releases when a hook stabilizes. If cross-repo churn
-proves too painful, the fallback is a **uv workspace monorepo** with two
-packages (`packages/sherma`, `packages/sherma-server`) published separately —
-this preserves the dependency direction and separate-release benefits while
-keeping one repo. Recommend starting two-repo; keep the workspace-monorepo as a
-documented fallback.
-
-> Decision point for the user: confirm two-repo vs. uv-workspace-monorepo, and
-> confirm the platform license intent (permissive, to honor "let others
-> self-host"). See §12.
+> Migration note: moving the existing `sherma` package under `packages/sherma`
+> is a mechanical but repo-wide move (imports stay the same; paths in CI,
+> `pyproject.toml`, and tooling configs change). Do it as the first step of
+> Phase 0 in its own PR to keep the diff reviewable.
 
 ---
 
@@ -479,21 +476,25 @@ needs outgrow the Redis+Postgres approach.
 
 ---
 
-## 12. Open decisions (for the user)
+## 12. Decisions & remaining open questions
 
-1. **Repo layout**: two repos (recommended) vs single uv-workspace monorepo.
-2. **Platform license**: permissive/Apache-2.0 (recommended, honors "let others
-   self-host") vs a source-available "no-competing-service" license to protect a
-   future managed cloud (the n8n/Dify/LangGraph path — but it contradicts the
-   self-host goal).
-3. **Primary audience first**: individual devs (favor frictionless cloud SaaS +
-   simple sandbox) vs enterprises (favor BYO-storage/VPC hybrid + hard
-   isolation). Changes Phase 3/4 ordering.
+**Resolved (2026-06-04):**
+
+1. **Repo layout** → single **uv-workspace monorepo** (`packages/sherma` +
+   `packages/sherma-server`). See §2.
+2. **Platform license** → **Apache-2.0** (permissive, honors "let others
+   self-host"). See §2.
+3. **Primary audience** → **both, equally**: build the self-hostable core first
+   (Phase 2), then layer cloud + enterprise on the same base. Keep the current
+   phase ordering rather than skewing toward dev-SaaS or enterprise-first.
+
+**Still open (decide before the relevant phase):**
+
 4. **Durable execution**: roll our own (Redis+Postgres, LangGraph-style) for MVP
    vs adopt Temporal/Restate up front. Recommendation: roll our own first, keep
-   the seam.
+   the seam. (Decide by Phase 2.)
 5. **Sandbox provider** for v1: managed (E2B/Modal/Daytona — fastest) vs
-   self-run gVisor/Firecracker (more control, more ops).
+   self-run gVisor/Firecracker (more control, more ops). (Decide by Phase 4.)
 
 ---
 
@@ -539,4 +540,11 @@ isolation [AgentCore runtime](https://docs.aws.amazon.com/bedrock-agentcore/late
 
 ## Plan Revisions
 
-- (none yet)
+- **2026-06-04**: Locked in the previously-open repo/license/audience decisions
+  after user input. Repo strategy (§2) changed from "separate repo recommended,
+  monorepo as fallback" to **uv-workspace monorepo** (`packages/sherma` +
+  `packages/sherma-server`) as the chosen approach, with an added migration note
+  about moving the existing package under `packages/`. Platform license fixed at
+  **Apache-2.0**. Audience set to **both equally** (self-hostable core first).
+  §12 reorganized into resolved vs still-open decisions (durable-execution
+  engine and sandbox provider remain open).
