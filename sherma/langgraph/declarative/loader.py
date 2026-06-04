@@ -935,28 +935,24 @@ async def populate_hooks(
     mcp_executors: list[Any] = []
 
     for hook_def in config.hooks:
-        if hook_def.cel is not None:
+        if hook_def.type == "cel":
             from sherma.hooks.cel_executor import CELHookExecutor
             from sherma.langgraph.declarative.cel_engine import CelEngine
 
-            spec = {
-                hook_name: hook_spec.model_dump()
-                for hook_name, hook_spec in hook_def.cel.items()
-            }
             cel = CelEngine(extra_vars=cel_extra_vars or {})
-            hook_manager.register(CELHookExecutor(spec, cel))
+            hook_manager.register(CELHookExecutor(dict(hook_def.expressions), cel))
             continue
 
-        if hook_def.mcp is not None:
+        if hook_def.type == "mcp":
             from sherma.hooks.mcp_executor import MCPHookExecutor, MCPHookTransport
 
             transport = MCPHookTransport(
-                command=hook_def.mcp.command,
-                args=list(hook_def.mcp.args),
-                env=dict(hook_def.mcp.env),
-                url=hook_def.mcp.url,
-                transport=hook_def.mcp.transport,
-                headers=dict(hook_def.mcp.headers),
+                command=hook_def.command,
+                args=list(hook_def.args),
+                env=dict(hook_def.env),
+                url=hook_def.url,
+                transport=hook_def.transport,
+                headers=dict(hook_def.headers),
             )
             executor = MCPHookExecutor(transport)
             try:
@@ -969,14 +965,14 @@ async def populate_hooks(
             mcp_executors.append(executor)
             continue
 
-        if hook_def.url:
+        if hook_def.type == "url":
             from sherma.hooks.remote import RemoteHookExecutor
 
             hook_manager.register(RemoteHookExecutor(url=hook_def.url))
             continue
 
+        # type == "import_path"
         import_path = hook_def.import_path
-        assert import_path is not None  # guaranteed by HookDef validator
         module_path, _, attr_name = import_path.rpartition(".")
         if not module_path:
             raise DeclarativeConfigError(

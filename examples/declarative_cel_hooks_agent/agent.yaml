@@ -39,23 +39,30 @@ llms:
     provider: openai
     model_name: gpt-4o-mini
 
-# CEL hooks: declared at the agent level, scoped to a node with `when`.
+# CEL hooks: a `type: cel` entry whose `expressions` map each hook name to a
+# single CEL expression. The expression evaluates to a map of
+# `context_field -> value` (the hook's return delta); an empty map `{}` is a
+# no-op. Dict fields like `result` merge, so returning just `response_type`
+# preserves the resumed message already in `result["messages"]`.
 #
 # node_exit fires as the interrupt node returns. Its `result` dict is the
-# node's state delta ({"messages": [<resumed message>]}), so `state_updates`
-# here merge into `result` and persist into the graph state. The hook reads
-# the decision metadata off the resumed HumanMessage and stores it on the
-# `response_type` state field — the issue #68 use case, no `set_state` node.
+# node's state delta ({"messages": [<resumed message>]}), so merging
+# `response_type` into `result` persists it into the graph state. The hook
+# reads the decision metadata off the resumed HumanMessage — the issue #68
+# use case, no `set_state` node. The leading ternary scopes it to this node.
+# `default(<expr>, {})` wraps the whole expression: if the deep metadata
+# access fails (e.g. the resume message carried no decision), it falls back to
+# `{}` (a no-op) and the routing edge's default sends the agent to `revise`.
 hooks:
-  - cel:
-      node_exit:
-        when: 'node_type == "interrupt" && node_name == "get_approval"'
-        state_updates:
-          response_type: >
-            default(
-              result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"],
-              "revise"
-            )
+  - type: cel
+    expressions:
+      node_exit: >
+        default(
+          node_type == "interrupt" && node_name == "get_approval"
+            ? {"result": {"response_type":
+                result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]}}
+            : {},
+          {})
 
 agents:
   cel-hooks-approval-agent:

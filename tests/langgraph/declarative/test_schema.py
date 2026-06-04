@@ -9,14 +9,16 @@ from sherma.langgraph.declarative.schema import (
     AgentDef,
     BranchDef,
     CallLLMArgs,
+    CELHookDef,
     DataTransformArgs,
     DeclarativeConfig,
     EdgeDef,
     GraphDef,
-    HookDef,
+    ImportPathHookDef,
     InterruptArgs,
     LLMDef,
     LoadSkillsArgs,
+    MCPHookDef,
     NodeDef,
     PromptDef,
     PromptMessageDef,
@@ -26,6 +28,7 @@ from sherma.langgraph.declarative.schema import (
     StateFieldDef,
     ToolDef,
     ToolNodeArgs,
+    URLHookDef,
 )
 
 
@@ -366,111 +369,83 @@ def test_declarative_config_manifest_version_must_be_int():
         DeclarativeConfig(manifest_version="one")
 
 
+# HookDef is a discriminated union on ``type``; parse entries through a
+# DeclarativeConfig so the discriminator is exercised the way YAML loads it.
+def _parse_hook(entry: dict):
+    config = DeclarativeConfig(manifest_version=1, hooks=[entry])
+    return config.hooks[0]
+
+
 def test_hook_def_with_import_path():
-    hook = HookDef(import_path="my_module.MyHook")
+    hook = _parse_hook({"type": "import_path", "import_path": "my_module.MyHook"})
+    assert isinstance(hook, ImportPathHookDef)
     assert hook.import_path == "my_module.MyHook"
-    assert hook.url is None
 
 
 def test_hook_def_with_url():
-    hook = HookDef(url="http://localhost:8080/hooks")
+    hook = _parse_hook({"type": "url", "url": "http://localhost:8080/hooks"})
+    assert isinstance(hook, URLHookDef)
     assert hook.url == "http://localhost:8080/hooks"
-    assert hook.import_path is None
 
 
-def test_hook_def_requires_one_source():
-    with pytest.raises(ValidationError, match="requires one of"):
-        HookDef()
-
-
-def test_hook_def_rejects_multiple_sources():
-    with pytest.raises(ValidationError, match="can only have one of"):
-        HookDef(import_path="my_module.MyHook", url="http://localhost:8080/hooks")
+def test_hook_def_requires_a_known_type():
+    with pytest.raises(ValidationError):
+        _parse_hook({"import_path": "my_module.MyHook"})  # missing type
+    with pytest.raises(ValidationError):
+        _parse_hook({"type": "bogus"})
 
 
 def test_hook_def_with_mcp_stdio():
-    from sherma.langgraph.declarative.schema import MCPHookDef
-
-    hook = HookDef(mcp=MCPHookDef(command="python", args=["-m", "srv"]))
-    assert hook.mcp is not None
-    assert hook.mcp.command == "python"
-    assert hook.mcp.url is None
-    assert hook.import_path is None
+    hook = _parse_hook({"type": "mcp", "command": "python", "args": ["-m", "srv"]})
+    assert isinstance(hook, MCPHookDef)
+    assert hook.command == "python"
+    assert hook.url is None
 
 
 def test_hook_def_with_mcp_url():
-    from sherma.langgraph.declarative.schema import MCPHookDef
-
-    hook = HookDef(mcp=MCPHookDef(url="http://localhost:9000/mcp"))
-    assert hook.mcp is not None
-    assert hook.mcp.url == "http://localhost:9000/mcp"
-    assert hook.mcp.transport == "streamable_http"
+    hook = _parse_hook({"type": "mcp", "url": "http://localhost:9000/mcp"})
+    assert isinstance(hook, MCPHookDef)
+    assert hook.url == "http://localhost:9000/mcp"
+    assert hook.transport == "streamable_http"
 
 
 def test_mcp_hook_def_requires_one_transport():
-    from sherma.langgraph.declarative.schema import MCPHookDef
-
     with pytest.raises(ValidationError, match="exactly one of 'command' or 'url'"):
-        MCPHookDef()
+        MCPHookDef(type="mcp")
     with pytest.raises(ValidationError, match="exactly one of 'command' or 'url'"):
-        MCPHookDef(command="python", url="http://x")
-
-
-def test_hook_def_rejects_mcp_combined_with_url():
-    from sherma.langgraph.declarative.schema import MCPHookDef
-
-    with pytest.raises(ValidationError, match="can only have one of"):
-        HookDef(url="http://x", mcp=MCPHookDef(command="python"))
+        MCPHookDef(type="mcp", command="python", url="http://x")
 
 
 def test_hook_def_with_cel():
-    hook = HookDef(
-        cel={
-            "node_exit": {
-                "when": 'node_type == "interrupt"',
-                "state_updates": {"response_type": '"approve"'},
+    hook = _parse_hook(
+        {
+            "type": "cel",
+            "expressions": {
+                "node_exit": '{"result": {"response_type": "approve"}}',
+                "before_llm_call": '{"system_prompt": system_prompt + "!"}',
             },
-            "before_llm_call": {"set": {"system_prompt": 'system_prompt + "!"'}},
         }
     )
-    assert hook.cel is not None
-    assert hook.cel["node_exit"].when == 'node_type == "interrupt"'
-    assert hook.cel["node_exit"].state_updates == {"response_type": '"approve"'}
-    assert hook.cel["before_llm_call"].set == {"system_prompt": 'system_prompt + "!"'}
-    assert hook.import_path is None
+    assert isinstance(hook, CELHookDef)
+    assert hook.expressions["node_exit"] == '{"result": {"response_type": "approve"}}'
+    assert (
+        hook.expressions["before_llm_call"] == '{"system_prompt": system_prompt + "!"}'
+    )
 
 
-def test_hook_def_rejects_cel_combined_with_import_path():
-    with pytest.raises(ValidationError, match="can only have one of"):
-        HookDef(
-            import_path="my.Hook",
-            cel={"node_exit": {"set": {"node_name": '"x"'}}},
-        )
-
-
-def test_cel_hook_spec_requires_state_updates_or_set():
-    with pytest.raises(ValidationError, match="at least one of"):
-        HookDef(cel={"node_exit": {}})
+def test_cel_hook_requires_at_least_one_expression():
+    with pytest.raises(ValidationError, match="at least one hook"):
+        _parse_hook({"type": "cel", "expressions": {}})
 
 
 def test_cel_hook_rejects_unknown_hook_name():
     with pytest.raises(ValidationError, match="Unknown or unsupported CEL hook"):
-        HookDef(cel={"not_a_hook": {"set": {"node_name": '"x"'}}})
+        _parse_hook({"type": "cel", "expressions": {"not_a_hook": "{}"}})
 
 
 def test_cel_hook_rejects_on_chat_model_create():
     with pytest.raises(ValidationError, match="Unknown or unsupported CEL hook"):
-        HookDef(cel={"on_chat_model_create": {"set": {"model_name": '"x"'}}})
-
-
-def test_cel_hook_rejects_state_updates_on_stateless_hook():
-    with pytest.raises(ValidationError, match="state_updates' is not allowed"):
-        HookDef(cel={"before_skill_load": {"state_updates": {"a": '"b"'}}})
-
-
-def test_cel_hook_rejects_invalid_set_field():
-    with pytest.raises(ValidationError, match="cannot set"):
-        HookDef(cel={"before_llm_call": {"set": {"messages": '"x"'}}})
+        _parse_hook({"type": "cel", "expressions": {"on_chat_model_create": "{}"}})
 
 
 # --- use_sub_agents_as_tools type normalization ---

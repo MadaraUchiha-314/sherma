@@ -262,12 +262,12 @@ Hook executor whose behaviour is defined by CEL expressions instead of Python co
 
 ```python
 class CELHookExecutor(BaseHookExecutor):
-    def __init__(self, spec: dict[str, dict[str, Any]], cel: CelEngine) -> None
+    def __init__(self, expressions: dict[str, str], cel: CelEngine) -> None
 ```
 
-`spec` maps a hook name to `{"when": <expr?>, "state_updates": {<key>: <expr>}, "set": {<field>: <expr>}}`. Each hook context's fields are exposed at the top level of the activation (graph state under `state`); `state_updates` merge into the context's `result` when present (persisting into graph state) else into `state`; `set` assigns other writable scalar/dict fields. `on_chat_model_create` is unsupported. See [CEL Hooks](hooks.md#cel-hooks).
+`expressions` maps a hook name to a single CEL expression that evaluates to a map of `context_field -> new value` (the hook's return delta); an empty map is a no-op. Every context field is exposed at the top level of the activation (graph state under `state`). Dict-valued fields (`state`, `result`, `config`, …) merge; scalar fields are replaced. Returned keys must be writable fields. `on_chat_model_create` is unsupported. See [CEL Hooks](hooks.md#cel-hooks).
 
-The module also exposes `writable_fields(hook_name)`, `hook_supports_state_updates(hook_name)`, and the `CEL_CAPABLE_HOOKS` frozenset, used to validate `cel` hook specs.
+The module also exposes `writable_fields(hook_name)` and the `CEL_CAPABLE_HOOKS` frozenset.
 
 ### `RemoteHookExecutor`
 
@@ -456,24 +456,37 @@ instructions.
 
 ### `HookDef`
 
-```python
-class HookDef(BaseModel):
-    import_path: str | None = None            # Local Python hook executor
-    url: str | None = None                    # Remote JSON-RPC hook server
-    mcp: MCPHookDef | None = None             # MCP-based hook server
-    cel: dict[str, CELHookSpec] | None = None # Inline CEL-expression hooks
-```
-
-Exactly one of `import_path`, `url`, `mcp`, or `cel` must be provided.
+A hook entry is a **discriminated union** on `type`:
 
 ```python
-class CELHookSpec(BaseModel):
-    when: str | None = None                  # optional CEL boolean guard
-    state_updates: dict[str, str] = {}       # state_key -> CEL expression
-    set: dict[str, str] = {}                 # field -> CEL expression
+HookDef = Annotated[
+    ImportPathHookDef | URLHookDef | MCPHookDef | CELHookDef,
+    Field(discriminator="type"),
+]
+
+class ImportPathHookDef(BaseModel):
+    type: Literal["import_path"]
+    import_path: str                          # Local Python hook executor
+
+class URLHookDef(BaseModel):
+    type: Literal["url"]
+    url: str                                  # Remote JSON-RPC hook server
+
+class MCPHookDef(BaseModel):
+    type: Literal["mcp"]                      # MCP-based hook server
+    command: str | None = None                # stdio: exactly one of
+    args: list[str] = []                      #   command or url
+    env: dict[str, str] = {}
+    url: str | None = None
+    transport: Literal["streamable_http", "sse"] = "streamable_http"
+    headers: dict[str, str] = {}
+
+class CELHookDef(BaseModel):
+    type: Literal["cel"]
+    expressions: dict[str, str]               # hook_name -> CEL expression
 ```
 
-A `cel` map is keyed by hook name. Each spec needs at least one of `state_updates` / `set`. Hook names are validated, `on_chat_model_create` is rejected, `state_updates` require a `result`/`state`-bearing context, and `set` keys must be writable fields. See [CEL Hooks](hooks.md#cel-hooks).
+Every entry sets `type` plus its type-specific fields. `CELHookDef.expressions` must declare at least one hook, hook names are validated, and `on_chat_model_create` is rejected (it returns a Python object). Each expression returns a map of `field -> value`; see [CEL Hooks](hooks.md#cel-hooks).
 
 ### `CheckpointerDef`
 

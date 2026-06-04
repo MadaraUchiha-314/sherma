@@ -1418,7 +1418,8 @@ async def test_populate_hooks_with_url():
 manifest_version: 1
 
 hooks:
-  - url: "http://localhost:8080/hooks"
+  - type: url
+    url: "http://localhost:8080/hooks"
 
 agents:
   a:
@@ -1451,8 +1452,10 @@ async def test_populate_hooks_mixed():
 manifest_version: 1
 
 hooks:
-  - url: "http://localhost:8080/hooks"
-  - import_path: "sherma.hooks.executor.BaseHookExecutor"
+  - type: url
+    url: "http://localhost:8080/hooks"
+  - type: import_path
+    import_path: "sherma.hooks.executor.BaseHookExecutor"
 
 agents:
   a:
@@ -1493,11 +1496,12 @@ data:
     k: "v"
 
 hooks:
-  - cel:
-      node_exit:
-        when: 'node_type == "interrupt"'
-        state_updates:
-          response_type: '"approve"'
+  - type: cel
+    expressions:
+      node_exit: >
+        node_type == "interrupt"
+          ? {"result": {"response_type": "approve"}}
+          : {}
 
 agents:
   a:
@@ -1523,7 +1527,7 @@ agents:
     assert len(hook_manager._executors) == 1
     executor = hook_manager._executors[0]
     assert isinstance(executor, CELHookExecutor)
-    assert "node_exit" in executor._spec
+    assert "node_exit" in executor._expressions
 
 
 # ---------------------------------------------------------------------------

@@ -127,5 +127,21 @@ when the context has `result` **or** `state`. The #68 example consequently
 uses a `node_exit` hook on the interrupt node (reading `result["messages"]`),
 which is also what the existing Python `ApprovalTaggingHook` does.
 
-A new `extra` parameter was added to `CelEngine.evaluate_bool` so the `when`
-guard can reference top-level context fields (e.g. `node_name`, `node_type`).
+A new `extra` parameter was added to `CelEngine.evaluate_bool` so a CEL guard
+can reference top-level context fields (e.g. `node_name`, `node_type`).
+
+### PR #83 review — single expression + `type:` discriminator (post-implementation)
+
+Owner review changed the design (see the task file's Chat Iterations for the
+full rationale):
+
+- **Per-hook value:** dropped `when`/`state_updates`/`set`; each hook now maps
+  to a single CEL expression returning a `field -> value` delta map (`{}` =
+  no-op; guard via ternary). Dict fields merge, scalars replace. `CELHookSpec`
+  → `CELHookDef.expressions: dict[str, str]`. `CELHookExecutor.__init__` now
+  takes `expressions`. `hook_supports_state_updates` removed; `writable_fields`
+  now includes `state`/`result`.
+- **Hook entry shape:** `hooks:` is now a discriminated union on `type`.
+  `HookDef` is an `Annotated[... , Field(discriminator="type")]` alias over
+  `ImportPathHookDef` / `URLHookDef` / `MCPHookDef` / `CELHookDef`. Breaking
+  change to existing configs; all examples/tests/docs migrated.

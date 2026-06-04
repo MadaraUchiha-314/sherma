@@ -1,21 +1,35 @@
 """CEL-expression based hook executor for declarative agents.
 
 A :class:`CELHookExecutor` lets hook behaviour be defined entirely in the
-declarative YAML: each hook type maps to a spec of CEL expressions that are
-evaluated against the hook context. The result updates graph ``state`` (via
-``state_updates``) and other modifiable context fields (via ``set``),
-producing the same effect as the return value of a Python hook.
+declarative YAML: each hook type maps to a single CEL expression that is
+evaluated against the hook context and returns the hook's **return delta** — a
+map of ``context_field -> new value``. Each returned key overwrites that field
+on the context, producing the same effect as the return value of a Python
+hook. An empty map (``{}``) is a no-op (pass-through), mirroring a Python hook
+that returns ``None``.
 
 The same serialization rules that govern remote hooks decide which fields are
-readable and which are writable, so the three transports stay consistent:
+writable, so the transports stay consistent:
 
 * non-serializable Python objects (``node_context``, ``agent``, ``chat_model``,
   ``registries``) and complex LangChain objects (``messages``, ``response``,
-  ``tools``, ``tool_calls``) are **read-only** in CEL;
-* ``error`` fields are read-only (exceptions cannot be produced from CEL);
-* ``state`` is updated through ``state_updates`` (merge semantics);
-* every other scalar/dict field is writable through ``set``;
+  ``tools``, ``tool_calls``) cannot be set;
+* ``error`` fields cannot be set (exceptions cannot be produced from CEL);
+* every other field (``state``, ``result``, ``system_prompt``, ``config``, …)
+  is writable;
 * ``on_chat_model_create`` is unsupported (it returns a Python object).
+
+Dict-valued fields (``state``, ``result``, ``config``, ``kwargs``, …) merge —
+the returned sub-map adds/overwrites keys without discarding the rest, which
+also preserves the original message objects already in ``result["messages"]``.
+Other (scalar) fields are replaced.
+
+Every context field is readable in the expression at the top level
+(``node_name``, ``response``, ``result``, …); graph state is reached via
+``state.<field>``. To persist a state change, return ``{"result": {...}}`` on a
+hook whose context carries ``result`` (``node_exit``, ``node_execute``,
+``after_*``) — that dict is the node's returned state delta. Mutating other
+fields like ``state`` on a hook without ``result`` does not persist.
 """
 
 from __future__ import annotations
@@ -23,6 +37,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
+from sherma.exceptions import CelEvaluationError
 from sherma.hooks.executor import BaseHookExecutor
 from sherma.hooks.serialization import (
     _COMPLEX_FIELDS,
@@ -41,33 +56,18 @@ CEL_CAPABLE_HOOKS: frozenset[str] = frozenset(_HOOK_CONTEXT_TYPES)
 
 
 def writable_fields(hook_name: str) -> frozenset[str]:
-    """Return the context fields a CEL ``set`` block may assign for *hook_name*.
+    """Return the context fields a CEL expression may overwrite for *hook_name*.
 
     Writable = all dataclass fields minus the non-serializable, complex, and
-    error fields, minus ``state`` (which is updated via ``state_updates``).
-    Returns an empty set for unknown / unsupported hook names.
+    error fields. Returns an empty set for unknown / unsupported hook names.
     """
     ctx_class = _HOOK_CONTEXT_TYPES.get(hook_name)
     if ctx_class is None:
         return frozenset()
-    excluded = _NON_SERIALIZABLE_FIELDS | _COMPLEX_FIELDS | _ERROR_FIELDS | {"state"}
+    excluded = _NON_SERIALIZABLE_FIELDS | _COMPLEX_FIELDS | _ERROR_FIELDS
     return frozenset(
         f.name for f in dataclasses.fields(ctx_class) if f.name not in excluded
     )
-
-
-def hook_supports_state_updates(hook_name: str) -> bool:
-    """Whether *hook_name* accepts ``state_updates``.
-
-    True when the context exposes a ``result`` field (the node's returned
-    state delta — these persist into the graph state) or a ``state`` field
-    (in-flight state, visible to later hooks). False for unknown hooks.
-    """
-    ctx_class = _HOOK_CONTEXT_TYPES.get(hook_name)
-    if ctx_class is None:
-        return False
-    names = {f.name for f in dataclasses.fields(ctx_class)}
-    return "result" in names or "state" in names
 
 
 def _readable_extra(ctx: Any) -> dict[str, Any]:
@@ -88,51 +88,50 @@ def _readable_extra(ctx: Any) -> dict[str, Any]:
 class CELHookExecutor(BaseHookExecutor):
     """A hook executor whose behaviour is defined by CEL expressions.
 
-    *spec* maps a hook name to its evaluation rules:
-
-    ``{"when": <expr?>, "state_updates": {<key>: <expr>}, "set": {<field>: <expr>}}``
-
-    Construct one per ``cel`` :class:`HookDef` entry. Hooks not present in
-    *spec* are no-ops (inherited from :class:`BaseHookExecutor`).
+    *expressions* maps a hook name to a single CEL expression that evaluates
+    to a map of ``context_field -> new value`` (the hook's return delta).
+    Construct one per ``cel`` hook entry. Hooks not present in *expressions*
+    are no-ops (inherited from :class:`BaseHookExecutor`).
     """
 
-    def __init__(self, spec: dict[str, dict[str, Any]], cel: CelEngine) -> None:
-        self._spec = spec
+    def __init__(self, expressions: dict[str, str], cel: CelEngine) -> None:
+        self._expressions = expressions
         self._cel = cel
 
     async def _apply(self, hook_name: str, ctx: Any) -> Any | None:
-        rule = self._spec.get(hook_name)
-        if rule is None:
+        expr = self._expressions.get(hook_name)
+        if expr is None:
             return None
 
         state = getattr(ctx, "state", None)
         state_dict: dict[str, Any] = state if isinstance(state, dict) else {}
         extra = _readable_extra(ctx)
 
-        when = rule.get("when")
-        if when is not None and not self._cel.evaluate_bool(when, state_dict, extra):
-            return None
+        delta = self._cel.evaluate(expr, state_dict, extra=extra)
+        if not delta:
+            return None  # empty map / falsy -> no-op (pass through)
+        if not isinstance(delta, dict):
+            raise CelEvaluationError(
+                f"CEL hook '{hook_name}' must evaluate to a map of "
+                f"field -> value, got {type(delta).__name__}"
+            )
 
-        state_updates: dict[str, str] = rule.get("state_updates") or {}
-        if state_updates:
-            # State updates merge into the dict the node returns as its state
-            # delta. That is ``result`` for result-bearing contexts (node_exit,
-            # node_execute, after_tool_call, ...); only those persist into the
-            # graph state. Otherwise fall back to the in-flight ``state`` dict
-            # (visible to later hooks).
-            target = ctx.result if hasattr(ctx, "result") else ctx.state
-            merged = dict(target)
-            for key, expr in state_updates.items():
-                merged[key] = self._cel.evaluate(expr, state_dict, extra=extra)
-            if hasattr(ctx, "result"):
-                ctx.result = merged
+        allowed = writable_fields(hook_name)
+        for field, value in delta.items():
+            if field not in allowed:
+                raise CelEvaluationError(
+                    f"CEL hook '{hook_name}' cannot set field '{field}'; "
+                    f"writable fields are {sorted(allowed)}."
+                )
+            current = getattr(ctx, field, None)
+            if isinstance(current, dict) and isinstance(value, dict):
+                # Dict fields (state, result, config, kwargs, ...) merge so the
+                # returned delta adds/overwrites keys without discarding others
+                # — notably preserving the original message objects already in
+                # ``result["messages"]`` rather than the CEL-converted copies.
+                setattr(ctx, field, {**current, **value})
             else:
-                ctx.state = merged
-
-        set_fields: dict[str, str] = rule.get("set") or {}
-        for field, expr in set_fields.items():
-            setattr(ctx, field, self._cel.evaluate(expr, state_dict, extra=extra))
-
+                setattr(ctx, field, value)
         return ctx
 
     async def before_llm_call(self, ctx: Any) -> Any | None:

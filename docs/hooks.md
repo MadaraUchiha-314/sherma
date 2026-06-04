@@ -493,10 +493,14 @@ agent = DeclarativeAgent(
 
 ### Declarative (via YAML)
 
+Each `hooks` entry is a discriminated object selected by `type`.
+
 ```yaml
 hooks:
-  - import_path: my_package.hooks.LoggingHook
-  - import_path: my_package.hooks.GuardrailHook
+  - type: import_path
+    import_path: my_package.hooks.LoggingHook
+  - type: import_path
+    import_path: my_package.hooks.GuardrailHook
 ```
 
 ### Declarative (via YAML, remote)
@@ -504,26 +508,26 @@ hooks:
 ```yaml
 hooks:
   # JSON-RPC hook server (HTTP)
-  - url: http://localhost:8000/hooks
+  - type: url
+    url: http://localhost:8000/hooks
 
   # MCP hook server (stdio)
-  - mcp:
-      command: python
-      args: ["-m", "my_package.mcp_hook_server"]
+  - type: mcp
+    command: python
+    args: ["-m", "my_package.mcp_hook_server"]
 
   # MCP hook server (HTTP)
-  - mcp:
-      url: http://localhost:9000/mcp
+  - type: mcp
+    url: http://localhost:9000/mcp
 ```
 
 ### Declarative (via YAML, inline CEL)
 
 ```yaml
 hooks:
-  - cel:
-      before_llm_call:
-        set:
-          system_prompt: 'system_prompt + "\n\nBe concise."'
+  - type: cel
+    expressions:
+      before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
 ```
 
 See [CEL Hooks](#cel-hooks) for the full surface.
@@ -532,15 +536,16 @@ You can mix local, JSON-RPC, MCP, and CEL hooks in the same config:
 
 ```yaml
 hooks:
-  - import_path: my_package.hooks.LoggingHook
-  - url: http://localhost:8000/hooks
-  - mcp:
-      command: python
-      args: ["-m", "my_package.mcp_hook_server"]
-  - cel:
-      node_enter:
-        state_updates:
-          enter_count: 'default(state.enter_count, 0) + 1'
+  - type: import_path
+    import_path: my_package.hooks.LoggingHook
+  - type: url
+    url: http://localhost:8000/hooks
+  - type: mcp
+    command: python
+    args: ["-m", "my_package.mcp_hook_server"]
+  - type: cel
+    expressions:
+      node_enter: '{"state": {"enter_count": default(state.enter_count, 0) + 1}}'
 ```
 
 Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc), [Remote Hooks (MCP)](#remote-hooks-mcp), and [CEL Hooks](#cel-hooks) for details.
@@ -629,7 +634,8 @@ Agent                        Hook Server
 
 ```yaml
 hooks:
-  - url: http://localhost:8000/hooks
+  - type: url
+    url: http://localhost:8000/hooks
 ```
 
 #### In Python
@@ -649,8 +655,10 @@ You can mix local and remote hooks. They run in registration order just like loc
 
 ```yaml
 hooks:
-  - import_path: my_package.hooks.LoggingHook
-  - url: http://localhost:8000/hooks
+  - type: import_path
+    import_path: my_package.hooks.LoggingHook
+  - type: url
+    url: http://localhost:8000/hooks
 ```
 
 ### Writing a hook server
@@ -725,7 +733,8 @@ Then point your agent at it:
 
 ```yaml
 hooks:
-  - url: http://localhost:8000/hooks
+  - type: url
+    url: http://localhost:8000/hooks
 ```
 
 ### Adding hooks to an existing app
@@ -878,22 +887,22 @@ stdio transport (server launched as a subprocess):
 
 ```yaml
 hooks:
-  - mcp:
-      command: python
-      args: ["-m", "my_package.mcp_hook_server"]
-      env:
-        SOME_FLAG: "1"
+  - type: mcp
+    command: python
+    args: ["-m", "my_package.mcp_hook_server"]
+    env:
+      SOME_FLAG: "1"
 ```
 
 HTTP transport (`streamable_http` by default, or `sse`):
 
 ```yaml
 hooks:
-  - mcp:
-      url: http://localhost:9000/mcp
-      transport: streamable_http   # or "sse"
-      headers:
-        Authorization: "Bearer ..."
+  - type: mcp
+    url: http://localhost:9000/mcp
+    transport: streamable_http   # or "sse"
+    headers:
+      Authorization: "Bearer ..."
 ```
 
 #### In Python
@@ -985,24 +994,25 @@ Both transports coexist; pick whichever fits your deployment.
 
 ## CEL Hooks
 
-CEL hooks let you define hook behaviour **entirely in the YAML**, with no Python class and no external service. Each hook type maps to a small spec of [CEL](declarative-agents.md#cel-expressions) expressions that are evaluated against the hook context. The result updates graph `state` (via `state_updates`) and other modifiable context fields (via `set`) — the same effect as the return value of a Python hook.
+CEL hooks let you define hook behaviour **entirely in the YAML**, with no Python class and no external service. Each hook type maps to a single [CEL](declarative-agents.md#cel-expressions) expression that is evaluated against the hook context and **returns the hook's return delta** — a map of `context_field -> new value`. Each returned key overwrites that field on the context, the same effect as the return value of a Python hook. An empty map (`{}`) is a no-op, mirroring a Python hook returning `None`.
 
-This is the fourth hook source on a `hooks` entry, alongside `import_path`, `url`, and `mcp`.
+This is the fourth hook `type` on a `hooks` entry, alongside `import_path`, `url`, and `mcp`.
 
 ### Surface
 
 ```yaml
 hooks:
-  - cel:
-      <hook_name>:
-        when: '<CEL boolean>'          # optional guard; no-op when false
-        state_updates:                  # merged into the node's state delta
-          <state_key>: '<CEL expr>'
-        set:                            # assigned to other writable fields
-          <field>: '<CEL expr>'
+  - type: cel
+    expressions:
+      <hook_name>: '<CEL expression returning a map of field -> value>'
 ```
 
-A `cel` value is a map of `hook_name -> spec`. Each spec needs at least one of `state_updates` or `set`. `when` is optional.
+`expressions` is a map of `hook_name -> expression` and must declare at least one hook. There are no special `when`/`set`/`state_updates` keywords — a guard is just a CEL conditional that returns `{}`:
+
+```yaml
+expressions:
+  before_llm_call: 'node_name == "agent" ? {"system_prompt": system_prompt + "\n\nBe concise."} : {}'
+```
 
 ### What's readable
 
@@ -1012,18 +1022,16 @@ Every context field is available at the **top level** of the expression by its o
 result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]
 ```
 
-The `default(expr, fallback)` wrapper, custom CEL functions, and the top-level `data` / `prompts` / `llms` variables are all available.
+The `default(expr, fallback)` wrapper (as the outermost call), custom CEL functions, and the top-level `data` / `prompts` / `llms` variables are all available.
 
 ### What's writable
 
-| Block | Target | Notes |
-| --- | --- | --- |
-| `state_updates` | The node's returned state delta | Merges into `result` when the context has one (`node_exit`, `node_execute`, `after_tool_call`, `after_agent_call`, `after_graph_invoke`) — **these persist into graph state**. Otherwise merges into the in-flight `state` (visible to later hooks). |
-| `set` | Any writable scalar/dict field | `system_prompt`, `node_name`, `config`, `input`, `kwargs`, `result`, `value`, `content`, … — i.e. every field except complex objects (`messages`, `response`, `tools`, `tool_calls`), `error`, the framework-only objects (`node_context`, `agent`, `chat_model`, `registries`), and `state` (use `state_updates`). |
+The returned map's keys must be **writable context fields**: every field except complex objects (`messages`, `response`, `tools`, `tool_calls`), `error`, and framework-only objects (`node_context`, `agent`, `chat_model`, `registries`). Returning a non-writable key raises an evaluation error.
 
-Invalid `set` fields and `state_updates` on a context that has neither `result` nor `state` are rejected at config-load time.
+- **Dict-valued fields merge** (`state`, `result`, `config`, `kwargs`, …): the returned sub-map adds/overwrites keys without discarding the rest. This is what lets you set one key on `result` while preserving the original message objects already in `result["messages"]`.
+- **Other (scalar) fields are replaced** (`system_prompt`, `node_name`, `value`, …).
 
-> **Persisting state:** LangGraph nodes persist state by *returning* a delta dict, not by mutating the `state` dict they receive. So to durably update graph state, target a hook whose context carries `result` — most commonly `node_exit` (any node) or `node_execute` (custom nodes). `state_updates` automatically merge into `result` there.
+> **Persisting state:** LangGraph nodes persist state by *returning* a delta dict, not by mutating the `state` dict they receive. So to durably update graph state, return `{"result": {...}}` on a hook whose context carries `result` — most commonly `node_exit` (any node) or `node_execute` (custom nodes). That dict is the node's returned state delta. Returning `{"state": {...}}` on a hook without `result` updates the in-flight state (visible to later hooks) but does not persist.
 
 ### Unsupported hook
 
@@ -1031,7 +1039,7 @@ Invalid `set` fields and `state_updates` on a context that has neither `result` 
 
 ### Example: state update after interrupt resume (issue #68)
 
-Set a `response_type` state field from the resumed message's decision metadata — no extra `set_state` node:
+Set a `response_type` state field from the resumed message's decision metadata — no extra `set_state` node. The expression returns `{"result": {...}}`, which merges into the interrupt node's returned delta (preserving the resumed message in `result["messages"]`); the outer `default(..., {})` makes a missing key a no-op:
 
 ```yaml
 agents:
@@ -1043,12 +1051,15 @@ agents:
     # ... graph with an `interrupt` node named get_approval ...
 
 hooks:
-  - cel:
-      node_exit:
-        when: 'node_type == "interrupt" && node_name == "get_approval"'
-        state_updates:
-          response_type: >
-            default(result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"], "revise")
+  - type: cel
+    expressions:
+      node_exit: >
+        default(
+          node_type == "interrupt" && node_name == "get_approval"
+            ? {"result": {"response_type":
+                result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]}}
+            : {},
+          {})
 ```
 
 A CEL edge can then route on `state.response_type`. See `examples/declarative_cel_hooks_agent/`.
@@ -1057,11 +1068,9 @@ A CEL edge can then route on `state.response_type`. See `examples/declarative_ce
 
 ```yaml
 hooks:
-  - cel:
-      before_llm_call:
-        when: 'node_name == "agent"'
-        set:
-          system_prompt: 'system_prompt + "\n\nBe concise and never fabricate data."'
+  - type: cel
+    expressions:
+      before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise and never fabricate data."}'
 ```
 
 ### Programmatic use
@@ -1073,7 +1082,7 @@ from sherma import CELHookExecutor
 from sherma.langgraph.declarative.cel_engine import CelEngine
 
 executor = CELHookExecutor(
-    {"before_llm_call": {"set": {"system_prompt": 'system_prompt + " Be concise."'}}},
+    {"before_llm_call": '{"system_prompt": system_prompt + " Be concise."}'},
     CelEngine(),
 )
 ```

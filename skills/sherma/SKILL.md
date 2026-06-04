@@ -51,7 +51,7 @@ tools:         # Tool imports (id, version, import_path)
 skills:        # Skill card references (id, version, skill_card_path or url)
 sub_agents:    # Sub-agent declarations (id, version, yaml_path/import_path/url)
 mcp_servers:   # MCP server declarations (auto-registers tools into the registry)
-hooks:         # Hook executors: import_path | url | mcp | cel (inline CEL)
+hooks:         # Hook entries discriminated by type: import_path | url | mcp | cel
 checkpointer:  # Checkpointer config (type: memory)
 default_llm:   # Default LLM for call_llm nodes (id reference)
 agents:        # Agent graph definitions
@@ -476,27 +476,27 @@ agents:
 
 ### Agent with hooks
 
-```yaml
+# Each entry is a discriminated object selected by `type`.
 hooks:
-  - import_path: my_package.hooks.LoggingHook
-  - import_path: my_package.hooks.GuardrailHook
+  - type: import_path
+    import_path: my_package.hooks.LoggingHook
+  - type: import_path
+    import_path: my_package.hooks.GuardrailHook
   # Remote hooks over JSON-RPC (HTTP):
-  # - url: http://localhost:8000/hooks
+  # - type: url
+  #   url: http://localhost:8000/hooks
   # Remote hooks over MCP (stdio or HTTP):
-  # - mcp:
-  #     command: python
-  #     args: ["-m", "my_package.mcp_hook_server"]
-  # - mcp:
-  #     url: http://localhost:9000/mcp
-  # Inline CEL hooks (no Python, no service):
-  # - cel:
-  #     node_exit:
-  #       when: 'node_type == "interrupt"'
-  #       state_updates:
-  #         response_type: '"approve"'
-  #     before_llm_call:
-  #       set:
-  #         system_prompt: 'system_prompt + "\n\nBe concise."'
+  # - type: mcp
+  #   command: python
+  #   args: ["-m", "my_package.mcp_hook_server"]
+  # - type: mcp
+  #   url: http://localhost:9000/mcp
+  # Inline CEL hooks (no Python, no service). Each hook -> one CEL expression
+  # returning a map of context field -> value; {} is a no-op. Dict fields merge.
+  # - type: cel
+  #   expressions:
+  #     before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
+  #     node_exit: 'node_type == "interrupt" ? {"result": {"response_type": "approve"}} : {}'
 
 prompts:
   - id: system-prompt
@@ -870,7 +870,7 @@ All bindings are **top-level** except `state` (which uses the `state.` prefix):
 
 10. **MCP hook tool names use `.` not `/`**: MCP restricts tool names to `[A-Za-z0-9_.-]+`, so MCP-based hook tools are named `hooks.before_llm_call` (dot separator), not `hooks/before_llm_call`. The executor discovers tools with the `hooks.` prefix at connect time and only dispatches the hooks the server has registered.
 
-11. **CEL hooks persist state via `result`, not `state`**: A `cel` hook's `state_updates` only durably update graph state on hooks whose context carries `result` (most often `node_exit`, also `node_execute`/`after_*`), because LangGraph persists by the node's *returned* delta. Mutating `state` on e.g. `after_interrupt` does not persist — for the issue #68 pattern (state update after interrupt resume), use a `node_exit` CEL hook reading `result["messages"]`. `cel` hooks read every context field at the top level (`node_name`, `node_type`, `response`, `result`, …) and cannot target `on_chat_model_create`.
+11. **CEL hooks return a delta map and persist via `result`**: A `cel` hook entry (`type: cel`) maps each hook name to ONE CEL expression returning a map of `context_field -> value` (`{}` = no-op; guard with a ternary). Dict fields (`state`, `result`, `config`, …) merge; scalars replace. Durable state updates require returning `{"result": {...}}` on a hook whose context carries `result` (most often `node_exit`, also `node_execute`/`after_*`), because LangGraph persists by the node's *returned* delta. For the issue #68 pattern (state update after interrupt resume), use a `node_exit` CEL hook reading `result["messages"]`. Every context field is readable at the top level (`node_name`, `node_type`, `response`, `result`, …); `on_chat_model_create` cannot be a CEL hook.
 
 ## Process
 

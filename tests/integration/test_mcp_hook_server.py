@@ -253,9 +253,9 @@ tools:
     import_path: tests.integration.fake_tools.get_weather
 
 hooks:
-  - mcp:
-      command: {sys.executable!r}
-      args: [{str(script)!r}]
+  - type: mcp
+    command: {sys.executable!r}
+    args: [{str(script)!r}]
 
 agents:
   yaml-mcp-hooks-agent:

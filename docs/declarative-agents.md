@@ -183,38 +183,38 @@ See [Skills](skills.md) for details on skill cards and progressive disclosure.
 
 ### Hooks
 
+Each `hooks` entry is a discriminated object selected by `type`: `import_path`, `url`, `mcp`, or `cel`.
+
 ```yaml
 hooks:
   # Local Python hook executor
-  - import_path: my_package.hooks.LoggingHook
-  - import_path: my_package.hooks.GuardrailHook
+  - type: import_path
+    import_path: my_package.hooks.LoggingHook
+  - type: import_path
+    import_path: my_package.hooks.GuardrailHook
 
   # Remote hook over JSON-RPC (HTTP)
-  - url: http://localhost:8000/hooks
+  - type: url
+    url: http://localhost:8000/hooks
 
   # Remote hook over MCP (stdio)
-  - mcp:
-      command: python
-      args: ["-m", "my_package.mcp_hook_server"]
+  - type: mcp
+    command: python
+    args: ["-m", "my_package.mcp_hook_server"]
 
   # Remote hook over MCP (HTTP)
-  - mcp:
-      url: http://localhost:9000/mcp
-      transport: streamable_http   # or "sse"
+  - type: mcp
+    url: http://localhost:9000/mcp
+    transport: streamable_http   # or "sse"
 
   # Inline CEL-expression based hook (no Python, no service)
-  - cel:
-      node_exit:
-        when: 'node_type == "interrupt" && node_name == "get_approval"'
-        state_updates:
-          response_type: >
-            default(result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"], "revise")
-      before_llm_call:
-        set:
-          system_prompt: 'system_prompt + "\n\nBe concise."'
+  - type: cel
+    expressions:
+      # Each hook -> one CEL expression returning a map of field -> value.
+      before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
 ```
 
-Each `hooks` entry must set exactly one of `import_path`, `url`, `mcp`, or `cel`. Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md) — and [CEL Hooks](hooks.md#cel-hooks) for the fully declarative option.
+Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md) — and [CEL Hooks](hooks.md#cel-hooks) for the fully declarative option.
 
 ### Sub-Agents
 
@@ -1370,7 +1370,8 @@ default_llm:
   id: openai-gpt-4o-mini
 
 hooks:
-  - import_path: my_package.hooks.ApprovalTaggingHook
+  - type: import_path
+    import_path: my_package.hooks.ApprovalTaggingHook
 
 agents:
   approval-agent:

@@ -7,8 +7,10 @@
 #   2. In YAML via import_path (uncomment below):
 #
 # hooks:
-#   - import_path: examples.hooks.LoggingHook
-#   - import_path: examples.hooks.PromptGuardrailHook
+#   - type: import_path
+#     import_path: examples.hooks.LoggingHook
+#   - type: import_path
+#     import_path: examples.hooks.PromptGuardrailHook
 
 manifest_version: 1
 
