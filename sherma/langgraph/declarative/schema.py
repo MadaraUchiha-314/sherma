@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RegistryRef(BaseModel):
@@ -391,31 +391,46 @@ class MCPHookDef(BaseModel):
 class CELHookDef(BaseModel):
     """Inline CEL-expression based hooks. ``type: cel``.
 
-    ``expressions`` maps a hook name (e.g. ``before_llm_call``) to a single
-    CEL expression. The expression evaluates to a **map of context field ->
-    new value** — the hook's return delta — and an empty map (``{}``) is a
-    no-op (pass-through). Every context field is readable at the top level
-    (``node_name``, ``node_type``, ``system_prompt``, ``response``,
-    ``result``, ...); graph state is reached via ``state.<field>``.
+    Alongside ``type``, each key is a hook name (e.g. ``before_llm_call``)
+    mapped to a single CEL expression. The expression evaluates to a **map of
+    context field -> new value** — the hook's return delta — and an empty map
+    (``{}``) is a no-op (pass-through). Every context field is readable at the
+    top level (``node_name``, ``node_type``, ``system_prompt``, ``response``,
+    ``result``, ...); graph state is reached via ``state.<field>``::
+
+        - type: cel
+          before_llm_call: '{"system_prompt": system_prompt + "..."}'
+          node_exit: 'node_type == "interrupt" ? {"result": {...}} : {}'
 
     ``on_chat_model_create`` is not supported (it returns a Python object).
     """
 
+    model_config = ConfigDict(extra="allow")
+
     type: Literal["cel"]
-    expressions: dict[str, str]
+
+    @property
+    def expressions(self) -> dict[str, str]:
+        """The ``hook_name -> CEL expression`` mapping (all non-``type`` keys)."""
+        return dict(self.__pydantic_extra__ or {})
 
     @model_validator(mode="after")
     def _validate_expressions(self) -> Self:
         from sherma.hooks.cel_executor import CEL_CAPABLE_HOOKS
 
-        if not self.expressions:
-            raise ValueError("CEL hook 'expressions' must declare at least one hook")
-        for hook_name in self.expressions:
+        expressions = self.expressions
+        if not expressions:
+            raise ValueError("a 'cel' hook must declare at least one hook expression")
+        for hook_name, expr in expressions.items():
             if hook_name not in CEL_CAPABLE_HOOKS:
                 raise ValueError(
                     f"Unknown or unsupported CEL hook '{hook_name}'. "
                     f"'on_chat_model_create' is not supported by CEL hooks "
                     f"because it returns a Python object."
+                )
+            if not isinstance(expr, str):
+                raise ValueError(
+                    f"CEL hook '{hook_name}' must be a string CEL expression"
                 )
         return self
 

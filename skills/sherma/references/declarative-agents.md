@@ -207,11 +207,11 @@ hooks:
     url: http://localhost:9000/mcp
     transport: streamable_http   # or "sse"
 
-  # Inline CEL-expression based hook (no Python, no service)
+  # Inline CEL-expression based hook (no Python, no service).
+  # Alongside `type`, each key is a hook name -> one CEL expression
+  # returning a map of field -> value.
   - type: cel
-    expressions:
-      # Each hook -> one CEL expression returning a map of field -> value.
-      before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
+    before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
 ```
 
 Hooks can also be passed programmatically via the `DeclarativeAgent` constructor. See [Hooks](hooks.md) — and [CEL Hooks](hooks.md#cel-hooks) for the fully declarative option.

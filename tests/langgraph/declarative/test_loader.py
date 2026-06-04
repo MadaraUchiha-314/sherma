@@ -1497,11 +1497,10 @@ data:
 
 hooks:
   - type: cel
-    expressions:
-      node_exit: >
-        node_type == "interrupt"
-          ? {"result": {"response_type": "approve"}}
-          : {}
+    node_exit: >
+      node_type == "interrupt"
+        ? {"result": {"response_type": "approve"}}
+        : {}
 
 agents:
   a:

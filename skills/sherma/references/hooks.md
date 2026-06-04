@@ -526,8 +526,7 @@ hooks:
 ```yaml
 hooks:
   - type: cel
-    expressions:
-      before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
+    before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
 ```
 
 See [CEL Hooks](#cel-hooks) for the full surface.
@@ -544,8 +543,7 @@ hooks:
     command: python
     args: ["-m", "my_package.mcp_hook_server"]
   - type: cel
-    expressions:
-      node_enter: '{"state": {"enter_count": default(state.enter_count, 0) + 1}}'
+    node_enter: '{"state": {"enter_count": default(state.enter_count, 0) + 1}}'
 ```
 
 Hooks from the constructor and YAML are both registered. Constructor hooks run first, then YAML hooks, in declaration order. See [Remote Hooks (JSON-RPC)](#remote-hooks-json-rpc), [Remote Hooks (MCP)](#remote-hooks-mcp), and [CEL Hooks](#cel-hooks) for details.
@@ -1000,18 +998,20 @@ This is the fourth hook `type` on a `hooks` entry, alongside `import_path`, `url
 
 ### Surface
 
+Alongside `type: cel`, each key on the entry is a hook name mapped to one CEL expression:
+
 ```yaml
 hooks:
   - type: cel
-    expressions:
-      <hook_name>: '<CEL expression returning a map of field -> value>'
+    <hook_name>: '<CEL expression returning a map of field -> value>'
 ```
 
-`expressions` is a map of `hook_name -> expression` and must declare at least one hook. There are no special `when`/`set`/`state_updates` keywords — a guard is just a CEL conditional that returns `{}`:
+At least one hook must be declared. There are no special `when`/`set`/`state_updates` keywords — a guard is just a CEL conditional that returns `{}`:
 
 ```yaml
-expressions:
-  before_llm_call: 'node_name == "agent" ? {"system_prompt": system_prompt + "\n\nBe concise."} : {}'
+hooks:
+  - type: cel
+    before_llm_call: 'node_name == "agent" ? {"system_prompt": system_prompt + "\n\nBe concise."} : {}'
 ```
 
 ### What's readable
@@ -1052,14 +1052,13 @@ agents:
 
 hooks:
   - type: cel
-    expressions:
-      node_exit: >
-        default(
-          node_type == "interrupt" && node_name == "get_approval"
-            ? {"result": {"response_type":
-                result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]}}
-            : {},
-          {})
+    node_exit: >
+      default(
+        node_type == "interrupt" && node_name == "get_approval"
+          ? {"result": {"response_type":
+              result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]}}
+          : {},
+        {})
 ```
 
 A CEL edge can then route on `state.response_type`. See `examples/declarative_cel_hooks_agent/`.
@@ -1069,8 +1068,7 @@ A CEL edge can then route on `state.response_type`. See `examples/declarative_ce
 ```yaml
 hooks:
   - type: cel
-    expressions:
-      before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise and never fabricate data."}'
+    before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise and never fabricate data."}'
 ```
 
 ### Programmatic use

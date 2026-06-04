@@ -482,11 +482,13 @@ class MCPHookDef(BaseModel):
     headers: dict[str, str] = {}
 
 class CELHookDef(BaseModel):
+    model_config = ConfigDict(extra="allow")
     type: Literal["cel"]
-    expressions: dict[str, str]               # hook_name -> CEL expression
+    # plus one key per hook name -> CEL expression (e.g. before_llm_call: "...")
+    # collected via the `.expressions` property
 ```
 
-Every entry sets `type` plus its type-specific fields. `CELHookDef.expressions` must declare at least one hook, hook names are validated, and `on_chat_model_create` is rejected (it returns a Python object). Each expression returns a map of `field -> value`; see [CEL Hooks](hooks.md#cel-hooks).
+Every entry sets `type` plus its type-specific fields. For `cel`, each remaining key is a hook name mapped to a CEL expression (exposed as `CELHookDef.expressions`); at least one is required, hook names are validated, and `on_chat_model_create` is rejected (it returns a Python object). Each expression returns a map of `field -> value`; see [CEL Hooks](hooks.md#cel-hooks).
 
 ### `CheckpointerDef`
 

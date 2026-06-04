@@ -55,14 +55,13 @@ llms:
 # `{}` (a no-op) and the routing edge's default sends the agent to `revise`.
 hooks:
   - type: cel
-    expressions:
-      node_exit: >
-        default(
-          node_type == "interrupt" && node_name == "get_approval"
-            ? {"result": {"response_type":
-                result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]}}
-            : {},
-          {})
+    node_exit: >
+      default(
+        node_type == "interrupt" && node_name == "get_approval"
+          ? {"result": {"response_type":
+              result["messages"][size(result["messages"]) - 1]["additional_kwargs"]["decision"]}}
+          : {},
+        {})
 
 agents:
   cel-hooks-approval-agent:

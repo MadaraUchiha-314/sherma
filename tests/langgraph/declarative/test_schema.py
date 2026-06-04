@@ -420,10 +420,8 @@ def test_hook_def_with_cel():
     hook = _parse_hook(
         {
             "type": "cel",
-            "expressions": {
-                "node_exit": '{"result": {"response_type": "approve"}}',
-                "before_llm_call": '{"system_prompt": system_prompt + "!"}',
-            },
+            "node_exit": '{"result": {"response_type": "approve"}}',
+            "before_llm_call": '{"system_prompt": system_prompt + "!"}',
         }
     )
     assert isinstance(hook, CELHookDef)
@@ -435,17 +433,17 @@ def test_hook_def_with_cel():
 
 def test_cel_hook_requires_at_least_one_expression():
     with pytest.raises(ValidationError, match="at least one hook"):
-        _parse_hook({"type": "cel", "expressions": {}})
+        _parse_hook({"type": "cel"})
 
 
 def test_cel_hook_rejects_unknown_hook_name():
     with pytest.raises(ValidationError, match="Unknown or unsupported CEL hook"):
-        _parse_hook({"type": "cel", "expressions": {"not_a_hook": "{}"}})
+        _parse_hook({"type": "cel", "not_a_hook": "{}"})
 
 
 def test_cel_hook_rejects_on_chat_model_create():
     with pytest.raises(ValidationError, match="Unknown or unsupported CEL hook"):
-        _parse_hook({"type": "cel", "expressions": {"on_chat_model_create": "{}"}})
+        _parse_hook({"type": "cel", "on_chat_model_create": "{}"})
 
 
 # --- use_sub_agents_as_tools type normalization ---

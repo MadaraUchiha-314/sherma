@@ -99,3 +99,18 @@ Owner review on PR #83 raised two design questions, resolved as:
 `CELHookSpec` was replaced by `CELHookDef.expressions: dict[str, str]`;
 `hook_supports_state_updates` was removed; `writable_fields` now includes
 `state`/`result`.
+
+### 2026-06-04: PR #83 review — drop the `expressions` indirection
+
+Owner follow-up: the `expressions:` sub-key is unnecessary. Flattened it — hook
+names now sit directly on the `cel` entry alongside `type` (no hook is named
+`type`, so there's no collision). `CELHookDef` uses `model_config =
+ConfigDict(extra="allow")`; the extra keys are validated as `hook_name -> CEL
+string` and surfaced via an `expressions` property (so the loader/executor are
+unchanged). Example/tests/docs updated.
+
+```yaml
+hooks:
+  - type: cel
+    before_llm_call: '{"system_prompt": system_prompt + "..."}'
+```

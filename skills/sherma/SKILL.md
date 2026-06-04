@@ -491,12 +491,12 @@ hooks:
   #   args: ["-m", "my_package.mcp_hook_server"]
   # - type: mcp
   #   url: http://localhost:9000/mcp
-  # Inline CEL hooks (no Python, no service). Each hook -> one CEL expression
-  # returning a map of context field -> value; {} is a no-op. Dict fields merge.
+  # Inline CEL hooks (no Python, no service). Alongside `type`, each key is a
+  # hook name -> one CEL expression returning a map of context field -> value;
+  # {} is a no-op. Dict fields (state, result, ...) merge; scalars replace.
   # - type: cel
-  #   expressions:
-  #     before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
-  #     node_exit: 'node_type == "interrupt" ? {"result": {"response_type": "approve"}} : {}'
+  #   before_llm_call: '{"system_prompt": system_prompt + "\n\nBe concise."}'
+  #   node_exit: 'node_type == "interrupt" ? {"result": {"response_type": "approve"}} : {}'
 
 prompts:
   - id: system-prompt
